@@ -174,6 +174,8 @@ This is the binding visual contract. Every color, label, icon, and chip maps to 
 
 ### 4.1 Foundation palette
 
+> **⚠ SUPERSEDED (2026-06-02) by the Cadence design system** (`docs/design/cadence-design-system/` — the binding styling source of truth; see `ARCHITECTURE.md §7` + `docs/planning/frontend-styling-proposal.md`). The user overrode this *light* foundation palette with Linear's **dark** palette (near-black surfaces, near-white ink) and moved the brand accent `blue-600` → indigo `#5E6AD2` (interactive-only; Info-status-blue split to its own hue). Dark is the default + a persisted light-mode toggle. **The §4.2 six-tone semantic taxonomy + every enum→tone mapping below are UNCHANGED** (preserved 1:1) — only the foundation surfaces/ink/brand are re-skinned.
+
 | Role | Tailwind ramp | Use |
 |---|---|---|
 | Surface | `white` / `gray-50` | page + card backgrounds |

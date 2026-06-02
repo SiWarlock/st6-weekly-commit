@@ -22,9 +22,11 @@
 
 **Next backend target:** **`1.5`** (JPA entities mirroring Appendix A, mapped to V1–V3 tables — `@Enumerated(STRING)` enum↔VARCHAR, `@Version` on the 5 mutable entities, extend `PersistableUuidEntity`/`AbstractAuditingEntity`) + repos. **Resequencing (orch, 2026-06-02):** `1.1` **satisfied-by-0.3**; `0.7`/`0.8` **deferred** (frontend-entangled; not blocking Phase 1 — Testcontainers, not compose). Phase 0 backend = 0.1–0.5 ✅; 0.7/0.8 parked (resequenced, not cut). `DATA_MODEL.md` stamped superseded-by-§4 (1.2).
 
-**Frontend** (st6-main-wc-web-orchestrator): _(owns 0.6, Phase 9, wc-web parts of 0.7/0.8, §7 + color taxonomy — maintain your state here.)_
+**Frontend** (st6-main-wc-web-orchestrator). Landed: **0.6 (partial) + ST.1 + ST.2** (`e3c1cb7`) — `apps/wc-web` Cadence-themed shell (Vite 5 / React 18 / TS-strict / Vitest / ESLint 9 / Prettier), Cadence design tokens → `tailwind.config` theme + Flowbite custom theme (approach **A**, no bespoke `.wc-*` CSS), and dark-default + light-toggle `[data-theme]` theming (persisted pref; standalone-only `ThemeToggle`; `darkMode` bound to `[data-theme]`). 13 Vitest tests green; brand indigo `#5E6AD2` theme-stable. Render-only — no cross-doc invariant.
 
-> Frontend deferred until the UI design landed (now in progress under the frontend orchestrator). See Sequencing direction below.
+**Next frontend target:** **9.1** (RTK Query base: `baseApi` + nine tag types + `prepareHeaders` auth XOR + `getAccessToken` seam + store + RFC-7807 `problemDetails`) — **in flight** (brief `009`). Then **9.3** (MFE boundary: federation `expose` + standalone/remote split + `PersonaSwitcher`/`DemoIdentityProvider` + ThemeToggle bundle-absence proof — completes the 0.6 carve-outs) and **9.2** (view-state primitives + themed `StatusBadge`/`RiskBadge` — folds the Cadence atom skin in).
+
+**Frontend sequencing (user, via lead, 2026-06-02).** UI design landed (the Cadence design system, committed `2a307b8`); the "no styling until design" gate is **lifted**. **Fork 2 = Option 2 (foundation-early, style-as-you-build):** ST.1/ST.2 token+theme foundation landed first; per-surface visual fidelity (ST.5/ST.6) folds into the Phase 9 component ACs; ST.3/ST.4 + ST.7 a11y/design-review are the distinct **Phase ST** spine (below). **Fork 1 = A** (Tailwind/Flowbite-native); **Fork 3 = indigo brand both themes**. Plan: `docs/planning/frontend-styling-proposal.md` (signed off).
 
 **Sequencing direction (user, via lead, 2026-06-02).** **Frontend is deferred pending the UI design** (being designed in Claude design). The current backend implementer does **NOT** take any frontend slice — **`0.6` (wc-web shell), Phase 9, and the wc-web portions of `0.7`/`0.8`** wait for a **dedicated frontend implementer** the lead will spawn when the design lands. Frontend work, when it starts, is **structure-first**: scaffolding + typed RTK Query/logic layer are fine, but **no styling/theme tokens until the design is delivered**. Meanwhile keep the **backend spine** moving and **bundle Phase 0 backend slices where safe** (no safety invariants exist in Phase 0 — speed is prioritized for the 1-week timebox); flow into **Phase 1** to keep the backend unblocked rather than idling on the deferred frontend. Orchestrator owns the backend sequencing. Backend-only remainder of Phase 0: `0.3` (`:shared` enums/common — carries the first Appendix-A cross-doc invariant), `0.4`+`0.5` (api/worker Spring Boot app skeletons — bundle candidate), and the **backend portions** of `0.7` (Postgres + api + worker compose) / `0.8` (`./gradlew check` + JDK 21 CI). The wc-web service in `0.7` and the JS lint/vitest/vite-build steps in `0.8` are carved out as frontend-deferred.
 
@@ -36,6 +38,7 @@ Items the orchestrator MUST fold into upcoming slice briefs. **Triaged at every 
 
 - **JPA auditing — revisit audit-column nullability when entities land.** V1 created the `AbstractAuditingEntity` audit columns (`created_by/at`, `updated_by/at`) **nullable** (no population mechanism yet). When **1.5** wires `@EnableJpaAuditing` + `AuditingEntityListener`, decide whether `created_at`/`created_by` warrant tightening to `NOT NULL` (would need a V-next migration). Fold into the 1.5 brief. _(origin: 2026-06-02 1.2)_
 - **`/preflight` skill backend-step tweak (low priority).** The generic `/preflight` skill's backend steps don't fit this composite-Gradle project (must run from `apps/wc-api/`; `build -x test` invalid). Worked around via area `CLAUDE.md` Standard-commands + LESSONS §6; a proper fix is making the `/preflight` command cwd-aware for the backend (or documenting the `apps/wc-api` `./gradlew check` gate in the command). _(origin: 2026-06-02 session-001)_
+- **(Frontend) Expose layout tokens into the Tailwind theme when layout work lands.** ST.1 mapped color/spacing/radii/shadow/motion tokens into `tailwind.config`, but `--reading-col`/`--content-max` aren't yet in the theme (`maxWidth`); `App.tsx` uses one arbitrary-value escape hatch `max-w-[var(--reading-col)]`. Fold into the first Phase 9 layout/shell slice (9.2/9.7). _(origin: 2026-06-02 ST.1)_
 
 > _All other round-1 Step-9 items were routed inline during the round (real task checkboxes for 0.7/0.8/D.5-migration-Job; LESSONS §1–§6; cross-doc rows; the DATA_MODEL.md reconciliation) — Carry-forward stays drained._
 
@@ -137,11 +140,11 @@ The project is "done" when (these mirror the EVALUATION_CRITERIA disqualifying-g
 - [x] Tests — happy: worker `@SpringBootTest`(local) `/actuator/health/readiness` UP + `Clock` autowires; edge: `spring.flyway.enabled=false` in every worker profile; error: worker boots with no SQS/Graph env; integration: `:worker` bootJar builds as a separate artifact from `:api` (gate 6)
 - [x] Requirements: REQ-O-014, REQ-O-016, REQ-O-015
 
-### 0.6 — `wc-web` standalone shell: Vite 5 + React 18 + TS-strict + Tailwind + Flowbite, MFE-ready, no domain
+### 0.6 — `wc-web` standalone shell: Vite 5 + React 18 + TS-strict + Tailwind + Flowbite, MFE-ready, no domain 🟡 PARTIAL (shell + TS-strict + Tailwind/Flowbite + Vitest/ESLint/Prettier landed in **ST.1** `e3c1cb7`; **federation `expose` + full standalone/remote split + `PersonaSwitcher`/`DemoIdentityProvider` → 9.3**; **`baseApi`/`store`/`authAccessor` XOR → 9.1**, in flight)
 - [ ] `apps/wc-web` runs standalone via `yarn dev` rendering an empty WC shell; TypeScript `strict` is on (`tsconfig.json`), Tailwind + Flowbite React are wired, and the federation plugin (`@originjs/vite-plugin-federation`) declares `expose: { './WeeklyCommitApp': './src/remote/WeeklyCommitApp.tsx' }` with React/ReactDOM/RTK/React-Redux as shared singletons (REQ-I-007, §7).
 - [ ] Standalone/remote split is in place with NO domain features: `src/standalone/main.tsx` owns `BrowserRouter` + store provider + identity provider + persona-switcher chrome; `src/remote/WeeklyCommitApp.tsx` consumes a host router context (creates none); `PersonaSwitcher.tsx`/`DemoIdentityProvider.tsx` live ONLY under `src/standalone/` and are tree-shaken/compiled out of the exposed remote build — proving REQ-I-008 (no PA shell-owned concerns leak into the remote).
 - [ ] `app/store.ts` + `app/baseApi.ts` + `app/authAccessor.ts` exist as wiring stubs only: `baseApi` configures RTK Query base with `prepareHeaders` honoring `VITE_AUTH_MODE` (`demo`⇒`X-Demo-Employee-Id` XOR `auth0`⇒`Authorization: Bearer`, never combined) and `VITE_API_BASE_URL`; `.env.example` documents `VITE_AUTH_MODE=demo|auth0` and `VITE_API_BASE_URL` (Appendix D.1). No API slices/queries defined yet.
-- [ ] `vitest` setup file exists and ESLint 9 / Prettier 3.3 configs are present and pass on the shell.
+- [x] `vitest` setup file exists and ESLint 9 / Prettier 3.3 configs are present and pass on the shell. _(ST.1 `e3c1cb7`)_
 - [ ] Files: NEW `apps/wc-web/{vite.config.ts,tsconfig.json,.env.example,package.json,tailwind.config.*,postcss.config.*}`, NEW `apps/wc-web/src/remote/WeeklyCommitApp.tsx`, NEW `apps/wc-web/src/standalone/{main.tsx,PersonaSwitcher.tsx,DemoIdentityProvider.tsx}`, NEW `apps/wc-web/src/app/{store.ts,baseApi.ts,authAccessor.ts,tags.ts}`, NEW `apps/wc-web/src/test/setup.ts` (Appendix C.4)
 - [ ] Cross-doc invariant: none (no typed domain model; `VITE_AUTH_MODE`/`VITE_API_BASE_URL` are config-contract values from Appendix D.1)
 - [ ] Tests — happy (Vitest): standalone build (`vite build`) succeeds and a smoke render of the shell mounts without error; edge: `VITE_AUTH_MODE=demo` makes `prepareHeaders` set `X-Demo-Employee-Id` and NOT `Authorization` (and inverse for `auth0`) — asserted as a unit test; error: combining demo + bearer is unreachable (the branch is exclusive) — asserted; integration: the remote `expose` entry builds and `PersonaSwitcher`/`DemoIdentityProvider` are absent from the remote bundle (tree-shaken)
@@ -1029,6 +1032,50 @@ The project is "done" when (these mirror the EVALUATION_CRITERIA disqualifying-g
 - [ ] Every data view renders explicit loading/empty/error/success/partial states; `safeMessage` renders as Cypress-assertable text and never via `dangerouslySetInnerHTML`; XSS/Unicode probes render escaped (REQ-S-005).
 - [ ] `allowedActions[]` drives all action enablement and each maps to its Appendix F.4 endpoint; IC UI has no team-heatmap entry point (REQ-UX-005); the Outlook FAILED warning + manual-retry affordance is visible and recoverable (REQ-UX-004/REQ-E-004).
 - [ ] The PA host integration contract is documented (remote name, remoteEntry, exposed module, router context, `getAccessToken`, base URL, shared deps) per REQ-I-007/REQ-I-013/REQ-I-008.
+- [ ] **Styling (Cadence design system — Phase ST fold-in, Fork-2 Option 2):** every component renders per `docs/design/cadence-design-system/` — tokens from the ST.1 Tailwind/Flowbite theme, status/risk/chess via the §4.2/§4.3 six-tone taxonomy (**glyph + text + color, never color alone**), density/elevation/motion per §4.4–4.7; **both `data-theme` values (dark default + light) render**; the standalone `ThemeToggle` is absent from the exposed remote build (REQ-I-008-style). Per-surface fidelity (ST.5/ST.6) folds into the 9.x component tasks; the cross-cutting atom/surface skin (ST.3/ST.4) + a11y/design-review (ST.7) live in **Phase ST**.
+
+---
+
+## Phase ST — Styling & theming (Cadence design system)
+
+**Goal:** Apply the delivered **Cadence design system** (`docs/design/cadence-design-system/` — Linear-dark, six-tone semantic taxonomy, committed `2a307b8`) as the binding styling source of truth for `apps/wc-web`, via **approach A** (Tailwind/Flowbite-native: Cadence tokens → `tailwind.config` theme + a Flowbite-React custom theme; **no bespoke `.wc-*` CSS**). Dark is the default; a persisted light-mode toggle flips a `[data-theme]` attribute (standalone-only toggle, tree-shaken from the remote). **Sequencing = Fork-2 Option 2 (foundation-early, style-as-you-build; user-approved 2026-06-02):** ST.1+ST.2 land the token+theme foundation first; per-surface visual fidelity (ST.5/ST.6) folds into the Phase 9 component task ACs rather than running as separate late slices; ST.3/ST.4 (cross-cutting atom + surface skin) + ST.7 (a11y/design-review) are the distinct Phase ST spine. The color override is **render-only** — foundation (light→dark) + brand (`blue-600`→indigo `#5E6AD2`); the six-tone semantic taxonomy + every enum→tone mapping are preserved 1:1, so **no enum/Appendix-A cross-doc invariant changes** (`RiskBadge`/`AlignmentStatus`/`ReviewStatus` vocabularies untouched). Full rationale + reconciliation: `docs/planning/frontend-styling-proposal.md`.
+
+**Spec anchors:** `ARCHITECTURE.md §7` (styling-SoT note); `docs/design/cadence-design-system/` (`colors_and_type.css` tokens, `components.css`, README VISUAL FOUNDATIONS, `atoms.jsx` enum→tone maps); `docs/design/UI_UX_SPEC.md §4` (taxonomy/density; §4.1 foundation superseded by Cadence); REQ-UX-002, REQ-S-005 (a11y / color-not-only-signal), REQ-NF-005 (no CSS bloat on initial render). **No safety invariant** — ST slices may bundle.
+
+### ST.1 — Cadence token foundation + Tailwind/Flowbite-native bridge ✅ (`e3c1cb7`, 2026-06-02)
+- [x] Cadence tokens (`colors_and_type.css`) ported as CSS custom properties in one token stylesheet (`src/styles/theme.css`, dark under `[data-theme="dark"]` default); `tailwind.config` `theme.extend` maps every semantic scale (colors surface/ink/border/brand/`tone-*`, spacing, radii, fontFamily/fontSize, boxShadow, transitionDuration/timing) to `var(--…)` (never hex — walk-every-leaf test).
+- [x] Flowbite-React custom theme (`src/app/flowbiteTheme.ts`, `createTheme` + `<Flowbite theme={{ theme }}>`) skins badge/button/table/drawer/modal/tooltip via the token utilities; **no bespoke `.wc-*` component CSS** (approach A). _(Bundled into the 0.6+ST.1+ST.2 foundation slice `e3c1cb7`.)_
+
+### ST.2 — Dark/light theming mechanism ✅ (`e3c1cb7`, 2026-06-02)
+- [x] `[data-theme="light"]` token block authored net-new (light base re-contrasted for AA; **brand indigo `#5E6AD2` retained both themes** — Fork 3); `darkMode: ['selector','[data-theme="dark"]']` binds Flowbite's baked-in `dark:` to the attribute (not OS media).
+- [x] `ThemeProvider` + `useThemePreference` (localStorage → `prefers-color-scheme` → dark; persisted; pre-paint FOUC guard; declarative `prefers-reduced-motion`); standalone-only `ThemeToggle` (tree-shaken from remote — **bundle-absence proof deferred to 9.3** with `PersonaSwitcher`).
+- [x] Lessons banked: wc-web LESSONS §3 (CSS-vars→Tailwind-theme `[data-theme]` flip) + §4 (flowbite-react 0.10.2 `createTheme`/`<Flowbite>` + `darkMode` selector-binding); forbidden-pattern #3 narrow exception (token-var stylesheet only) in wc-web CLAUDE.md.
+
+### ST.3 — Status / risk / chess atom skin (folds into 9.2/9.7)
+- [ ] Skin `StatusBadge`, `RiskBadge`, `PriorityTag`, `WorkTypeTag`, `ConfidenceMeter` (3-segment bar, not number/stars), `AlignmentChip`, `SyncStatusBadge` per `UI_UX_SPEC §4.2/§4.3` + the Cadence `atoms.jsx` enum→tone+icon maps — six tones, **ring variant** for the 2nd of a same-color risk pair (`BLOCKED`, `CARRY_FORWARD`), pinned Heroicons via `react-icons/hi`; no game/chess glyphs.
+- [ ] Cross-doc invariant: none (renders B.1 `RiskBadge`/`AlignmentStatus`/`ReviewStatus`/`SyncStatus`/`ReconciliationOutcome` vocab verbatim — render-only).
+- [ ] **Folds into Phase 9.2** (the `StatusBadge`/`RiskBadge` components) — not a separate late slice.
+
+### ST.4 — Surface / density / elevation / motion skin (folds across 9.7–9.11)
+- [ ] Cards (flat, hairline border, 8px radius, 16px pad, **left-accent only where earned**: violet unplanned / red-amber disputed), tables (~44px rows, sticky header, striped/hoverable), drawers/modals (raised surface + shadow + scrim), focus ring (3px indigo, never removed), motion tokens (≤150/200ms, no bounce), solid backgrounds (no gradients/imagery on data surfaces) — all via the ST.1 token utilities.
+- [ ] **Folds into the Phase 9 component slices** as each surface is built.
+
+### ST.5 — IC workspace visual composition (folds into 9.7/9.8)
+- [ ] `PlanLifecycleBar` 4-node forward-only stepper; `CommitmentCard` modes (draft/locked/reconciling/readOnly) + left-accent; `RcdoPicker`/`RcdoBreadcrumb`; non-blocking sync warning strip — per the Cadence `WeeklyPlanView`/`CommitmentCard`/`overlays` reference.
+
+### ST.6 — Manager surfaces visual composition (folds into 9.9/9.10/9.11)
+- [ ] `CommandCenter` dense table + at-a-glance SLA strip + filter chips + review Drawer; `HeatmapGrid` with **volume neutral-fill decoupled from risk badges** + a11y hatch/dot high-contrast pattern-mode toggle; drilldown Drawer; `DisputePanel` 3-step stepper — per the Cadence `CommandCenter`/`Heatmap` reference.
+
+### ST.7 — A11y + responsive + design-review pass
+- [ ] Color-never-the-only-signal (glyph + text + color, grayscale/colorblind legible) across all status/risk; heatmap high-contrast pattern mode; `focus-visible` rings; desktop-first responsive (`content-max` 1440 / `reading-col` 1040); `prefers-reduced-motion`; **formal AA-contrast verification of the net-new light status tones** (carried from ST.2).
+- [ ] Run `/design-review` against `docs/design/cadence-design-system/preview/*.html` for visual-fidelity QA before the frontend phase exits.
+- [ ] Requirements: REQ-UX-002, REQ-S-005.
+
+### Acceptance criteria (ST)
+- [ ] Cadence tokens are the single styling source of truth (`tailwind.config` + Flowbite theme reference them; no hardcoded hex; no bespoke `.wc-*` CSS beyond the one token-var stylesheet).
+- [ ] Both `data-theme` values render every surface; the standalone `ThemeToggle` is absent from the exposed remote build (proven in 9.3); brand indigo is theme-stable.
+- [ ] Every status/risk conveys meaning via glyph + text + color (never color alone); the heatmap a11y pattern-mode toggle works; `prefers-reduced-motion` respected.
+- [ ] `/design-review` against the Cadence specimens passes; no enum/Appendix-A cross-doc invariant changed (render-only).
 
 ---
 
@@ -1460,3 +1507,13 @@ Append-only, date-stamped, the orchestrator's framing of each round.
 - **Tooling finding → fixed:** backend gate is `./gradlew check` from `apps/wc-api/` (not the generic `/preflight` per-task list; not `build -x test`) — area `CLAUDE.md` Standard-commands updated + LESSONS §6.
 - **Next session target:** **1.5 — JPA entities** mirroring Appendix A, mapped to V1–V3 (`@Enumerated(STRING)`, `@Version` on the 5 mutable entities, extend `PersistableUuidEntity`/`AbstractAuditingEntity`) + repos. Then 1.x continues; `0.7`/`0.8` rejoin once the frontend stack is ready.
 - **Reference:** implementer session doc `001-2026-06-02-phase0-backend-and-phase1-schema.md` for technical detail.
+
+### 2026-06-02 — Frontend round 1: design review + styling foundation (ST.1/ST.2)
+
+- **Design review + sign-off:** reviewed the delivered Cadence design system + weekly-commit UI kit (`docs/design/cadence-design-system/`, committed `2a307b8`); authored `docs/planning/frontend-styling-proposal.md`; user signed off (via lead) on the color reconciliation, the dark-default + light-toggle theming, the Phase ST shape, and 3 forks: **Fork 1 = A** (Tailwind/Flowbite-native), **Fork 2 = Option 2** (foundation-early, style-as-you-build), **Fork 3 = indigo brand in both themes**.
+- **Landed (frontend, 1 slice `e3c1cb7`):** bundled **0.6 (partial) + ST.1 + ST.2** — `apps/wc-web` Cadence-themed shell (Vite 5/React 18/TS-strict/Vitest/ESLint 9/Prettier), Cadence tokens → `tailwind.config` + Flowbite custom theme (approach A, no `.wc-*` CSS), dark-default + light-toggle `[data-theme]` mechanism (persisted; standalone-only `ThemeToggle`; `darkMode` selector-bound). 13 Vitest tests; preflight + production build green.
+- **Color reconciliation:** override is **foundation (light→dark) + brand (`blue-600`→indigo `#5E6AD2`) only**; six-tone semantic taxonomy + every enum→tone mapping preserved 1:1 → **no enum/Appendix-A cross-doc invariant changed** (confirmed with st6-main-orchestrator; `EnumVocabularyTest` unaffected). Resolved a spec self-inconsistency: `MISALIGNED`=red, `UNPLANNED`=violet (Cadence §4.2 canonical).
+- **Cross-doc work (orchestrator hot-routed):** `ARCHITECTURE.md §7` styling-SoT note; `UI_UX_SPEC §4.1` superseded-by-Cadence note; **Phase ST** section + Phase 9 styling fold-in AC; wc-web `LESSONS §3/§4` + the forbidden-pattern #3 narrow exception (token-var stylesheet only) in wc-web `CLAUDE.md`.
+- **Carve-outs (0.6 → 9.1/9.3):** federation `expose` + full standalone/remote split + `PersonaSwitcher`/`DemoIdentityProvider` + `baseApi` XOR + ThemeToggle bundle-absence proof.
+- **Coordination:** the shared-doc protocol with st6-main-orchestrator held under a crossed commit-hold race — ST.1 (`e3c1cb7`) committed clean (only wc-web files + yarn.lock, zero backend sweep); these shared-doc edits applied after the backend round-commit `463ffd8` cleared the files.
+- **Next frontend target:** **9.1** (RTK Query base + auth XOR — brief `009`, in flight), then 9.3 (MFE boundary) + 9.2 (themed primitives).
