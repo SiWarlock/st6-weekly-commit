@@ -1,0 +1,25 @@
+# Terraform working-directory artifacts — never commit.
+
+# Provider/module install dir (re-created by `terraform init`; can be hundreds of MB).
+.terraform/
+
+# State — the S3 remote backend owns it; local copies must never be committed.
+*.tfstate
+*.tfstate.*
+
+# Saved plan outputs (may embed sensitive values).
+*.tfplan
+
+# Variable files (real ROOT_DOMAIN / per-env values are supplied at HITL/CI init,
+# never checked in). Example/templates should be named *.tfvars.example to escape this.
+*.tfvars
+*.tfvars.json
+
+# Crash logs / CLI credential config.
+crash.log
+crash.*.log
+.terraformrc
+terraform.rc
+
+# NOTE: .terraform.lock.hcl is intentionally NOT ignored — the committed provider
+# lockfile (multi-platform hashes) is what makes the pinned versions reproducible.
