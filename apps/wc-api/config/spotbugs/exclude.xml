@@ -8,4 +8,13 @@
   as domain code lands in 0.3+.
 -->
 <FindBugsFilter>
+  <!--
+    Migration/Testcontainers harnesses build SQL/DDL-validation statements from test-controlled
+    values (UUIDs, enum names, hardcoded literals) — never untrusted input. Suppress the SQL
+    string-concatenation pattern there only; production code is unaffected.
+  -->
+  <Match>
+    <Class name="~com\.st6\.wc\.migration\..*"/>
+    <Bug pattern="SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE"/>
+  </Match>
 </FindBugsFilter>
