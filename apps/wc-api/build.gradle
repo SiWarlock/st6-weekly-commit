@@ -54,8 +54,9 @@ subprojects { sp ->
 
   tasks.named('jacocoTestReport') {
     dependsOn tasks.named('test')
+    dependsOn tasks.named('classes') // explicit class-producer dep (robust under any task graph)
     classDirectories.setFrom(
-        files(classDirectories.files.collect { fileTree(dir: it, exclude: coverageExcludes) }))
+        files(sourceSets.main.output.classesDirs.collect { fileTree(dir: it, exclude: coverageExcludes) }))
     reports {
       xml.required = true
       html.required = true
@@ -65,8 +66,9 @@ subprojects { sp ->
   // JaCoCo >=80% per module (line + branch). Bound into `check` below.
   tasks.named('jacocoTestCoverageVerification') {
     dependsOn tasks.named('test')
+    dependsOn tasks.named('classes') // explicit class-producer dep (robust under any task graph)
     classDirectories.setFrom(
-        files(classDirectories.files.collect { fileTree(dir: it, exclude: coverageExcludes) }))
+        files(sourceSets.main.output.classesDirs.collect { fileTree(dir: it, exclude: coverageExcludes) }))
     violationRules {
       rule {
         limit {
