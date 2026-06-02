@@ -12,8 +12,24 @@ dependencies {
   implementation 'org.springframework.boot:spring-boot-starter-web'
   implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
+  // JPA runtime (task 1.5): Hibernate + Spring Data for the :shared entities/repos. Phase 2/3
+  // services need this at runtime anyway. NOTE: adding this activates DataSourceAutoConfiguration
+  // for full-context @SpringBootTest — the two DB-less skeleton boot tests opt out via a test-local
+  // spring.autoconfigure.exclude (they assert actuator/clock/profile, not persistence).
+  implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+
   compileOnly libs.lombok
   annotationProcessor libs.lombok
 
   testImplementation 'org.springframework.boot:spring-boot-starter-test'
+
+  // JPA entity round-trip/mapping tests (task 1.5): real PG16 via Testcontainers + Flyway V1-V3,
+  // ddl-auto=validate. testcontainers-bom 1.21.4 stays pinned NEWER than the spring-boot-dependencies
+  // default for Docker Engine 29 compatibility (LESSONS §5). Migration scripts resolve from :shared.
+  testImplementation platform('org.testcontainers:testcontainers-bom:1.21.4')
+  testImplementation 'org.flywaydb:flyway-core'
+  testImplementation 'org.flywaydb:flyway-database-postgresql'
+  testImplementation 'org.postgresql:postgresql'
+  testImplementation 'org.testcontainers:postgresql'
+  testImplementation 'org.testcontainers:junit-jupiter'
 }
