@@ -10,6 +10,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
+import org.flywaydb.core.api.MigrationVersion;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -39,6 +40,7 @@ class V2PartialUniqueIndexTest {
     Flyway.configure()
         .dataSource(PG.getJdbcUrl(), PG.getUsername(), PG.getPassword())
         .locations("classpath:db/migration")
+        .target(MigrationVersion.fromVersion("2")) // validate the cumulative V1+V2 state
         .load()
         .migrate();
     conn = DriverManager.getConnection(PG.getJdbcUrl(), PG.getUsername(), PG.getPassword());

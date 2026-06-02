@@ -32,6 +32,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.flywaydb.core.Flyway;
+import org.flywaydb.core.api.MigrationVersion;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -66,6 +67,7 @@ class V1CoreSchemaMigrationTest {
     Flyway.configure()
         .dataSource(PG.getJdbcUrl(), PG.getUsername(), PG.getPassword())
         .locations("classpath:db/migration")
+        .target(MigrationVersion.fromVersion("1")) // validate the V1 schema state specifically
         .load()
         .migrate();
     conn = DriverManager.getConnection(PG.getJdbcUrl(), PG.getUsername(), PG.getPassword());
