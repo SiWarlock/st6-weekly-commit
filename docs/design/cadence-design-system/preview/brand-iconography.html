@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css?v=3">
+<script src="../assets/icons.js?v=3"></script>
+<style>
+  html,body{margin:0}
+  body{background:var(--surface-app);padding:22px 24px}
+  .grid{display:grid;grid-template-columns:repeat(8,1fr);gap:8px}
+  .ic{display:flex;flex-direction:column;align-items:center;gap:6px;padding:11px 4px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);color:var(--ink-primary)}
+  .ic .nm{font-size:9px;font-family:var(--font-mono);color:var(--ink-muted);text-align:center;line-height:1.2}
+</style>
+</head>
+<body class="ds-scope">
+  <div class="grid" id="g"></div>
+  <script>
+    var names=["HiPencilAlt","HiLockClosed","HiClipboardCheck","HiCheckCircle","HiMinusCircle","HiOutlineEye","HiExclamationCircle","HiClock","HiCheck","HiX","HiXCircle","HiQuestionMarkCircle","HiExclamation","HiBan","HiArrowNarrowRight","HiAdjustments","HiSparkles","HiCog","HiPlusCircle","HiFlag","HiReply","HiChevronRight","HiChevronDown","HiSelector","HiFilter","HiChat","HiInformationCircle","HiRefresh","HiCalendar","HiExternalLink","HiSearch","HiPlus","HiTrash","HiDotsHorizontal","HiUserGroup","HiViewGrid"];
+    var g=document.getElementById('g');
+    names.forEach(function(n){var d=document.createElement('div');d.className='ic';d.innerHTML=window.wcIcon(n,{size:20})+'<span class="nm">'+n.replace('Hi','')+'</span>';g.appendChild(d);});
+  </script>
+</body>
+</html>

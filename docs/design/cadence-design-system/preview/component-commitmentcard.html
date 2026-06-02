@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css?v=3">
+<link rel="stylesheet" href="../components.css?v=3">
+<script src="../assets/icons.js?v=3"></script>
+<style>
+  html,body{margin:0}
+  body{background:var(--surface-app);padding:22px 26px}
+  .card{padding:14px 16px}
+  .hd{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+  .title{font-size:15px;font-weight:600;color:var(--ink-primary);margin:0}
+  .desc{font-size:13px;color:var(--ink-secondary);margin:5px 0 11px;line-height:1.45}
+  .chips{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-bottom:11px}
+  .bc{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-secondary);background:var(--surface-sunken);border:1px solid var(--border);border-radius:var(--radius-md);padding:7px 10px}
+  .bc .so{color:var(--ink-primary);font-weight:500}
+  .bc svg{color:var(--ink-muted);flex:none}
+  .bc .chg{margin-left:auto;color:var(--brand-400);font-size:12px;white-space:nowrap}
+  .menu{color:var(--ink-muted);display:flex;gap:8px}
+  .menu span{cursor:pointer}
+</style>
+</head>
+<body class="ds-scope">
+  <div class="card wc-card">
+    <div class="hd">
+      <h3 class="title">Ship workspace onboarding telemetry events</h3>
+      <div class="menu"><span data-icon="HiPencil" data-size="16"></span><span data-icon="HiTrash" data-size="16"></span></div>
+    </div>
+    <p class="desc">Instrument the first-locked-plan funnel and wire the activation dashboards.</p>
+    <div class="chips">
+      <span class="wc-pri p1">P1</span>
+      <span class="wc-worktype is-info"><span data-icon="HiSparkles"></span>Strategic</span>
+      <span class="wc-conf high"><span class="wc-conf-bars"><i class="wc-conf-seg"></i><i class="wc-conf-seg"></i><i class="wc-conf-seg"></i></span><span class="wc-conf-label">High</span></span>
+      <span class="wc-align aligned"><span class="wc-dot is-success"></span>Aligned</span>
+    </div>
+    <div class="bc">
+      <span data-icon="HiArrowNarrowRight" data-size="14" style="display:none"></span>
+      <span>Become the system of record</span>
+      <span data-icon="HiChevronRight" data-size="13"></span>
+      <span>Win customer adoption</span>
+      <span data-icon="HiChevronRight" data-size="13"></span>
+      <span class="so">SO-1.2 · Cut time-to-first-locked-plan &lt; 10 min</span>
+      <a class="chg" href="#">Change ›</a>
+    </div>
+  </div>
+  <script>document.querySelectorAll('[data-icon]').forEach(function(e){e.innerHTML=window.wcIcon(e.getAttribute('data-icon'),{size:+e.getAttribute('data-size')||13});});</script>
+</body>
+</html>

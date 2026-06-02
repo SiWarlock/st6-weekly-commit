@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css?v=3">
+<link rel="stylesheet" href="../components.css?v=3">
+<script src="../assets/icons.js?v=3"></script>
+<style>
+  html,body{margin:0}
+  body{background:var(--surface-app);padding:24px 26px}
+  .lab{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-muted);margin:0 0 10px}
+  .rowx{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+  .note{font-size:11px;color:var(--ink-muted);margin:0}
+</style>
+</head>
+<body class="ds-scope">
+  <p class="lab">Primary lifecycle actions — color by state</p>
+  <div class="rowx">
+    <button class="wc-btn wc-btn--primary"><span data-icon="HiLockClosed"></span>Lock plan</button>
+    <button class="wc-btn wc-btn--warning"><span data-icon="HiClipboardCheck"></span>Start reconciliation</button>
+    <button class="wc-btn wc-btn--success"><span data-icon="HiCheckCircle"></span>Close week</button>
+  </div>
+  <p class="lab">Secondary &amp; ghost</p>
+  <div class="rowx">
+    <button class="wc-btn wc-btn--secondary"><span data-icon="HiPlus"></span>Add unplanned work</button>
+    <button class="wc-btn wc-btn--ghost"><span data-icon="HiChat"></span>Comment</button>
+    <button class="wc-btn wc-btn--danger"><span data-icon="HiFlag"></span>Flag alignment</button>
+  </div>
+  <p class="lab">Disabled — gated by allowedActions, with tooltip</p>
+  <div class="rowx">
+    <button class="wc-btn is-disabled"><span data-icon="HiLockClosed"></span>Lock plan</button>
+    <span class="note">“1 of 2 commitments isn't linked to a Supporting Outcome.”</span>
+  </div>
+  <script>document.querySelectorAll('[data-icon]').forEach(function(e){e.innerHTML=window.wcIcon(e.getAttribute('data-icon'),{size:16});});</script>
+</body>
+</html>

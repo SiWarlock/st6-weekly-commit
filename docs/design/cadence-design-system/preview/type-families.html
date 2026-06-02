@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css?v=3">
+<style>
+  html,body{margin:0}
+  body{background:var(--surface-app);padding:24px 26px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+  .fam-name{font-size:13px;color:var(--ink-secondary);margin:0 0 4px}
+  .fam-stack{font-size:11px;font-family:var(--font-mono);color:var(--ink-muted);margin:0 0 12px}
+  .big{font-size:34px;letter-spacing:-0.02em;color:var(--ink-primary);line-height:1}
+  .big.mono{font-family:var(--font-mono);letter-spacing:0}
+  .weights{display:flex;gap:18px;margin-top:14px;align-items:baseline}
+  .weights span{font-size:18px}
+  .w4{font-weight:400}.w5{font-weight:500}.w6{font-weight:600}
+  .wlab{display:block;font-size:10px;font-family:var(--font-mono);color:var(--ink-muted);font-weight:400;margin-top:3px}
+</style>
+</head>
+<body class="ds-scope">
+  <div class="grid">
+    <div>
+      <p class="fam-name">Inter — UI &amp; body</p>
+      <p class="fam-stack">--font-sans</p>
+      <div class="big">Ag 0123</div>
+      <div class="weights">
+        <span class="w4">Regular<span class="wlab">400</span></span>
+        <span class="w5">Medium<span class="wlab">500</span></span>
+        <span class="w6">Semibold<span class="wlab">600</span></span>
+      </div>
+    </div>
+    <div>
+      <p class="fam-name">Mono — IDs, counts, P0/P1/P2</p>
+      <p class="fam-stack">--font-mono</p>
+      <div class="big mono">Ag 0123</div>
+      <div class="weights">
+        <span class="w4" style="font-family:var(--font-mono)">SO-2.3</span>
+        <span class="w5" style="font-family:var(--font-mono)">P0</span>
+        <span class="w6" style="font-family:var(--font-mono)">90%</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

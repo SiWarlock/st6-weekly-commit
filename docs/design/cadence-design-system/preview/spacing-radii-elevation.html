@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css?v=3">
+<style>
+  html,body{margin:0}
+  body{background:var(--surface-app);padding:24px 26px}
+  .lab{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-muted);margin:0 0 12px}
+  .radii{display:flex;gap:16px;margin-bottom:22px}
+  .r{display:flex;flex-direction:column;gap:7px;align-items:center}
+  .rbox{width:62px;height:46px;background:var(--surface-raised);border:1px solid var(--border-strong)}
+  .rname{font-size:10px;font-family:var(--font-mono);color:var(--ink-muted)}
+  .elev{display:flex;gap:16px}
+  .e{flex:1}
+  .ebox{height:54px;border-radius:var(--radius-lg);background:var(--surface);border:1px solid var(--border);margin-bottom:7px}
+  .ename{font-size:11px;color:var(--ink-secondary)}
+  .edesc{font-size:10px;color:var(--ink-muted)}
+</style>
+</head>
+<body class="ds-scope">
+  <p class="lab">Corner radii</p>
+  <div class="radii">
+    <div class="r"><div class="rbox" style="border-radius:var(--radius-sm)"></div><span class="rname">sm · 4</span></div>
+    <div class="r"><div class="rbox" style="border-radius:var(--radius-md)"></div><span class="rname">md · 6</span></div>
+    <div class="r"><div class="rbox" style="border-radius:var(--radius-lg)"></div><span class="rname">lg · 8</span></div>
+    <div class="r"><div class="rbox" style="border-radius:var(--radius-xl)"></div><span class="rname">xl · 12</span></div>
+    <div class="r"><div class="rbox" style="border-radius:var(--radius-full)"></div><span class="rname">full</span></div>
+  </div>
+  <p class="lab">Elevation — flat at rest; shadow only when floating</p>
+  <div class="elev">
+    <div class="e"><div class="ebox" style="box-shadow:inset 0 1px 0 var(--hairline-top)"></div><div class="ename">Card</div><div class="edesc">border + faint top highlight</div></div>
+    <div class="e"><div class="ebox" style="background:var(--surface-raised);box-shadow:var(--shadow-pop)"></div><div class="ename">Popover</div><div class="edesc">dropdown, menu, tooltip</div></div>
+    <div class="e"><div class="ebox" style="background:var(--surface-raised);box-shadow:var(--shadow-drawer)"></div><div class="ename">Drawer</div><div class="edesc">right slide-over</div></div>
+    <div class="e"><div class="ebox" style="background:var(--surface-raised);box-shadow:var(--shadow-modal)"></div><div class="ename">Modal</div><div class="edesc">dialog</div></div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css?v=3">
+<style>
+  html,body{margin:0}
+  body{background:var(--surface-app);padding:24px 26px}
+  .stack{display:flex;flex-direction:column;gap:10px}
+  .layer{display:flex;align-items:center;gap:14px}
+  .box{width:120px;height:44px;border-radius:var(--radius-md);border:1px solid var(--border);flex:none}
+  .desc{font-size:12px;color:var(--ink-secondary)}
+  .desc b{color:var(--ink-primary);font-weight:600}
+  .desc .mono{font-family:var(--font-mono);font-size:11px;color:var(--ink-muted);margin-left:6px}
+  .inkrow{display:flex;gap:10px;margin-top:18px}
+  .ink{flex:1;border:1px solid var(--border);border-radius:var(--radius-md);padding:10px 12px;background:var(--surface)}
+  .ink .t{font-weight:600}.ink .s{font-size:12px;margin-top:3px}
+</style>
+</head>
+<body class="ds-scope">
+  <div class="stack">
+    <div class="layer"><div class="box" style="background:var(--surface-app)"></div><span class="desc"><b>App</b> background<span class="mono">#08090A</span></span></div>
+    <div class="layer"><div class="box" style="background:var(--surface)"></div><span class="desc"><b>Surface</b> · cards, table<span class="mono">#0F1011</span></span></div>
+    <div class="layer"><div class="box" style="background:var(--surface-raised)"></div><span class="desc"><b>Raised</b> · drawer, modal, dropdown<span class="mono">#18191B</span></span></div>
+    <div class="layer"><div class="box" style="background:var(--surface-hover)"></div><span class="desc"><b>Hover</b> fill<span class="mono">#1F2023</span></span></div>
+  </div>
+  <div class="inkrow">
+    <div class="ink"><div class="t" style="color:var(--ink-primary)">Primary ink</div><div class="s" style="color:var(--ink-primary)">Titles &amp; data</div></div>
+    <div class="ink"><div class="t" style="color:var(--ink-secondary)">Secondary</div><div class="s" style="color:var(--ink-secondary)">Labels, meta</div></div>
+    <div class="ink"><div class="t" style="color:var(--ink-muted)">Muted</div><div class="s" style="color:var(--ink-muted)">Placeholder, disabled</div></div>
+  </div>
+</body>
+</html>

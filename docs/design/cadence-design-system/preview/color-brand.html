@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css?v=3">
+<style>
+  html,body{margin:0}
+  body{background:var(--surface-app);padding:24px 26px}
+  .lead{font-size:12px;color:var(--ink-secondary);margin:0 0 16px;max-width:60ch}
+  .lead b{color:var(--brand-400);font-weight:600}
+  .swatches{display:flex;gap:14px;flex-wrap:wrap}
+  .chip{display:flex;flex-direction:column;gap:7px;align-items:flex-start}
+  .box{width:96px;height:52px;border-radius:var(--radius-md);border:1px solid var(--border)}
+  .meta{font-size:10px;font-family:var(--font-mono);color:var(--ink-muted)}
+  .name{font-size:12px;color:var(--ink-primary)}
+  .uses{margin-top:18px;display:flex;gap:10px;align-items:center}
+  .btn{height:32px;padding:0 14px;border-radius:var(--radius-lg);background:var(--brand-600);color:#fff;font-size:13px;font-weight:500;display:inline-flex;align-items:center;border:0}
+  .link{color:var(--brand-400);font-size:13px;text-decoration:none}
+  .ringdemo{height:32px;padding:0 14px;border-radius:var(--radius-lg);background:var(--surface-raised);color:var(--ink-primary);font-size:13px;display:inline-flex;align-items:center;border:1px solid var(--border-strong);box-shadow:var(--focus-ring)}
+</style>
+</head>
+<body class="ds-scope">
+  <p class="lead"><b>Indigo is the only brand accent</b> — interactive affordances only (primary buttons, active nav, links, focus ring). It never carries status meaning.</p>
+  <div class="swatches">
+    <div class="chip"><div class="box" style="background:var(--brand-600)"></div><span class="name">Brand 600</span><span class="meta">#5E6AD2</span></div>
+    <div class="chip"><div class="box" style="background:var(--brand-500)"></div><span class="name">Brand 500 · hover</span><span class="meta">#6E79DE</span></div>
+    <div class="chip"><div class="box" style="background:var(--brand-400)"></div><span class="name">Brand 400 · link</span><span class="meta">#828FFF</span></div>
+    <div class="chip"><div class="box" style="background:var(--brand-soft);border-color:var(--tone-accent-border)"></div><span class="name">Brand soft</span><span class="meta">15% fill</span></div>
+  </div>
+  <div class="uses">
+    <button class="btn">Lock plan</button>
+    <span class="ringdemo">Focus ring</span>
+    <a class="link" href="#">View in command center →</a>
+  </div>
+</body>
+</html>

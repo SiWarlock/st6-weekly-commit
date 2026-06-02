@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css?v=3">
+<link rel="stylesheet" href="../components.css?v=3">
+<script src="../assets/icons.js?v=3"></script>
+<style>
+  html,body{margin:0}
+  body{background:var(--surface-app);padding:22px 26px}
+  .lab{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-muted);margin:0 0 9px}
+  .rowx{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+  .spin{width:13px;height:13px;border:2px solid var(--tone-info-border);border-top-color:var(--tone-info-fg);border-radius:50%;animation:s .7s linear infinite}
+  @keyframes s{to{transform:rotate(360deg)}}
+  .fail{display:flex;align-items:flex-start;gap:9px;border:1px solid var(--tone-warning-border);background:var(--tone-warning-bg);border-radius:var(--radius-lg);padding:10px 12px}
+  .fail .ic{color:var(--tone-warning-fg);margin-top:1px}
+  .fail .t{font-size:12px;color:var(--ink-primary);font-weight:500}
+  .fail .m{font-size:11px;color:var(--ink-secondary);margin:2px 0 0}
+  .fail .meta{font-size:10px;font-family:var(--font-mono);color:var(--ink-muted);margin-top:4px}
+  .retry{margin-left:auto}
+</style>
+</head>
+<body class="ds-scope">
+  <p class="lab">Outlook sync — SyncStatus (failure is caution, never critical)</p>
+  <div class="rowx">
+    <span class="wc-badge is-neutral"><span data-icon="HiClock"></span>Queued</span>
+    <span class="wc-badge is-info"><span class="spin"></span>Syncing…</span>
+    <span class="wc-badge is-success"><span data-icon="HiCalendar"></span>Calendar synced</span>
+    <span class="wc-badge is-warning"><span data-icon="HiExclamationCircle"></span>Sync failed</span>
+    <span class="wc-badge is-info"><span data-icon="HiRefresh"></span>Retry queued</span>
+  </div>
+  <p class="lab">Failed sync — non-blocking warning + retry</p>
+  <div class="fail">
+    <span class="ic" data-icon="HiExclamationCircle" data-size="18"></span>
+    <div>
+      <div class="t">Calendar sync failed</div>
+      <p class="m">Calendar sync failed; you can retry. This does not affect your locked plan.</p>
+      <div class="meta">Attempts: 1 · Ref: 0af7…319c</div>
+    </div>
+    <button class="wc-btn wc-btn--secondary wc-btn--sm retry"><span data-icon="HiRefresh"></span>Retry sync</button>
+  </div>
+  <script>document.querySelectorAll('[data-icon]').forEach(function(e){e.innerHTML=window.wcIcon(e.getAttribute('data-icon'),{size:+e.getAttribute('data-size')||14});});</script>
+</body>
+</html>

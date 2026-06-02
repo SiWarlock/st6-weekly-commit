@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css?v=3">
+<link rel="stylesheet" href="../components.css?v=3">
+<style>
+  html,body{margin:0}
+  body{background:var(--surface-app);padding:24px 26px}
+  .lab{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-muted);margin:0 0 12px}
+  .row{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+  .person{display:flex;align-items:center;gap:9px}
+  .person .nm{font-size:13px;color:var(--ink-primary)}
+  .person .rl{font-size:11px;color:var(--ink-muted)}
+  .big{width:34px;height:34px;font-size:13px}
+</style>
+</head>
+<body class="ds-scope">
+  <p class="lab">Avatars — initials on tinted disc (no photos)</p>
+  <div class="row">
+    <div class="person"><span class="wc-avatar" style="background:var(--brand-soft);color:var(--brand-400)">DO</span><div><div class="nm">Dana Okafor</div><div class="rl">Manager · also IC</div></div></div>
+    <div class="person"><span class="wc-avatar" style="background:var(--tone-info-bg);color:var(--tone-info-fg)">PR</span><div><div class="nm">Priya Raman</div><div class="rl">IC</div></div></div>
+    <div class="person"><span class="wc-avatar" style="background:var(--tone-success-bg);color:var(--tone-success-fg)">TN</span><div><div class="nm">Tomas Novak</div><div class="rl">IC</div></div></div>
+    <div class="person"><span class="wc-avatar" style="background:var(--tone-accent-bg);color:var(--tone-accent-fg)">GL</span><div><div class="nm">Grace Liu</div><div class="rl">IC</div></div></div>
+  </div>
+  <p class="lab" style="margin-top:22px">Sizes · tints derived deterministically from name</p>
+  <div class="row">
+    <span class="wc-avatar big" style="background:var(--tone-warning-bg);color:var(--tone-warning-fg)">MB</span>
+    <span class="wc-avatar" style="background:var(--tone-failure-bg);color:var(--tone-failure-fg)">AK</span>
+    <span class="wc-avatar" style="width:20px;height:20px;font-size:9px;background:var(--tone-neutral-bg);color:var(--tone-neutral-fg)">SC</span>
+  </div>
+</body>
+</html>
