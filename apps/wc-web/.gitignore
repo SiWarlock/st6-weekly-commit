@@ -1,0 +1,5 @@
+# Build + tooling artifacts (area-local).
+dist
+coverage
+*.local
+.vite

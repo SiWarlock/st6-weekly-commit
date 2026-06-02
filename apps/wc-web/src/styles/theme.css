@@ -1,0 +1,257 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* =========================================================================
+   Cadence design tokens — the ONE permitted stylesheet (approach A token layer).
+   Source of truth: docs/design/cadence-design-system/colors_and_type.css.
+   Tailwind theme + the Flowbite custom theme both resolve through these vars,
+   so a theme switch is a single [data-theme] flip — no rebuild, no `dark:`.
+
+   Dark is the DEFAULT (declared on :root so it holds before JS runs).
+   [data-theme="light"] re-contrasts foundation surfaces/ink/borders + status
+   tones for AA on light; the indigo brand (#5E6AD2) is theme-stable.
+   ========================================================================= */
+
+:root,
+[data-theme="dark"] {
+  /* ---- Neutral ramp (Linear dark) ---- */
+  --n-0: #08090a;
+  --n-50: #0c0d0f;
+  --n-100: #0f1011;
+  --n-150: #141517;
+  --n-200: #18191b;
+  --n-250: #1f2023;
+  --n-300: #26282c;
+  --n-400: #3a3d44;
+  --n-500: #62666d;
+  --n-600: #8a8f98;
+  --n-700: #b4b8bd;
+  --n-800: #d7d9dd;
+  --n-900: #f7f8f8;
+
+  /* ---- Surfaces ---- */
+  --surface-app: var(--n-0);
+  --surface: var(--n-100);
+  --surface-raised: var(--n-200);
+  --surface-sunken: var(--n-50);
+  --surface-hover: var(--n-250);
+
+  /* ---- Ink ---- */
+  --ink-primary: var(--n-900);
+  --ink-secondary: var(--n-600);
+  --ink-muted: var(--n-500);
+
+  /* ---- Borders ---- */
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.13);
+  --border-solid: #1e1f22;
+  --hairline-top: rgba(255, 255, 255, 0.05);
+
+  /* ---- Brand (interactive-only, theme-stable indigo) ---- */
+  --brand-soft: rgba(94, 106, 210, 0.15);
+  --brand-600: #5e6ad2;
+  --brand-500: #6e79de;
+  --brand-400: #828fff;
+  --brand-ink: #ffffff;
+  --brand-ring: rgba(94, 106, 210, 0.55);
+
+  /* ---- Six status tones ---- */
+  --tone-neutral-fg: #b4b8bd;
+  --tone-neutral-bg: rgba(255, 255, 255, 0.06);
+  --tone-neutral-border: rgba(255, 255, 255, 0.12);
+  --tone-neutral-solid: #8a8f98;
+
+  --tone-info-fg: #6fb6ff;
+  --tone-info-bg: rgba(78, 167, 252, 0.14);
+  --tone-info-border: rgba(78, 167, 252, 0.3);
+  --tone-info-solid: #4ea7fc;
+
+  --tone-success-fg: #5fd49b;
+  --tone-success-bg: rgba(76, 183, 130, 0.15);
+  --tone-success-border: rgba(76, 183, 130, 0.32);
+  --tone-success-solid: #4cb782;
+
+  --tone-warning-fg: #f2c94c;
+  --tone-warning-bg: rgba(242, 201, 76, 0.14);
+  --tone-warning-border: rgba(242, 201, 76, 0.3);
+  --tone-warning-solid: #e2b23c;
+
+  --tone-failure-fg: #f4827f;
+  --tone-failure-bg: rgba(235, 87, 87, 0.15);
+  --tone-failure-border: rgba(235, 87, 87, 0.34);
+  --tone-failure-solid: #eb5757;
+
+  --tone-accent-fg: #c9a6ff;
+  --tone-accent-bg: rgba(167, 124, 255, 0.16);
+  --tone-accent-border: rgba(167, 124, 255, 0.32);
+  --tone-accent-solid: #a77cff;
+
+  --dot-dispute: #f2555a;
+
+  /* ---- Heatmap volume fill (neutral load encoding) ---- */
+  --vol-gap: transparent;
+  --vol-light: rgba(255, 255, 255, 0.03);
+  --vol-normal: rgba(255, 255, 255, 0.06);
+  --vol-heavy: rgba(255, 255, 255, 0.1);
+  --vol-gap-border: rgba(255, 255, 255, 0.14);
+  --vol-heavy-border: rgba(242, 201, 76, 0.4);
+
+  /* ---- Typography ---- */
+  --font-sans: "Inter", "Inter Variable", ui-sans-serif, system-ui,
+    -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", "JetBrains Mono",
+    "Roboto Mono", Menlo, Consolas, monospace;
+
+  --text-display: 1.5rem;
+  --text-h2: 1.25rem;
+  --text-h3: 1rem;
+  --text-body: 0.875rem;
+  --text-label: 0.75rem;
+  --text-meta: 0.75rem;
+  --text-mono: 0.75rem;
+
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --tracking-label: 0.05em;
+  --tracking-tight: -0.014em;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  /* ---- Spacing (8px soft grid, compact-first) ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  --row-height: 44px;
+  --cell-min: 88px;
+  --reading-col: 1040px;
+  --content-max: 1440px;
+
+  /* ---- Radii ---- */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 9999px;
+
+  /* ---- Elevation ---- */
+  --shadow-none: none;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --shadow-drawer: -16px 0 40px rgba(0, 0, 0, 0.5);
+  --shadow-modal: 0 24px 60px rgba(0, 0, 0, 0.62);
+  --focus-ring: 0 0 0 3px var(--brand-ring);
+
+  /* ---- Motion ---- */
+  --dur-fast: 120ms;
+  --dur-base: 150ms;
+  --dur-panel: 200ms;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* =========================================================================
+   LIGHT THEME — net-new (ST.2). Re-contrasts the foundation from the spec's
+   superseded light palette (white / gray-50 / gray-900 / gray-200) and tunes
+   the six status tones for AA on light surfaces. The indigo brand is retained
+   (NOT reverted to blue-600). Formal AA verification lands in ST.7.
+   ========================================================================= */
+[data-theme="light"] {
+  /* Foundation */
+  --surface-app: #f7f8f9;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-sunken: #f1f2f4;
+  --surface-hover: #f0f1f3;
+
+  --ink-primary: #1b1c1f;
+  --ink-secondary: #5a5f6a;
+  --ink-muted: #8a8f98;
+
+  --border: rgba(15, 17, 20, 0.1);
+  --border-strong: rgba(15, 17, 20, 0.16);
+  --border-solid: #e3e5e8;
+  --hairline-top: rgba(15, 17, 20, 0.04);
+
+  /* Brand stays indigo; only the bright-on-dark accents darken for light AA */
+  --brand-soft: rgba(94, 106, 210, 0.1);
+  --brand-500: #4f59bd;
+  --brand-400: #4a54c4;
+
+  /* Status tones — darker fg for AA on light fills */
+  --tone-neutral-fg: #5a5f6a;
+  --tone-neutral-bg: rgba(15, 17, 20, 0.05);
+  --tone-neutral-border: rgba(15, 17, 20, 0.12);
+  --tone-neutral-solid: #6b7280;
+
+  --tone-info-fg: #1b6fc4;
+  --tone-info-bg: rgba(47, 134, 224, 0.12);
+  --tone-info-border: rgba(47, 134, 224, 0.4);
+  --tone-info-solid: #2f86e0;
+
+  --tone-success-fg: #1f7a4d;
+  --tone-success-bg: rgba(46, 158, 104, 0.14);
+  --tone-success-border: rgba(46, 158, 104, 0.4);
+  --tone-success-solid: #2e9e68;
+
+  --tone-warning-fg: #8a6d1a;
+  --tone-warning-bg: rgba(201, 154, 40, 0.18);
+  --tone-warning-border: rgba(201, 154, 40, 0.45);
+  --tone-warning-solid: #c99a28;
+
+  --tone-failure-fg: #c0392b;
+  --tone-failure-bg: rgba(215, 69, 59, 0.12);
+  --tone-failure-border: rgba(215, 69, 59, 0.4);
+  --tone-failure-solid: #d7453b;
+
+  --tone-accent-fg: #6d3fb5;
+  --tone-accent-bg: rgba(138, 83, 224, 0.14);
+  --tone-accent-border: rgba(138, 83, 224, 0.4);
+  --tone-accent-solid: #8a53e0;
+
+  --dot-dispute: #dc2f37;
+
+  /* Heatmap volume fill — dark-alpha on light surfaces */
+  --vol-light: rgba(15, 17, 20, 0.03);
+  --vol-normal: rgba(15, 17, 20, 0.05);
+  --vol-heavy: rgba(15, 17, 20, 0.08);
+  --vol-gap-border: rgba(15, 17, 20, 0.14);
+  --vol-heavy-border: rgba(201, 154, 40, 0.45);
+
+  /* Softer light-surface elevation */
+  --shadow-card: 0 1px 2px rgba(15, 17, 20, 0.08);
+  --shadow-pop: 0 8px 24px rgba(15, 17, 20, 0.12), 0 0 0 1px rgba(15, 17, 20, 0.06);
+  --shadow-drawer: -16px 0 40px rgba(15, 17, 20, 0.14);
+  --shadow-modal: 0 24px 60px rgba(15, 17, 20, 0.18);
+}
+
+/* Page canvas inherits the active theme (var-driven, no component classes). */
+body {
+  margin: 0;
+  background: var(--surface-app);
+  color: var(--ink-primary);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Respect reduced-motion: drop transitions/animations app-wide (Cadence motion
+   rule — "no celebratory animation; respect prefers-reduced-motion"). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

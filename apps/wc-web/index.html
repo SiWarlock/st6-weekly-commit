@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Weekly Commit</title>
+    <script>
+      // Pre-paint theme resolver — mirrors useThemePreference's order
+      // (persisted → prefers-color-scheme → dark) so light-preference users
+      // don't flash the dark default before React mounts (FOUC guard).
+      (function () {
+        try {
+          var stored = localStorage.getItem('wc-theme');
+          var theme =
+            stored === 'dark' || stored === 'light'
+              ? stored
+              : window.matchMedia('(prefers-color-scheme: light)').matches
+                ? 'light'
+                : 'dark';
+          document.documentElement.setAttribute('data-theme', theme);
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/standalone/main.tsx"></script>
+  </body>
+</html>
