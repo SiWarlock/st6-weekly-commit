@@ -1,3 +1,11 @@
 claude-code-tdd-agent-crew-scaffold
 scaffolding/
 .DS_Store
+
+# JS / Yarn (Berry, node-modules linker via Corepack — no committed release binary) / Nx
+node_modules/
+.yarn/
+.pnp.*
+.nx/
+yarn-error.log
+# NOTE: yarn.lock is intentionally NOT ignored — it is the reproducible-install contract.
