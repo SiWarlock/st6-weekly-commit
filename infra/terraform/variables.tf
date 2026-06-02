@@ -43,3 +43,68 @@ variable "env" {
     error_message = "env must be one of: \"local\", \"aws\"."
   }
 }
+
+# --- 12.2: network + compute (VPC / EKS) ------------------------------------
+
+variable "vpc_cidr" {
+  description = "CIDR block for the VPC. Subnets are carved from this (private /20, public /24 per AZ)."
+  type        = string
+  default     = "10.0.0.0/16"
+}
+
+variable "az_count" {
+  description = "Number of Availability Zones to span (≥2 for multi-AZ subnets + ALB)."
+  type        = number
+  default     = 2
+
+  validation {
+    condition     = var.az_count >= 2
+    error_message = "az_count must be >= 2 (multi-AZ public + private subnets)."
+  }
+}
+
+variable "eks_cluster_version" {
+  description = "EKS/Kubernetes control-plane + node-group minor version (e.g. \"1.33\"). Pinned via variable; the true list of supported minors is resolved out-of-band (HITL)."
+  type        = string
+  default     = "1.33"
+
+  validation {
+    condition     = can(regex("^1\\.[0-9]{2}$", var.eks_cluster_version))
+    error_message = "eks_cluster_version must be a 1.NN Kubernetes minor (e.g. \"1.33\")."
+  }
+}
+
+variable "node_instance_types" {
+  description = "Instance types for the single managed node group (sized for api + worker + CronJob + migration Job, REQ-O-013)."
+  type        = list(string)
+  default     = ["t3.large"]
+}
+
+variable "node_min_size" {
+  description = "Managed node group minimum size (thin, no autoscaler — RISK-009)."
+  type        = number
+  default     = 1
+}
+
+variable "node_desired_size" {
+  description = "Managed node group desired size."
+  type        = number
+  default     = 2
+
+  validation {
+    condition     = var.node_desired_size >= 1
+    error_message = "node_desired_size must be >= 1 (a zero-node group cannot run the workloads)."
+  }
+}
+
+variable "node_max_size" {
+  description = "Managed node group maximum size (thin headroom — RISK-009)."
+  type        = number
+  default     = 3
+}
+
+variable "alb_controller_chart_version" {
+  description = "Pinned aws-load-balancer-controller Helm chart version (eks-charts repo). Verified against the live chart index at author time."
+  type        = string
+  default     = "3.3.0"
+}
