@@ -335,6 +335,7 @@ Canonical home for every typed model that is a **cross-doc invariant** (mirrored
 | Enum | Values |
 |---|---|
 | `PlanState` | `DRAFT`, `LOCKED`, `RECONCILING`, `RECONCILED` |
+| `RoleType` | `IC`, `MANAGER` (backs `Employee.role`; appears on the identity/principal DTO) |
 | `CommitmentKind` | `PLANNED`, `UNPLANNED` |
 | `Priority` | `P0`, `P1`, `P2` |
 | `WorkType` | `STRATEGIC`, `MAINTENANCE`, `BLOCKER`, `UNPLANNED` |
@@ -349,7 +350,9 @@ Canonical home for every typed model that is a **cross-doc invariant** (mirrored
 | `EventKind` | `IC_PLANNING`, `IC_RECONCILIATION`, `MANAGER_REVIEW_BLOCK` |
 | `SyncStatus` | `PENDING_PUBLISH`, `QUEUED`, `SYNCING`, `SYNCED`, `FAILED`, `RETRY_REQUESTED` |
 | `RiskBadge` | `MISALIGNED`, `NEEDS_REVIEW`, `BLOCKED`, `CARRY_FORWARD`, `UNREVIEWED`, `OVERDUE_REVIEW` |
-| `AllowedAction` | `LOCK`, `START_RECONCILIATION`, `CLOSE_RECONCILIATION`, `ADD_UNPLANNED`, `CARRY_FORWARD`, `MARK_REVIEWED`, `OPEN_DISPUTE`, `RESPOND_DISPUTE`, `RESOLVE_DISPUTE`, `COMMENT`, `RETRY_SYNC` |
+| `AllowedAction` | `LOCK`, `START_RECONCILIATION`, `CLOSE_RECONCILIATION`, `ADD_UNPLANNED`, `CARRY_FORWARD`, `MARK_REVIEWED`, `OPEN_DISPUTE`, `RESPOND_DISPUTE`, `RESOLVE_DISPUTE`, `COMMENT`, `RETRY_SYNC` — **computed DTO-layer vocabulary** (the `allowedActions[]` field, derived per actor + row state below), **not** a persisted `shared/enums/` member; lands with the DTO layer (Phase 3) |
+
+> **Enum-vocabulary cross-doc invariant (recorded with task 0.3, 2026-06-02).** The 15 persisted/wire enums above plus `RoleType` are the **16 enums** in `shared/src/main/java/com/st6/wc/enums/` (Appendix C.2), pinned exactly by the `EnumVocabularyTest` parameterized value-set test (REQ-D-010 — the executable mirror of the `VARCHAR`+`CHECK` columns). `RoleType` was added to this table during 0.3 (it had been omitted). `AllowedAction` is the lone non-`enums/` entry — a computed DTO field, not a persisted enum. See the `apps/wc-api/CLAUDE.md` cross-doc-invariants table.
 
 **`allowedActions[]` semantics (authoritative vocabulary; computed per current actor + row state):**
 
@@ -713,9 +716,13 @@ infra/
   terraform/             # AWS IaC (C.6)
   k8s/                   # EKS manifests (C.7)
 docker-compose.yml       # PostgreSQL + full stack; profile-switched async transport (§13)
-nx.json  package.json    # Yarn Workspaces + Nx root (assessment-light)
-settings.gradle  build.gradle  gradle.properties   # Gradle multi-module root (C.2)
+nx.json  package.json    # Yarn Workspaces (apps/*) + Nx root (assessment-light)
+.yarnrc.yml  .nvmrc  yarn.lock   # Yarn Berry (Corepack-pinned) + Node 20 pin + lockfile (task 0.1)
+scripts/verify-workspace.sh      # re-runnable JS-workspace verification gates (reused by 0.8 CI)
+settings.gradle  build.gradle  gradle.properties   # Gradle multi-module root (C.2, task 0.2)
 ```
+
+> **Realized-tree reconciliation (task 0.1, 2026-06-02).** The monorepo-root slice added `.yarnrc.yml` (`nodeLinker: node-modules`, telemetry off), `.nvmrc`, `scripts/verify-workspace.sh`, and a committed `yarn.lock` — none of which were enumerated in the original C.1 sketch. `apps/wc-web` and `apps/wc-e2e` carry minimal `package.json` stubs (fleshed out by C.4 / the e2e task) so Nx lists them as package-based projects; `apps/.gitkeep` was therefore **not** created (the stubs make `apps/` non-empty). The Gradle-only `apps/wc-api` has no `package.json` and is correctly skipped by the `apps/*` workspace glob. The root Gradle composite (`settings.gradle`/`build.gradle`/`gradle.properties`) + `docker-compose.yml` are scaffolded by tasks 0.2 / 0.7, not 0.1.
 
 ### C.2 — `apps/wc-api` Gradle multi-module
 
@@ -799,6 +806,12 @@ apps/wc-api/
                                               #   IDOR matrix, projection deltas, generation idempotency, security
   worker/   # → C.3
 ```
+
+> **Realized-tree reconciliation (task 0.2, 2026-06-02).** The Gradle multi-module skeleton added, beyond the C.2/C.3 sketch: a **repo-root Gradle composite** (`settings.gradle` `includeBuild('apps/wc-api')` + aggregate `check`/`build`; root `gradle.properties`) so `./gradlew check` runs from the repo root *and* from `apps/wc-api` independently; **dual Gradle wrappers** (repo-root + `apps/wc-api`, Gradle **8.10.2** final release, pinned with `distributionSha256Sum`); `apps/wc-api/gradle/libs.versions.toml` (version catalog; Spring Boot **3.3.5** pinned but the plugin is **not applied** until 0.4/0.5); `apps/wc-api/lombok.config` (`addLombokGeneratedAnnotation=true`); `apps/wc-api/config/spotbugs/exclude.xml`; the `org.gradle.toolchains.foojay-resolver-convention` settings plugin (toolchain resolved via foojay + `JAVA_HOME`, **no committed machine path** — see `docs/runbooks/jdk21-toolchain-setup.md`). Gate wiring per module: Spotless (google-java-format), SpotBugs (effort MAX), JaCoCo ≥80% **line+branch**, plus a `forbidLombokData` task (mechanical no-`@Data`) and a `checkModuleBoundaries` task proving the REQ-O-016 `shared←api`/`shared←worker` boundary — all bound into `check`. One throwaway `BuildSkeletonMarker` (+test) per module exercises the coverage gate on the skeleton and is replaced by real typed code in 0.3/0.4/0.5. The backend gate-wiring recipe is banked as `apps/wc-api/LESSONS.md` §1.
+
+> **Realized-tree reconciliation (task 0.3, 2026-06-02).** Implementing the `:shared` enum/common/config layer surfaced: (1) `:shared` now carries **Spring** (`spring-boot-dependencies` BOM + `spring-context` main; `spring-boot-starter-test` test) to host `ClockConfig` as a `@Configuration @Bean Clock` — consistent with `:shared`'s Phase-1 destiny (Spring Data JPA repos live here per C.2). (2) **`ClockConfig` is in `:shared`** `com.st6.wc.config` (cross-cutting: consumed by `:api` SLA/derivation + `:worker` transitions) — task 1.1's `:api` placement was the outlier and is superseded. (3) The two base superclasses use **composition**: `PersistableUuidEntity extends AbstractAuditingEntity`, so a concrete entity gets UUID PK + `@Version` + the four audit columns from a single `@MappedSuperclass` chain — **Phase 1 entities `extends PersistableUuidEntity`**. (4) `OrgTimeConfig` is a plain POJO (America/Chicago default + Mon–Sun week resolver). **Production-wiring TODO (0.4/0.5):** `WcApiApplication`/`WcSyncWorkerApplication` must component-scan/import `com.st6.wc.config.ClockConfig` so the `Clock` bean is in the production context.
+
+> **Realized-tree reconciliation (bundle 0.4+0.5, 2026-06-02).** The two bootable apps landed: `:api`/`:worker` now apply the **Spring Boot Gradle plugin** (catalog alias + `spring-boot-dependencies` BOM; `:shared` stays a plain library) with `spring-boot-starter-web` + `-actuator` (+ `-test`). **Both apps expose `/actuator/health/{liveness,readiness}`** via `management.endpoint.health.probes.enabled=true` + exposure (E24/§15). The **`ORG_TIMEZONE` fail-safe** (D.2/D.6) is realized as `:api` `com.st6.wc.config.OrgTimeBindingConfig.resolveZone(String)` (static, context-free, unit-tested; `application.yml` uses `app.org.timezone: ${ORG_TIMEZONE:}` blank-passthrough so the resolver is the single source of truth) — **the D.4 CronJob + D.5 Migration Job must reuse `resolveZone`, not duplicate it.** The worker wires the sibling-package `ClockConfig` via `com.st6.wc.worker.config.WorkerSharedConfig` (`@Import` — `ClockConfig` is outside the worker's component-scan root). JaCoCo excludes `**/*Application.class` (bootstrap-only). Profile YAMLs per C.2 (`{base,local,demo,prod,flyway-migrate}`) / C.3 (`{base,local,demo,prod}`); `spring.flyway.enabled=false` everywhere except the `:api` `flyway-migrate` profile. `verify-gradle.sh` gate 6 asserts `:api`/`:worker` bootJars are distinct artifacts (REQ-O-014). The worker carries `starter-web` purely for the probe server (no controllers, D.3). Pattern banked as `apps/wc-api/LESSONS.md` §4.
 
 ### C.3 — `apps/wc-api/worker` (`wc-sync-worker` deployable)
 

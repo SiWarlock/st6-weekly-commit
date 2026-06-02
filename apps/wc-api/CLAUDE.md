@@ -68,23 +68,26 @@ Don't paste these sections into the prompt. Grep the file:section, read only wha
 
 ## Standard commands
 
-```bash
-# Install deps (run once; re-run when the manifest changes)
-./gradlew build -x test
+> **Run backend Gradle commands from `apps/wc-api/`** (or via the repo-root composite). The repo-root build only exposes the **aggregate** `check`/`build`; per-task targets (`compileJava`/`spotbugsMain`/`spotlessCheck`/`test`) live in the `apps/wc-api` build. See LESSONS §6.
 
+```bash
+# (from apps/wc-api/)
 # Run the dev server (if applicable)
 ./gradlew :api:bootRun
 
 # Tests
 ./gradlew test
 
-# Quality
+# Quality (per-task)
 ./gradlew spotbugsMain
 ./gradlew spotlessCheck
 ./gradlew compileJava
 
-# Preflight (use before saying "done" with a feature)
-./gradlew spotbugsMain && ./gradlew compileJava && ./gradlew test
+# Preflight / the real gate (use before saying "done" — this is also the §13 CI gate):
+# runs Spotless + SpotBugs + JaCoCo ≥80%/module verification + forbidLombokData
+# + checkModuleBoundaries + all tests, per module. NOT `build -x test` (jacoco
+# verification is bound to check and needs tests to run).
+./gradlew check
 ```
 
 ## TDD protocol
@@ -116,6 +119,10 @@ Several typed models in this codebase are **contracts** mirrored in `ARCHITECTUR
 
 | Model | `ARCHITECTURE.md` section | Notes |
 |---|---|---|
+| Enum vocabulary (16 enums in `shared/enums/`) | Appendix A / Appendix B.1 | Constant sets mirror Appendix B.1 **exactly** (REQ-D-010 — the executable mirror of the `VARCHAR`+`CHECK` columns). Pinned by `EnumVocabularyTest` (parameterized value-set + the 3 drift-trap negatives: no `ReviewStatus.OVERDUE`, `CommentTargetType={PLAN,COMMITMENT}`, `SyncRelatedType=MANAGER_REVIEW_WEEK`). `RoleType` is in `enums/`; `AllowedAction` is computed DTO vocab (Phase 3), not an `enums/` member. Adding/removing/renaming a constant requires a paired B.1 edit. (origin: 0.3) |
+| Core schema (`V1__core_schema.sql`, 12 tables) | §4 / Appendix A | Physical encoding of the 12 Appendix-A core models. `VARCHAR`+`CHECK` status columns mirror the enum vocabulary exactly — pinned by the `enum↔CHECK` test (`V1CoreSchemaMigrationTest`, parses `pg_get_constraintdef` over all 15 status columns). Carries the 4 deltas (manager_alignment_note present, progress_status absent, comment flat `{PLAN,COMMITMENT}`, sync week_start_date + MANAGER_REVIEW_WEEK), `version bigint` `@Version` on the 5 mutable tables, `unique(employee_id,week_start_date)`. **Binding source = §4/Appendix A; `docs/planning/DATA_MODEL.md` is superseded (stale).** A column/constraint change pairs a §4 + Appendix A edit. (origin: 1.2) |
+| Partial unique indexes (`V2__partial_unique_indexes.sql`) | §4 / §6 / §3 / §10 / Appendix A | The 3 partial uniques backing the single-row invariants (safety-relevant): `uq_active_manager_per_report` (single active manager, §6), `uq_one_unresolved_dispute_per_commitment` (one unresolved dispute, safety rule #6), `uq_one_review_block_per_manager_week` (one review-block/manager/week, §10). Each tested firing (23505) + non-firing/partial-scope on PG16. Distinct from the V1 full sync unique. A constraint-clause change pairs a §4 + Appendix A edit. (origin: 1.3) |
+| Manager projections (`V3__projection_tables.sql`) | §9 / Appendix A | The 2 synchronous read-model tables — `manager_plan_summary` (unique(manager,employee,week)) + `manager_heatmap_cell` (unique(manager,employee,week,DO)), each with the 7 count columns + `updated_at` (read models: **no audit quartet, no `@Version`** — recomputed wholesale by the ProjectionService). `manager_heatmap_cell.risk_badges text[]` is constrained to the 6-badge `RiskBadge` vocabulary via a `<@` containment CHECK, pinned to `RiskBadge.values()`. `is_review_overdue` is the §9 projection column (NOT safety rule #6). A field change pairs a §9 + Appendix A edit. (origin: 1.4) |
 | WeeklyPlan | §3 / Appendix A | Lifecycle state + locked baseline; mirror field changes into Appendix A. |
 
 <!-- Starts empty (or with the first model if one exists). Populated as contract models land. -->
@@ -164,7 +171,12 @@ Lessons start at §1.
 
 | # | Date | Topic | Rule (one-liner) |
 |--:|---|---|---|
-| | | | |
+| 1 | 2026-06-02 | [Gradle gate-wiring recipe](LESSONS.md#1) | Bind Spotless+SpotBugs+JaCoCo (≥80% line+branch) into `check` per module, assert the aggregation, prove the module boundary with a task, resolve the JDK 21 toolchain via foojay+`JAVA_HOME` (never a committed machine path). |
+| 2 | 2026-06-02 | [SpotBugs `Confidence` in Groovy](LESSONS.md#2) | For Kotlin enums with per-constant bodies referenced from Groovy (e.g. SpotBugs `Confidence`), use `Type.valueOf('NAME')`, not `Type.NAME`. |
+| 3 | 2026-06-02 | [Enum ↔ contract pinning](LESSONS.md#3) | Pin enum-to-contract with a parameterized value-set test over all enums + `valueOf` drift-trap negatives; Phase 1 extends it to the DB `CHECK` list. |
+| 4 | 2026-06-02 | [Spring Boot app-skeleton pattern](LESSONS.md#4) | Enable probe groups in base config; cover via `@SpringBootTest` + exclude `*Application` from JaCoCo (keep bundle non-empty with a real `@Configuration`); static/reusable env fail-safes; per-profile property tests via `ApplicationContextRunner` + `ConfigDataApplicationContextInitializer` (`o.s.boot.test.context`). |
+| 5 | 2026-06-02 | [Flyway + Testcontainers PG16 harness](LESSONS.md#5) | Pin `testcontainers-bom:1.21.4` over the SB 3.3.5 BOM (Docker Engine 29 compat); migrate via the Flyway API on a shared TC PG16 container; pin enum↔CHECK by parsing `pg_get_constraintdef` vs `enum.values()`; assert violations by SQLSTATE. |
+| 6 | 2026-06-02 | [Backend gate = `./gradlew check` from `apps/wc-api/`](LESSONS.md#6) | The §13 gate is `./gradlew check` run from `apps/wc-api/` (composite root exposes only aggregate check/build) — not the generic per-task `/preflight` list, not `build -x test` (jacoco verification needs tests). |
 
 <!-- Starts empty. Each row links to its `LESSONS.md` anchor. -->
 

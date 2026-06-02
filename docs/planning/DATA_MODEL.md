@@ -5,6 +5,18 @@
 > Date: 2026-06-02
 > Sources: `DOMAIN_MODEL.md`, `REQUIREMENTS.md`, `DECISIONS.md`
 
+> # ⚠️ SUPERSEDED — this is the stale pre-`/arch-finalize` draft. The BINDING physical contract is **`ARCHITECTURE.md` §4 + Appendix A + the four contract deltas + the 0.3 enum vocabulary**.
+>
+> Recorded during task **1.2** (2026-06-02) after `V1__core_schema.sql` was encoded against the binding source. **This document drifts from the contract on the following points — trust `ARCHITECTURE.md` §4, NOT this file:**
+> 1. **`weekly_commitment.progress_status`** — REMOVED (this draft still lists it; redundant with `reconciliation_outcome` + `outcome_note`).
+> 2. **`weekly_commitment.manager_alignment_note`** — ADDED (NEW, manager-owned, post-lock-mutable; absent from this draft).
+> 3. **`comment.target_type`** — narrowed to **`{PLAN, COMMITMENT}` only** (this draft lists 4 targets incl. `MANAGER_REVIEW`/`ALIGNMENT_DISPUTE`); `path`/`parent_comment_id` are **nullable** (flat MVP, `depth default 0`), not `path NOT NULL`.
+> 4. **`outlook_calendar_sync_record`** — uses **`MANAGER_REVIEW_WEEK`** (not `MANAGER_REVIEW`) and adds **`week_start_date date null`** (NEW); both absent/wrong here.
+> 5. **`@Version` (`version bigint`)** optimistic-lock columns on `weekly_plan`, `weekly_commitment`, `manager_review`, `alignment_dispute`, `outlook_calendar_sync_record` (§22 locked decision; this draft lists none).
+> 6. **PostgreSQL version** — "16.4" below is superseded by **"latest 16.x minor (≥16.13)"** (OQ-007; 16.4 is no longer creatable on RDS).
+>
+> The realized DDL is `apps/wc-api/shared/src/main/resources/db/migration/V1__core_schema.sql` (V2 partial-uniques + V3 projections + V4–V6 seed land in later slices). For any conflict, `ARCHITECTURE.md` §4 / Appendix A wins.
+
 ## Physical Model Defaults
 
 - Database: Amazon RDS PostgreSQL 16.4.
