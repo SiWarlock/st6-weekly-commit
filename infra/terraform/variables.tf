@@ -108,3 +108,29 @@ variable "alb_controller_chart_version" {
   type        = string
   default     = "3.3.0"
 }
+
+# --- 12.3: RDS PostgreSQL (thin/cost; hardening deferred to Phase 13 trims) --
+
+variable "rds_instance_class" {
+  description = "RDS instance class. db.t4g.micro (ARM/Graviton burstable) — thin/cost (RISK-009)."
+  type        = string
+  default     = "db.t4g.micro"
+}
+
+variable "rds_allocated_storage" {
+  description = "RDS allocated storage in GB (gp3)."
+  type        = number
+  default     = 20
+}
+
+variable "rds_multi_az" {
+  description = "Multi-AZ RDS deployment. Default single-AZ (thin/cost, mirrors the single-NAT posture); Multi-AZ HA is a Phase 13 hardening item."
+  type        = bool
+  default     = false
+}
+
+variable "rds_backup_retention_period" {
+  description = "Automated-backup retention in days."
+  type        = number
+  default     = 7
+}

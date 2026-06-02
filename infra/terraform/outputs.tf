@@ -7,7 +7,6 @@
 # slice (infra LESSONS §3).
 #
 # Pending exports (go live with their backing resource):
-#   rds_endpoint                → 12.3  rds.tf
 #   ecr_api_repo_url            → 12.4  ecr.tf
 #   ecr_worker_repo_url         → 12.4  ecr.tf
 #   sns_topic_arn               → 12.5  sns_sqs.tf
@@ -52,4 +51,11 @@ output "cluster_oidc_provider_arn" {
 output "cluster_oidc_issuer_url" {
   description = "EKS OIDC issuer URL (IRSA trust)."
   value       = module.eks.cluster_oidc_issuer_url
+}
+
+# --- 12.3: RDS — LIVE --------------------------------------------------------
+
+output "rds_endpoint" {
+  description = "RDS connection endpoint (host:port). NO credentials — the master password is never an output (RISK-016); the db secret (12.6) holds it."
+  value       = aws_db_instance.wc.endpoint
 }

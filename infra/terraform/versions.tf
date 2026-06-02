@@ -37,6 +37,14 @@ terraform {
       source  = "hashicorp/helm"
       version = "~> 3.0"
     }
+    # random — generates the RDS master password (12.3). MUST be declared
+    # explicitly: it is NOT a transitive dep of the eks/vpc/iam modules, and using
+    # random_password without a required_providers entry trips tflint
+    # terraform_required_providers (infra LESSONS §7).
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.0"
+    }
   }
 }
 
