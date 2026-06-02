@@ -1,0 +1,4 @@
+# prod (aws): real SNS/SQS/Graph + datasource + Auth0 wired in later phases. flyway stays off (Migration Job owns it).
+logging:
+  level:
+    com.st6.wc: INFO

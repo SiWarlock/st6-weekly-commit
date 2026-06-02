@@ -1,0 +1,4 @@
+# local: in local/demo the worker consume logic runs in-process within wc-api (§13). flyway stays off.
+logging:
+  level:
+    com.st6.wc.worker: DEBUG

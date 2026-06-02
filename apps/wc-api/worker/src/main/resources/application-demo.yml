@@ -1,0 +1,4 @@
+# demo: deterministic Graph demo adapters wired in a later phase. flyway stays off.
+logging:
+  level:
+    com.st6.wc.worker: DEBUG

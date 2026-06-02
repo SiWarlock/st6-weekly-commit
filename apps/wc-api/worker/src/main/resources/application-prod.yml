@@ -1,0 +1,4 @@
+# prod (aws): real SQS listener + Graph adapter + datasource wired in a later phase. flyway stays off.
+logging:
+  level:
+    com.st6.wc.worker: INFO

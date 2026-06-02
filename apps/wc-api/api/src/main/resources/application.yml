@@ -1,0 +1,23 @@
+# wc-api base config (task 0.4). Domain/auth/CORS/SNS/datasource land in later phases.
+spring:
+  application:
+    name: wc-api
+  flyway:
+    # API does NOT migrate — the Migration Job (flyway-migrate profile) is the sole schema owner (§12/D.2).
+    enabled: false
+
+app:
+  org:
+    # Blank passthrough: OrgTimeBindingConfig.resolveZone is the single fail-safe source of truth (D.6).
+    timezone: ${ORG_TIMEZONE:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true # exposes /actuator/health/{liveness,readiness} for k8s probes (E24/§15)
+      show-details: never

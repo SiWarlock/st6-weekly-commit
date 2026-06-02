@@ -179,6 +179,23 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+echo "== Gate 6: bootjars_distinct =="
+# REQ-O-014: :api and :worker are separate deployables — their bootJars must be distinct artifacts.
+if wcapi_gw :api:bootJar :worker:bootJar --console=plain >/tmp/wc-bootjar.log 2>&1; then
+  API_JAR="$(ls "$WCAPI"/api/build/libs/*.jar 2>/dev/null | head -1)"
+  WORKER_JAR="$(ls "$WCAPI"/worker/build/libs/*.jar 2>/dev/null | head -1)"
+  if [ -f "$API_JAR" ] && [ -f "$WORKER_JAR" ] \
+    && [ "$(basename "$API_JAR")" != "$(basename "$WORKER_JAR")" ]; then
+    ok "api + worker bootJars are distinct artifacts ($(basename "$API_JAR") != $(basename "$WORKER_JAR"))"
+  else
+    bad "bootJars missing or not distinct (api=$API_JAR worker=$WORKER_JAR)"
+  fi
+else
+  bad ":api:bootJar / :worker:bootJar failed (see /tmp/wc-bootjar.log)"
+  tail -12 /tmp/wc-bootjar.log 2>/dev/null | sed 's/^/      /'
+fi
+
+# ---------------------------------------------------------------------------
 echo
 echo "== Summary: ${PASS} passed, ${FAIL} failed =="
 [ "$FAIL" -eq 0 ]

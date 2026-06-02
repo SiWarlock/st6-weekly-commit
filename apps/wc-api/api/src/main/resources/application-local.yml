@@ -1,0 +1,4 @@
+# local: dev profile — worker consume logic runs in-process (§13). No real SNS/SQS/Graph. flyway stays off.
+logging:
+  level:
+    com.st6.wc: DEBUG

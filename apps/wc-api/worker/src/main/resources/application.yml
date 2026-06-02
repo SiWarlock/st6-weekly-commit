@@ -1,0 +1,19 @@
+# wc-sync-worker base config (task 0.5). No Auth0/SNS/CORS/timezone (D.3 — SYSTEM principal, no user request).
+# SQS/Graph/datasource land in a later phase.
+spring:
+  application:
+    name: wc-sync-worker
+  flyway:
+    # Worker NEVER migrates (§12/D.3).
+    enabled: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true # the servlet server exists only to serve k8s liveness/readiness probes
+      show-details: never

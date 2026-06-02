@@ -1,0 +1,4 @@
+# demo: env-gated demo identity (DEMO_AUTH_ENABLED wired in a later phase). No real SNS/SQS/Graph. flyway off.
+logging:
+  level:
+    com.st6.wc: DEBUG

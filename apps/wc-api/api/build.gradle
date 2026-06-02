@@ -1,8 +1,19 @@
-// :api — depends on :shared (shared<-api). NO dependency on :worker (REQ-O-016).
-// Spring Boot app wiring (WcApiApplication, actuator, security) lands in 0.4.
+plugins {
+  alias(libs.plugins.spring.boot)
+}
+
+// :api — Spring Boot 3.3 app (WcApiApplication + actuator probes). Depends on :shared
+// (shared<-api); NO dependency on :worker (REQ-O-016). No domain/auth/CORS/SNS yet.
 dependencies {
+  implementation platform("org.springframework.boot:spring-boot-dependencies:${libs.versions.springBoot.get()}")
+
   implementation project(':shared')
+
+  implementation 'org.springframework.boot:spring-boot-starter-web'
+  implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
   compileOnly libs.lombok
   annotationProcessor libs.lombok
+
+  testImplementation 'org.springframework.boot:spring-boot-starter-test'
 }
