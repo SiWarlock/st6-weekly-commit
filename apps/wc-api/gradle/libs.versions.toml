@@ -1,0 +1,26 @@
+# Version catalog for the wc-api Gradle build (task 0.2).
+# Consumed by 0.3 (:shared enums/entities), 0.4 (:api Spring Boot app), 0.5 (:worker).
+# Spring Boot 3.3.5 is pinned here but the plugin is NOT applied in 0.2 (skeleton stays plain-Java).
+
+[versions]
+springBoot = "3.3.5"
+lombok = "1.18.34"
+junit = "5.11.3"
+junitPlatform = "1.11.3"
+jakartaPersistence = "3.1.0"
+jakartaValidation = "3.0.2"
+googleJavaFormat = "1.22.0"
+jacoco = "0.8.12"
+spotless = "6.25.0"
+spotbugs = "6.0.26"
+
+[libraries]
+lombok = { module = "org.projectlombok:lombok", version.ref = "lombok" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junitPlatform" }
+jakarta-persistence-api = { module = "jakarta.persistence:jakarta.persistence-api", version.ref = "jakartaPersistence" }
+jakarta-validation-api = { module = "jakarta.validation:jakarta.validation-api", version.ref = "jakartaValidation" }
+
+[plugins]
+spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
+spotbugs = { id = "com.github.spotbugs", version.ref = "spotbugs" }

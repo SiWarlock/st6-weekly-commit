@@ -1,0 +1,8 @@
+// :api — depends on :shared (shared<-api). NO dependency on :worker (REQ-O-016).
+// Spring Boot app wiring (WcApiApplication, actuator, security) lands in 0.4.
+dependencies {
+  implementation project(':shared')
+
+  compileOnly libs.lombok
+  annotationProcessor libs.lombok
+}

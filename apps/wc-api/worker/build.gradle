@@ -1,0 +1,8 @@
+// :worker — depends on :shared (shared<-worker). NO dependency on :api (REQ-O-016).
+// Sync-worker app wiring (WcSyncWorkerApplication, SQS listener) lands in 0.5.
+dependencies {
+  implementation project(':shared')
+
+  compileOnly libs.lombok
+  annotationProcessor libs.lombok
+}

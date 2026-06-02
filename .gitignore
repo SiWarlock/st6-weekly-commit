@@ -9,3 +9,7 @@ node_modules/
 .nx/
 yarn-error.log
 # NOTE: yarn.lock is intentionally NOT ignored — it is the reproducible-install contract.
+
+# Gradle (build outputs + local caches). The committed wrapper (gradlew, gradle/wrapper/*) is NOT ignored.
+.gradle/
+build/

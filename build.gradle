@@ -1,0 +1,15 @@
+// Repo-root composite build (task 0.2). Delegates lifecycle tasks into the wc-api included build
+// so `./gradlew check` / `./gradlew build` from the repo root drive the backend (Appendix C.1).
+// No backend logic lives here — apps/wc-api owns the multi-module build, toolchain, and gates.
+
+tasks.register('check') {
+  group = 'verification'
+  description = 'Drives the wc-api backend `check` (all modules + gates) from the repo root.'
+  dependsOn gradle.includedBuild('wc-api').task(':check')
+}
+
+tasks.register('build') {
+  group = 'build'
+  description = 'Drives the wc-api backend `build` from the repo root.'
+  dependsOn gradle.includedBuild('wc-api').task(':build')
+}

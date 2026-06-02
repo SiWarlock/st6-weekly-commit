@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SpotBugs exclude filter for wc-api (task 0.2).
+
+  Lombok-generated members are skipped automatically by SpotBugs because lombok.config sets
+  `lombok.addLombokGeneratedAnnotation=true` (SpotBugs ignores @Generated-annotated code). The
+  skeleton uses no Lombok yet, so this filter is intentionally minimal; real exclusions accrete
+  as domain code lands in 0.3+.
+-->
+<FindBugsFilter>
+</FindBugsFilter>

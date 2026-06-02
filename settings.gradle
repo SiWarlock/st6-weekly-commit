@@ -1,0 +1,11 @@
+plugins {
+  // Portable JDK-21 toolchain provisioning (no committed machine-specific path); pairs with JAVA_HOME.
+  id 'org.gradle.toolchains.foojay-resolver-convention' version '0.9.0'
+}
+
+rootProject.name = 'st6-wc'
+
+// Composite build: the backend lives in apps/wc-api as an independent Gradle build (Appendix C.1).
+// The repo-root lifecycle tasks (build.gradle) delegate into it so `./gradlew check` from the root
+// drives the whole backend, while `apps/wc-api` stays independently buildable.
+includeBuild('apps/wc-api')

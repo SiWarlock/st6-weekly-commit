@@ -1,0 +1,166 @@
+import com.github.spotbugs.snom.Effort
+import com.github.spotbugs.snom.Confidence
+
+// =============================================================================
+// wc-api multi-module root build (task 0.2).
+// Java 21 toolchain + Lombok + the three backend quality gates (Spotless, SpotBugs,
+// JaCoCo >=80%/module) wired into `check`, plus the REQ-O-016 module-boundary proof.
+// No domain code, no Spring Boot app wiring (0.3/0.4/0.5).
+// =============================================================================
+
+plugins {
+  alias(libs.plugins.spotless) apply false
+  alias(libs.plugins.spotbugs) apply false
+}
+
+def gateModules = ['shared', 'api', 'worker']
+
+subprojects { sp ->
+  apply plugin: 'java'
+  apply plugin: 'jacoco'
+  apply plugin: 'com.diffplug.spotless'
+  apply plugin: 'com.github.spotbugs'
+
+  group = 'com.st6.wc'
+  version = '0.0.1-SNAPSHOT'
+
+  repositories {
+    mavenCentral()
+  }
+
+  java {
+    toolchain {
+      languageVersion = JavaLanguageVersion.of(21)
+    }
+  }
+
+  dependencies {
+    testImplementation libs.junit.jupiter
+    testRuntimeOnly libs.junit.platform.launcher
+  }
+
+  tasks.named('test') {
+    useJUnitPlatform()
+    finalizedBy tasks.named('jacocoTestReport')
+  }
+
+  jacoco {
+    toolVersion = libs.versions.jacoco.get()
+  }
+
+  tasks.named('jacocoTestReport') {
+    dependsOn tasks.named('test')
+    reports {
+      xml.required = true
+      html.required = true
+    }
+  }
+
+  // JaCoCo >=80% per module (line + branch). Bound into `check` below.
+  tasks.named('jacocoTestCoverageVerification') {
+    dependsOn tasks.named('test')
+    violationRules {
+      rule {
+        limit {
+          counter = 'LINE'
+          value = 'COVEREDRATIO'
+          minimum = 0.80
+        }
+        limit {
+          counter = 'BRANCH'
+          value = 'COVEREDRATIO'
+          minimum = 0.80
+        }
+      }
+    }
+  }
+
+  spotless {
+    java {
+      target 'src/**/*.java'
+      googleJavaFormat(libs.versions.googleJavaFormat.get())
+      removeUnusedImports()
+      importOrder()
+      trimTrailingWhitespace()
+      endWithNewline()
+    }
+  }
+
+  spotbugs {
+    // Use valueOf(): `Confidence` is a Kotlin enum with per-constant bodies, so it compiles to
+    // an abstract class with nested subclasses (Confidence$MEDIUM). Groovy resolves
+    // `Confidence.MEDIUM` to that nested CLASS, not the enum field — valueOf() is unambiguous.
+    effort = Effort.valueOf('MAX')
+    reportLevel = Confidence.valueOf('MEDIUM')
+    excludeFilter = rootProject.file('config/spotbugs/exclude.xml')
+  }
+
+  // Forbidden pattern (root + area CLAUDE.md): no Lombok @Data — breaks Hibernate identity.
+  // Mechanical grep gate so the rule is enforced, not just documented.
+  def forbidLombokData = tasks.register('forbidLombokData') {
+    group = 'verification'
+    description = 'Fails if Lombok @Data is used in src/main/java (use @Getter/@Setter/@Builder).'
+    def mainSrc = sp.file('src/main/java')
+    doLast {
+      if (mainSrc.exists()) {
+        def offenders = []
+        mainSrc.eachFileRecurse { f ->
+          if (f.isFile() && f.name.endsWith('.java')) {
+            def text = f.text
+            if (text =~ /(?m)^\s*import\s+lombok\.Data\s*;/ || text =~ /@Data\b/) {
+              offenders << f.path
+            }
+          }
+        }
+        if (!offenders.isEmpty()) {
+          throw new GradleException('Forbidden Lombok @Data (use @Getter/@Setter/@Builder): ' + offenders)
+        }
+      }
+    }
+  }
+
+  tasks.named('check').configure {
+    dependsOn tasks.named('jacocoTestCoverageVerification')
+    dependsOn forbidLombokData
+  }
+}
+
+// Module-boundary proof (REQ-O-016): shared<-api, shared<-worker, and NO api<->worker edge.
+// A Gradle verification task that inspects each module's declared project dependencies and
+// throws on a forbidden edge. Bound into `check`, so the boundary is proven, not conventional.
+def forbiddenEdge = [api: 'worker', worker: 'api']
+configure(subprojects.findAll { forbiddenEdge.containsKey(it.name) }) { sp ->
+  def forbidden = forbiddenEdge[sp.name]
+  def boundaryTask = sp.tasks.register('checkModuleBoundaries') {
+    group = 'verification'
+    description = "Fails if :${sp.name} declares a project dependency on :${forbidden} (REQ-O-016)."
+    doLast {
+      def offending = []
+      sp.configurations.each { cfg ->
+        cfg.dependencies.withType(ProjectDependency).each { dep ->
+          if (dep.dependencyProject.name == forbidden) {
+            offending << "${cfg.name} -> :${forbidden}"
+          }
+        }
+      }
+      if (!offending.isEmpty()) {
+        throw new GradleException("Module boundary violation (REQ-O-016): :${sp.name} must not depend on :${forbidden}; found ${offending}")
+      }
+    }
+  }
+  sp.tasks.named('check').configure { dependsOn boundaryTask }
+}
+
+// Aggregate lifecycle tasks on the wc-api root project so the repo-root composite can drive
+// every module's gates through a single included-build task (Q3 wiring).
+tasks.register('check') {
+  group = 'verification'
+  description = 'Aggregate: runs `check` in every wc-api module (shared/api/worker).'
+  dependsOn gateModules.collect { ":${it}:check" }
+}
+
+tasks.register('build') {
+  group = 'build'
+  description = 'Aggregate: runs `build` in every wc-api module.'
+  dependsOn gateModules.collect { ":${it}:build" }
+}

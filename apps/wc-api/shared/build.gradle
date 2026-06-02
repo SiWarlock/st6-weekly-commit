@@ -1,0 +1,9 @@
+// :shared — JPA/DTO/enum baseline, depended on by :api and :worker (shared<-api, shared<-worker).
+// Skeleton-level deps for 0.2; real entities/enums (Appendix A) land in 0.3.
+dependencies {
+  compileOnly libs.lombok
+  annotationProcessor libs.lombok
+
+  implementation libs.jakarta.persistence.api
+  implementation libs.jakarta.validation.api
+}
