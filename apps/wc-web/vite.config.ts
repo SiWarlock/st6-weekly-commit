@@ -13,5 +13,9 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     css: false,
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    // Absolute base URL so RTK Query's Request construction is valid under
+    // Node/undici (a relative baseUrl throws before fetchFn runs). Read at
+    // import time by baseApi; per-test fetch is mocked via vi.stubGlobal.
+    env: { VITE_API_BASE_URL: 'http://localhost' },
   },
 });
