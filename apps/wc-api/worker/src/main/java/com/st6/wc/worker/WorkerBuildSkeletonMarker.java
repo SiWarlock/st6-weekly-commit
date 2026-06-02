@@ -1,23 +1,21 @@
 package com.st6.wc.worker;
 
-import com.st6.wc.BuildSkeletonMarker;
-
 /**
- * Throwaway build-skeleton marker (task 0.2). Exercises the :worker JaCoCo gate and references a
- * {@code :shared} symbol so the {@code shared<-worker} dependency edge is proven at compile time.
- * Replaced by the real sync-worker app wiring in task 0.5.
+ * Throwaway build-skeleton marker (task 0.2) exercising the :worker JaCoCo gate. Self-contained as
+ * of 0.3 (the :shared {@code BuildSkeletonMarker} it used was replaced by real typed code); the
+ * {@code shared<-worker} edge stays declared via {@code implementation project(':shared')} in
+ * build.gradle. Replaced by the real sync-worker app wiring in task 0.5.
  */
 public final class WorkerBuildSkeletonMarker {
 
   /**
-   * @param verbose forwarded to the shared marker.
-   * @return the :shared marker string for the worker module.
+   * @param verbose when true, a descriptive label; otherwise the bare module name.
+   * @return a marker string for the worker module.
    */
   public String label(boolean verbose) {
-    BuildSkeletonMarker shared = new BuildSkeletonMarker("worker");
     if (verbose) {
-      return shared.describe(true);
+      return "wc-api:worker (build skeleton)";
     }
-    return shared.describe(false);
+    return "worker";
   }
 }

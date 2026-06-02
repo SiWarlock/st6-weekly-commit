@@ -1,23 +1,21 @@
 package com.st6.wc.api;
 
-import com.st6.wc.BuildSkeletonMarker;
-
 /**
- * Throwaway build-skeleton marker (task 0.2). Besides exercising the :api JaCoCo gate, it
- * references a {@code :shared} symbol so the {@code shared<-api} dependency edge is proven at
- * compile time. Replaced by the real Spring Boot app wiring in task 0.4.
+ * Throwaway build-skeleton marker (task 0.2) exercising the :api JaCoCo gate. Self-contained as of
+ * 0.3 (the :shared {@code BuildSkeletonMarker} it used was replaced by real typed code); the {@code
+ * shared<-api} edge stays declared via {@code implementation project(':shared')} in build.gradle.
+ * Replaced by the real Spring Boot app wiring in task 0.4.
  */
 public final class ApiBuildSkeletonMarker {
 
   /**
-   * @param verbose forwarded to the shared marker.
-   * @return the :shared marker string for the api module.
+   * @param verbose when true, a descriptive label; otherwise the bare module name.
+   * @return a marker string for the api module.
    */
   public String label(boolean verbose) {
-    BuildSkeletonMarker shared = new BuildSkeletonMarker("api");
     if (verbose) {
-      return shared.describe(true);
+      return "wc-api:api (build skeleton)";
     }
-    return shared.describe(false);
+    return "api";
   }
 }

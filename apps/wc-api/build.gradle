@@ -106,8 +106,10 @@ subprojects { sp ->
         def offenders = []
         mainSrc.eachFileRecurse { f ->
           if (f.isFile() && f.name.endsWith('.java')) {
-            def text = f.text
-            if (text =~ /(?m)^\s*import\s+lombok\.Data\s*;/ || text =~ /@Data\b/) {
+            // Strip block/javadoc + line comments first so documentation that *mentions* @Data
+            // (e.g. "never @Data") is not a false positive — only real annotations/imports count.
+            def code = f.text.replaceAll(/(?s)\/\*.*?\*\//, ' ').replaceAll(/(?m)\/\/.*$/, ' ')
+            if (code =~ /(?m)^\s*import\s+lombok\.Data\s*;/ || code =~ /@Data\b/) {
               offenders << f.path
             }
           }

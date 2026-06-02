@@ -1,9 +1,14 @@
-// :shared — JPA/DTO/enum baseline, depended on by :api and :worker (shared<-api, shared<-worker).
-// Skeleton-level deps for 0.2; real entities/enums (Appendix A) land in 0.3.
+// :shared — enum vocabulary, common base entities, time config; depended on by :api and :worker
+// (shared<-api, shared<-worker). Spring Boot BOM aligns Spring/jakarta versions with the 3.3.5 pin.
 dependencies {
+  implementation platform("org.springframework.boot:spring-boot-dependencies:${libs.versions.springBoot.get()}")
+
   compileOnly libs.lombok
   annotationProcessor libs.lombok
 
   implementation libs.jakarta.persistence.api
   implementation libs.jakarta.validation.api
+  implementation 'org.springframework:spring-context' // ClockConfig @Configuration/@Bean
+
+  testImplementation 'org.springframework.boot:spring-boot-starter-test' // ClockConfig context test
 }
