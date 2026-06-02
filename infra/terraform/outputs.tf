@@ -7,8 +7,6 @@
 # slice (infra LESSONS §3).
 #
 # Pending exports (go live with their backing resource):
-#   s3_assets_bucket_name       → 12.6  s3_cloudfront.tf
-#   cloudfront_distribution_id  → 12.6  s3_cloudfront.tf
 #   hosted_zone_id              → 12.7  route53_acm.tf
 
 # --- 12.2: network + compute (VPC / EKS) — LIVE ------------------------------
@@ -82,4 +80,38 @@ output "sqs_queue_url" {
 output "sqs_dlq_url" {
   description = "Sync DLQ URL → app env SQS_DLQ_URL (Appendix D.3)."
   value       = aws_sqs_queue.sync_dlq.url
+}
+
+# --- 12.6: S3/CloudFront + Secrets Manager — LIVE ----------------------------
+# Secret ARNs only — NEVER the secret values (rule #7 / RISK-016). Consumed by
+# the 12.7 IRSA policies + the 12.8 SecretProviderClass.
+
+output "s3_assets_bucket_name" {
+  description = "Private S3 bucket for the Vite SPA assets (CI sync target, 12.11)."
+  value       = aws_s3_bucket.assets.bucket
+}
+
+output "cloudfront_distribution_id" {
+  description = "CloudFront distribution id (CI invalidation target, 12.11; 12.7 attaches the cert + wc. alias)."
+  value       = aws_cloudfront_distribution.assets.id
+}
+
+output "db_secret_arn" {
+  description = "ARN of the db secret (TF-populated coords/password). Value never output."
+  value       = aws_secretsmanager_secret.db.arn
+}
+
+output "auth0_secret_arn" {
+  description = "ARN of the auth0 secret (placeholder; HITL-populated). Value never output."
+  value       = aws_secretsmanager_secret.auth0.arn
+}
+
+output "graph_secret_arn" {
+  description = "ARN of the graph secret (placeholder; HITL-populated). Value never output."
+  value       = aws_secretsmanager_secret.graph.arn
+}
+
+output "demo_secret_arn" {
+  description = "ARN of the demo secret (placeholder; HITL-populated). Value never output."
+  value       = aws_secretsmanager_secret.demo.arn
 }
