@@ -76,10 +76,15 @@ resource "aws_cloudfront_distribution" "assets" {
     }
   }
 
-  # 12.7 swaps this to acm_certificate_arn (us-east-1, sni-only, TLS1.2_2021) and
-  # adds aliases = ["wc.${var.ROOT_DOMAIN}"].
+  # Custom domain wc.${ROOT_DOMAIN} on the us-east-1 ACM cert (12.7a attach,
+  # LESSONS §10/§11). The cert is referenced via its _validation resource so the
+  # distribution only goes live once DNS validation completes.
+  aliases = ["wc.${var.ROOT_DOMAIN}"]
+
   viewer_certificate {
-    cloudfront_default_certificate = true
+    acm_certificate_arn      = aws_acm_certificate_validation.cloudfront.certificate_arn
+    ssl_support_method       = "sni-only"
+    minimum_protocol_version = "TLSv1.2_2021"
   }
 
   tags = local.common_tags

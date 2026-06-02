@@ -6,8 +6,6 @@
 # breaks `terraform validate` for the ENTIRE root, blocking every subsequent
 # slice (infra LESSONS §3).
 #
-# Pending exports (go live with their backing resource):
-#   hosted_zone_id              → 12.7  route53_acm.tf
 
 # --- 12.2: network + compute (VPC / EKS) — LIVE ------------------------------
 
@@ -114,4 +112,16 @@ output "graph_secret_arn" {
 output "demo_secret_arn" {
   description = "ARN of the demo secret (placeholder; HITL-populated). Value never output."
   value       = aws_secretsmanager_secret.demo.arn
+}
+
+# --- 12.7a: Route53 / ACM — LIVE ---------------------------------------------
+
+output "hosted_zone_id" {
+  description = "Route53 hosted zone id for ROOT_DOMAIN (record management)."
+  value       = data.aws_route53_zone.root.zone_id
+}
+
+output "alb_cert_arn" {
+  description = "Regional ACM cert ARN for api.wc.<ROOT_DOMAIN> -> the 12.8 ALB ingress (alb.ingress.kubernetes.io/certificate-arn)."
+  value       = aws_acm_certificate_validation.alb.certificate_arn
 }
