@@ -142,3 +142,11 @@ variable "sqs_max_receive_count" {
   type        = number
   default     = 5
 }
+
+# --- 12.7b: IRSA ------------------------------------------------------------
+
+variable "k8s_namespace" {
+  description = "Kubernetes namespace for the WC workloads. Pins the IRSA trust `sub` (system:serviceaccount:<ns>:<sa>); 12.8 ServiceAccounts MUST use this namespace."
+  type        = string
+  default     = "wc"
+}

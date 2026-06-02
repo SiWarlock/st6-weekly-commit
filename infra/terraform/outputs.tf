@@ -125,3 +125,26 @@ output "alb_cert_arn" {
   description = "Regional ACM cert ARN for api.wc.<ROOT_DOMAIN> -> the 12.8 ALB ingress (alb.ingress.kubernetes.io/certificate-arn)."
   value       = aws_acm_certificate_validation.alb.certificate_arn
 }
+
+# --- 12.7b: per-workload IRSA role ARNs — LIVE -------------------------------
+# Consumed by the 12.8 ServiceAccount annotations (eks.amazonaws.com/role-arn).
+
+output "irsa_api_role_arn" {
+  description = "IRSA role ARN for the wc-api ServiceAccount."
+  value       = aws_iam_role.irsa_api.arn
+}
+
+output "irsa_worker_role_arn" {
+  description = "IRSA role ARN for the wc-worker ServiceAccount."
+  value       = aws_iam_role.irsa_worker.arn
+}
+
+output "irsa_cronjob_role_arn" {
+  description = "IRSA role ARN for the wc-cronjob ServiceAccount."
+  value       = aws_iam_role.irsa_cronjob.arn
+}
+
+output "irsa_migration_role_arn" {
+  description = "IRSA role ARN for the wc-migration ServiceAccount."
+  value       = aws_iam_role.irsa_migration.arn
+}
