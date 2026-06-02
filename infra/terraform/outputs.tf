@@ -7,11 +7,6 @@
 # slice (infra LESSONS §3).
 #
 # Pending exports (go live with their backing resource):
-#   ecr_api_repo_url            → 12.4  ecr.tf
-#   ecr_worker_repo_url         → 12.4  ecr.tf
-#   sns_topic_arn               → 12.5  sns_sqs.tf
-#   sqs_queue_url               → 12.5  sns_sqs.tf
-#   sqs_dlq_url                 → 12.5  sns_sqs.tf
 #   s3_assets_bucket_name       → 12.6  s3_cloudfront.tf
 #   cloudfront_distribution_id  → 12.6  s3_cloudfront.tf
 #   hosted_zone_id              → 12.7  route53_acm.tf
@@ -58,4 +53,33 @@ output "cluster_oidc_issuer_url" {
 output "rds_endpoint" {
   description = "RDS connection endpoint (host:port). NO credentials — the master password is never an output (RISK-016); the db secret (12.6) holds it."
   value       = aws_db_instance.wc.endpoint
+}
+
+# --- 12.4: ECR — LIVE --------------------------------------------------------
+
+output "ecr_api_repo_url" {
+  description = "wc-api ECR repository URL (CI push target, 12.11)."
+  value       = aws_ecr_repository.this["wc-api"].repository_url
+}
+
+output "ecr_worker_repo_url" {
+  description = "wc-sync-worker ECR repository URL (CI push target, 12.11)."
+  value       = aws_ecr_repository.this["wc-sync-worker"].repository_url
+}
+
+# --- 12.5: SNS/SQS — LIVE (names match Appendix D.2/D.3 env keys) ------------
+
+output "sns_topic_arn" {
+  description = "Lifecycle SNS topic ARN → app env SNS_TOPIC_ARN (Appendix D.2)."
+  value       = aws_sns_topic.lifecycle.arn
+}
+
+output "sqs_queue_url" {
+  description = "Sync SQS queue URL → app env SQS_QUEUE_URL (Appendix D.3)."
+  value       = aws_sqs_queue.sync.url
+}
+
+output "sqs_dlq_url" {
+  description = "Sync DLQ URL → app env SQS_DLQ_URL (Appendix D.3)."
+  value       = aws_sqs_queue.sync_dlq.url
 }

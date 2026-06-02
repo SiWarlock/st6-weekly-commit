@@ -134,3 +134,11 @@ variable "rds_backup_retention_period" {
   type        = number
   default     = 7
 }
+
+# --- 12.5: SNS/SQS messaging -------------------------------------------------
+
+variable "sqs_max_receive_count" {
+  description = "Failed-receive threshold before a message redrives to the DLQ (REQ-I-011)."
+  type        = number
+  default     = 5
+}
