@@ -148,3 +148,15 @@ output "irsa_migration_role_arn" {
   description = "IRSA role ARN for the wc-migration ServiceAccount."
   value       = aws_iam_role.irsa_migration.arn
 }
+
+# --- 12.10: CloudWatch log groups — LIVE (keyed by workload) -----------------
+
+output "cloudwatch_log_group_names" {
+  description = "Per-workload CloudWatch log group names ({api,worker,cronjob,migration} -> name)."
+  value       = { for k, g in aws_cloudwatch_log_group.workload : k => g.name }
+}
+
+output "cloudwatch_log_group_arns" {
+  description = "Per-workload CloudWatch log group ARNs ({api,worker,cronjob,migration} -> arn)."
+  value       = { for k, g in aws_cloudwatch_log_group.workload : k => g.arn }
+}

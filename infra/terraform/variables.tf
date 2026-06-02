@@ -150,3 +150,11 @@ variable "k8s_namespace" {
   type        = string
   default     = "wc"
 }
+
+# --- 12.10: CloudWatch ------------------------------------------------------
+
+variable "cloudwatch_log_retention_days" {
+  description = "Retention (days) for the per-workload CloudWatch log groups. Must be a valid CloudWatch value (1,3,5,7,14,30,60,90,...)."
+  type        = number
+  default     = 30
+}
