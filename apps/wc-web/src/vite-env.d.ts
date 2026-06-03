@@ -5,4 +5,7 @@
 interface ImportMetaEnv {
   readonly VITE_AUTH_MODE?: 'demo' | 'auth0';
   readonly VITE_API_BASE_URL?: string;
+  // ST.7a — standalone MSW mock toggle: 'true' forces mocks on (e.g. a demo-video
+  // build); 'false' forces them off; unset = on in dev, off in prod.
+  readonly VITE_USE_MOCKS?: 'true' | 'false';
 }

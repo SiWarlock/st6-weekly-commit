@@ -7,6 +7,7 @@ import { importGraph, stripComments } from '../test/util';
 const here = dirname(fileURLToPath(import.meta.url));
 const srcDir = resolve(here, '..');
 const remoteEntry = resolve(srcDir, 'remote/WeeklyCommitApp.tsx');
+const standaloneEntry = resolve(srcDir, 'standalone/main.tsx');
 const standaloneDir = resolve(srcDir, 'standalone');
 
 describe('REQ-I-008 — exposed remote excludes demo/persona/chrome (frontend mirror of safety rule #5)', () => {
@@ -59,6 +60,36 @@ describe('REQ-I-008 — exposed remote excludes demo/persona/chrome (frontend mi
       expect(code).not.toMatch(/\bBrowserRouter\b/);
       expect(code).not.toMatch(/X-Demo-Employee-Id/);
       expect(code).not.toMatch(/demo-token/);
+    }
+  });
+
+  it('msw_absent_from_remote_build: the MSW mock layer (ST.7a) is standalone-only — reachable from the standalone entry (positive control) but NEVER from the exposed remote (fail-open import-graph + fail-closed literal scan)', () => {
+    const remoteFiles = [...importGraph(remoteEntry)];
+    const standaloneFiles = [...importGraph(standaloneEntry)];
+
+    // POSITIVE CONTROL — the mock layer IS part of the standalone build graph
+    // (main.tsx dev-imports ./mocks/browser). Without this the fail-closed scan
+    // below could pass vacuously (e.g. if the mock layer were never wired at all).
+    expect(standaloneFiles.some((f) => f.includes('/mocks/'))).toBe(true);
+    // …and the `msw` import literal survives into the standalone closure (the
+    // string the scan below excludes from the remote — proving it is live).
+    expect(
+      standaloneFiles.some((f) =>
+        /from\s+['"]msw/.test(readFileSync(f, 'utf8')),
+      ),
+    ).toBe(true);
+
+    // FAIL-OPEN import-graph: no mocks/* module is reachable from the remote.
+    expect(remoteFiles.filter((f) => f.includes('/mocks/'))).toEqual([]);
+
+    // FAIL-CLOSED literal scan: no `msw`/setupWorker/mockServiceWorker reference
+    // anywhere in the remote closure (REQ-I-008 — the demo/dev mock never ships
+    // in the federation-exposed build, mirroring the demo-identity boundary §6/§8).
+    for (const f of remoteFiles) {
+      const code = stripComments(readFileSync(f, 'utf8'));
+      expect(code).not.toMatch(/from\s+['"]msw/);
+      expect(code).not.toMatch(/setupWorker/);
+      expect(code).not.toMatch(/mockServiceWorker/);
     }
   });
 });
