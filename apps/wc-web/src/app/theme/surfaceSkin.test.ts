@@ -19,6 +19,8 @@ const TOUCHED_SURFACES = [
   'features/manager/CommandCenter.tsx',
   'features/manager/HeatmapGrid.tsx',
   'features/commitment/CommitmentList.tsx',
+  'features/commitment/RcdoBreadcrumb.tsx', // ST.5b
+  'features/commitment/OutcomePill.tsx', // ST.5b
 ];
 
 describe('ST.4 surface skin — token wiring + structural guard', () => {

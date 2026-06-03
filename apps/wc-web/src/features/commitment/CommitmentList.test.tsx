@@ -394,3 +394,76 @@ describe('CommitmentList → ST.5a composition (lock glyph, UNPLANNED redundancy
     expect(strategic.querySelector('[data-cy="worktype-tag"]')).not.toBeNull();
   });
 });
+
+// ST.5b card-display completion: read-only RcdoBreadcrumb per card + the
+// RECONCILED OutcomePill + muting.
+describe('CommitmentList → ST.5b card display (RcdoBreadcrumb, OutcomePill, muting)', () => {
+  const rowOf = (title: string) =>
+    screen
+      .getByText(title)
+      .closest('[data-cy="commitment-row"]') as HTMLElement;
+
+  it('commitment_list_mounts_breadcrumb_per_card: a linked commitment renders its RC › DO › SO breadcrumb; an unlinked commitment renders the missing-SO warning', () => {
+    render(
+      <CommitmentList
+        planState="DRAFT"
+        planId="plan-1"
+        commitments={[
+          commitment({
+            id: 'c-1',
+            title: 'Linked work',
+            supportingOutcomeBreadcrumb: {
+              rallyCryId: 'rc-1',
+              rallyCryTitle: 'Win the quarter',
+              definingObjectiveId: 'do-1',
+              definingObjectiveTitle: 'Ship v2',
+              supportingOutcomeId: 'so-1',
+              supportingOutcomeTitle: 'Onboarding flow',
+            },
+          }),
+          commitment({ id: 'c-2', title: 'Unlinked work' }),
+        ]}
+      />,
+    );
+
+    expect(
+      rowOf('Linked work').querySelector('[data-cy="rcdo-breadcrumb"]'),
+    ).not.toBeNull();
+    expect(
+      rowOf('Unlinked work').querySelector(
+        '[data-cy="rcdo-breadcrumb-missing"]',
+      ),
+    ).not.toBeNull();
+  });
+
+  it('reconciled_card_is_muted_and_shows_outcome_pill: a RECONCILED commitment with a reconciliationOutcome renders the OutcomePill + a readOnly-muted card; a DRAFT card has neither', () => {
+    const { unmount } = render(
+      <CommitmentList
+        planState="RECONCILED"
+        planId="plan-1"
+        commitments={[
+          commitment({
+            id: 'c-1',
+            title: 'Done work',
+            reconciliationOutcome: 'COMPLETED',
+          }),
+        ]}
+      />,
+    );
+    const reconciled = rowOf('Done work');
+    expect(reconciled.querySelector('[data-cy="outcome-pill"]')).not.toBeNull();
+    expect(reconciled).toHaveAttribute('data-readonly', 'true');
+    unmount();
+
+    render(
+      <CommitmentList
+        planState="DRAFT"
+        planId="plan-1"
+        commitments={[commitment({ id: 'c-1', title: 'Draft work' })]}
+      />,
+    );
+    const draftCard = rowOf('Draft work');
+    expect(draftCard.querySelector('[data-cy="outcome-pill"]')).toBeNull();
+    expect(draftCard).not.toHaveAttribute('data-readonly');
+  });
+});

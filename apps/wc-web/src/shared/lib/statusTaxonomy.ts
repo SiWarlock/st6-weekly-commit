@@ -17,6 +17,8 @@ import {
   HiSparkles,
   HiCog,
   HiPlusCircle,
+  HiAdjustments,
+  HiXCircle,
 } from 'react-icons/hi';
 
 /**
@@ -160,4 +162,25 @@ export const CONFIDENCE_TAXONOMY: Record<string, ConfidenceEntry> = {
   HIGH: { tone: 'success', label: 'High', segments: 3 },
   MEDIUM: { tone: 'warning', label: 'Medium', segments: 2 },
   LOW: { tone: 'neutral', label: 'Low', segments: 1 },
+};
+
+/**
+ * The §3 reconciliation-outcome taxonomy — icon+label+tone, ported from the
+ * Cadence `OUTCOME`/`RECON_CHOICES` map. Consumed by `OutcomePill` (via `Badge`)
+ * for the read-only RECONCILED card. Unknown → undefined (the pill renders nothing).
+ */
+export const RECONCILIATION_OUTCOME_TAXONOMY: Record<string, TaxonomyEntry> = {
+  COMPLETED: { tone: 'success', icon: HiCheckCircle, label: 'Completed' },
+  PARTIALLY_COMPLETED: {
+    tone: 'warning',
+    icon: HiAdjustments,
+    label: 'Partial',
+  },
+  BLOCKED: { tone: 'failure', icon: HiBan, label: 'Blocked' },
+  CANCELED: { tone: 'neutral', icon: HiXCircle, label: 'Canceled' },
+  CARRIED_FORWARD: {
+    tone: 'info',
+    icon: HiArrowNarrowRight,
+    label: 'Carried forward',
+  },
 };

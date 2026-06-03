@@ -10,6 +10,8 @@ import { PriorityTag } from './PriorityTag';
 import { WorkTypeTag } from './WorkTypeTag';
 import { ConfidenceMeter } from './ConfidenceMeter';
 import { AlignmentChip } from './AlignmentChip';
+import { RcdoBreadcrumb } from './RcdoBreadcrumb';
+import { OutcomePill } from './OutcomePill';
 import type { PlanState, WeeklyCommitmentDto } from '../../shared/lib/dtos';
 
 export interface CommitmentListProps {
@@ -67,6 +69,8 @@ export function CommitmentList({
   // DRAFT baseline is editable/deletable (server-authoritative — a post-lock
   // attempt is rejected 409; the affordance is hidden, not the only guard).
   const draft = planState === 'DRAFT';
+  // RECONCILED = the plan's read-only terminal — mute the card (ST.5b).
+  const reconciled = planState === 'RECONCILED';
   return (
     <ul data-cy="commitment-list" className="space-y-2">
       {commitments.map((c) => {
@@ -78,7 +82,8 @@ export function CommitmentList({
           <li
             key={c.id}
             data-cy="commitment-row"
-            className={`flex flex-col gap-2 rounded-lg border border-border bg-surface px-4 py-3 shadow-hairline ${cardAccent(c)}`}
+            data-readonly={reconciled ? 'true' : undefined}
+            className={`flex flex-col gap-2 rounded-lg border border-border bg-surface px-4 py-3 shadow-hairline ${cardAccent(c)}${reconciled ? ' opacity-75' : ''}`}
           >
             <div className="flex items-center justify-between gap-3">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -105,6 +110,11 @@ export function CommitmentList({
                 ) : null}
                 {carriedForward ? <RiskBadge value="CARRY_FORWARD" /> : null}
                 {risk ? <RiskBadge value={risk} /> : null}
+                {/* Reconciliation outcome pill (ST.5b) — shown once recorded
+                    (read-only on the RECONCILED card). */}
+                {c.reconciliationOutcome ? (
+                  <OutcomePill value={c.reconciliationOutcome} />
+                ) : null}
               </div>
               <div className="flex flex-none items-center gap-2">
                 {showCarry ? (
@@ -124,6 +134,9 @@ export function CommitmentList({
                 ) : null}
               </div>
             </div>
+            {/* Read-only RC→DO→SO breadcrumb (ST.5b) — DO › SO when linked, or
+                the missing-SO warning when unlinked. */}
+            <RcdoBreadcrumb breadcrumb={c.supportingOutcomeBreadcrumb} />
             {/* Chess-layer atoms (ST.3) — priority / workType / confidence /
                 alignment, skinned per the Cadence enum→tone maps. */}
             <div className="flex flex-wrap items-center gap-2">
@@ -136,6 +149,15 @@ export function CommitmentList({
               <ConfidenceMeter value={c.confidence} />
               <AlignmentChip value={c.alignmentStatus} />
             </div>
+            {/* Reconciliation note (ST.5b) — React-escaped free text when present. */}
+            {c.outcomeNote ? (
+              <p
+                data-cy="outcome-note"
+                className="text-meta text-ink-secondary"
+              >
+                {c.outcomeNote}
+              </p>
+            ) : null}
             {showOutcomeForm ? (
               <ReconciliationOutcomeForm commitment={c} planId={planId} />
             ) : null}
