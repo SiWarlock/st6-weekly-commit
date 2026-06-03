@@ -1,4 +1,4 @@
-import { HiLightningBolt } from 'react-icons/hi';
+import { HiLightningBolt, HiLockClosed } from 'react-icons/hi';
 import { Badge } from '../../shared/components/Badge';
 import { RiskBadge } from '../../shared/components/RiskBadge';
 import { can } from '../../shared/lib/allowedActions';
@@ -82,6 +82,15 @@ export function CommitmentList({
           >
             <div className="flex items-center justify-between gap-3">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
+                {/* Lock glyph once the baseline is committed (planState ≠ DRAFT),
+                    §3 baseline-immutability surfaced visually (server-authoritative). */}
+                {!draft ? (
+                  <HiLockClosed
+                    data-cy="lock-glyph"
+                    aria-hidden
+                    className="h-3.5 w-3.5 flex-none text-ink-muted"
+                  />
+                ) : null}
                 <span className="truncate text-body text-ink-primary">
                   {c.title}
                 </span>
@@ -119,7 +128,11 @@ export function CommitmentList({
                 alignment, skinned per the Cadence enum→tone maps. */}
             <div className="flex flex-wrap items-center gap-2">
               <PriorityTag value={c.priority} />
-              <WorkTypeTag value={c.workType} />
+              {/* Suppress the WorkTypeTag for UNPLANNED — the accent kind-badge
+                  above already carries "Unplanned" (ST.5a redundancy fix). */}
+              {c.workType !== 'UNPLANNED' ? (
+                <WorkTypeTag value={c.workType} />
+              ) : null}
               <ConfidenceMeter value={c.confidence} />
               <AlignmentChip value={c.alignmentStatus} />
             </div>

@@ -60,8 +60,11 @@ describe('PlanLifecycleBar (state display + allowedActions-driven lifecycle affo
 
     render(<PlanLifecycleBar plan={plan()} />);
 
-    // The current state is shown via the §4.2 StatusBadge (Draft).
-    expect(screen.getByText(/draft/i)).toBeInTheDocument();
+    // The current state is shown via the §4.2 StatusBadge (Draft). Scoped to the
+    // badge — the ST.5a stepper also renders a "Draft" node label.
+    expect(
+      document.querySelector('[data-cy="status-badge"]'),
+    ).toHaveTextContent(/draft/i);
     // The lock affordance is present + enabled (LOCK ∈ allowedActions).
     expect(screen.getByRole('button', { name: /lock/i })).toBeEnabled();
   });
@@ -149,8 +152,11 @@ describe('PlanLifecycleBar (state display + allowedActions-driven lifecycle affo
       screen.getByRole('button', { name: /start reconciliation/i }),
     );
     expect(start).toHaveBeenCalledWith('plan-1');
-    expect(screen.getByText(/locked/i)).toBeInTheDocument();
-    expect(screen.queryByText(/reconciling/i)).toBeNull();
+    // No optimistic flip: the status badge still reads LOCKED (not RECONCILING).
+    // Scoped to the badge — the ST.5a stepper renders all four state labels.
+    const badge = document.querySelector('[data-cy="status-badge"]');
+    expect(badge).toHaveTextContent(/locked/i);
+    expect(badge).not.toHaveTextContent(/reconciling/i);
 
     // CLOSE error surfaces verbatim.
     rerender(
@@ -169,5 +175,49 @@ describe('PlanLifecycleBar (state display + allowedActions-driven lifecycle affo
         'Link every unplanned commitment before closing.',
       ),
     ).toBeInTheDocument();
+  });
+});
+
+// ST.5a — the 4-node forward-only lifecycle stepper (derived display, §3 order).
+describe('PlanLifecycleBar → lifecycle stepper (ST.5a)', () => {
+  const nodeStates = (root: HTMLElement) =>
+    Array.from(root.querySelectorAll('[data-cy="stepper-node"]')).map((n) =>
+      n.getAttribute('data-state'),
+    );
+
+  it('lifecycle_stepper_renders_four_nodes_in_order: the stepper renders Draft → Locked → Reconciling → Reconciled in §3 lifecycle order', () => {
+    mockHooks();
+    const { container } = render(<PlanLifecycleBar plan={plan()} />);
+
+    expect(nodeStates(container)).toEqual([
+      'DRAFT',
+      'LOCKED',
+      'RECONCILING',
+      'RECONCILED',
+    ]);
+    const stepper = container.querySelector('[data-cy="lifecycle-stepper"]')!;
+    expect(stepper).toHaveTextContent('Draft');
+    expect(stepper).toHaveTextContent('Locked');
+    expect(stepper).toHaveTextContent('Reconciling');
+    expect(stepper).toHaveTextContent('Reconciled');
+  });
+
+  it('lifecycle_stepper_marks_done_active_pending_by_state: for state=RECONCILING, DRAFT+LOCKED are done, RECONCILING is active, RECONCILED is pending (forward-only derivation)', () => {
+    mockHooks();
+    const { container } = render(
+      <PlanLifecycleBar
+        plan={plan({ state: 'RECONCILING', allowedActions: [] })}
+      />,
+    );
+
+    const statusOf = (state: string) =>
+      container
+        .querySelector(`[data-cy="stepper-node"][data-state="${state}"]`)
+        ?.getAttribute('data-status');
+
+    expect(statusOf('DRAFT')).toBe('done');
+    expect(statusOf('LOCKED')).toBe('done');
+    expect(statusOf('RECONCILING')).toBe('active');
+    expect(statusOf('RECONCILED')).toBe('pending');
   });
 });

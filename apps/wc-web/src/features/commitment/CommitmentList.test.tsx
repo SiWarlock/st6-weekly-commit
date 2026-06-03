@@ -331,3 +331,66 @@ describe('CommitmentList → card surface skin (ST.4)', () => {
     expect(planned.className).not.toMatch(/border-l-/);
   });
 });
+
+// ST.5a IC composition: lock glyph on locked titles + UNPLANNED redundancy fix.
+describe('CommitmentList → ST.5a composition (lock glyph, UNPLANNED redundancy)', () => {
+  const rowOf = (title: string) =>
+    screen
+      .getByText(title)
+      .closest('[data-cy="commitment-row"]') as HTMLElement;
+
+  it('commitment_card_shows_lock_glyph_when_not_draft: a LOCKED plan prepends a lock glyph to each commitment title; a DRAFT plan shows none (§3 baseline-immutability, communicated visually)', () => {
+    const { unmount } = render(
+      <CommitmentList
+        planState="LOCKED"
+        planId="plan-1"
+        commitments={[commitment({ id: 'c-1', title: 'Locked work' })]}
+      />,
+    );
+    expect(
+      rowOf('Locked work').querySelector('[data-cy="lock-glyph"]'),
+    ).not.toBeNull();
+    unmount();
+
+    render(
+      <CommitmentList
+        planState="DRAFT"
+        planId="plan-1"
+        commitments={[commitment({ id: 'c-1', title: 'Draft work' })]}
+      />,
+    );
+    expect(
+      rowOf('Draft work').querySelector('[data-cy="lock-glyph"]'),
+    ).toBeNull();
+  });
+
+  it('unplanned_commitment_suppresses_worktype_tag: an UNPLANNED commitment renders the accent kind-badge and NO WorkTypeTag (no second "Unplanned"); a non-UNPLANNED commitment renders its WorkTypeTag', () => {
+    render(
+      <CommitmentList
+        planState="LOCKED"
+        planId="plan-1"
+        commitments={[
+          commitment({
+            id: 'c-1',
+            title: 'Unplanned work',
+            commitmentKind: 'UNPLANNED',
+            workType: 'UNPLANNED',
+          }),
+          commitment({
+            id: 'c-2',
+            title: 'Strategic work',
+            workType: 'STRATEGIC',
+          }),
+        ]}
+      />,
+    );
+
+    const unplanned = rowOf('Unplanned work');
+    expect(unplanned.querySelector('[data-cy="kind-badge"]')).not.toBeNull();
+    expect(unplanned.querySelector('[data-cy="worktype-tag"]')).toBeNull();
+
+    // A non-UNPLANNED commitment keeps its WorkTypeTag.
+    const strategic = rowOf('Strategic work');
+    expect(strategic.querySelector('[data-cy="worktype-tag"]')).not.toBeNull();
+  });
+});

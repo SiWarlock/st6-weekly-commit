@@ -15,6 +15,7 @@ const extend = asRecord(asRecord(asRecord(tailwindConfig).theme).extend);
 
 const TOUCHED_SURFACES = [
   'features/plan/WeeklyPlanView.tsx',
+  'features/plan/PlanLifecycleBar.tsx', // ST.5a stepper
   'features/manager/CommandCenter.tsx',
   'features/manager/HeatmapGrid.tsx',
   'features/commitment/CommitmentList.tsx',
