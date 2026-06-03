@@ -4,7 +4,7 @@
 - **Area / role:** `apps/wc-web/` · frontend implementer (`st6-main-wc-web-implementer`)
 - **Phase:** Phase ST (ST.1/ST.2) + Phase 9 (9.1, 9.3, 9.2 / ST.3 fold-in)
 - **Predecessor session:** [001 — Phase 0 backend + Phase 1 schema](001-2026-06-02-phase0-backend-and-phase1-schema.md) (backend track; this is the first **frontend** session)
-- **Successor session:** _(next frontend session — to be linked; next slice is 9.5 me/rcdo)_
+- **Successor session:** [005 — frontend Phase 9: route tree → me/rcdo → plans/commitments → IC workspace + lock](005-2026-06-02-frontend-phase9-ic-workspace.md) (9.4–9.7)
 
 > Cross-track note: 001 is the backend track's session doc. Per shared-tree discipline this doc does not edit 001's successor link (another track's committed file); it references 001 as the chronological predecessor only.
 
