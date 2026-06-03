@@ -3,7 +3,7 @@ import { configureStore } from '@reduxjs/toolkit';
 import { baseApi } from './baseApi';
 import {
   setAccessTokenProvider,
-  setDemoEmployeeIdProvider,
+  setDemoAuthHeaderApplier,
 } from './authAccessor';
 
 // A throwaway endpoint so we can drive a real request through baseApi end-to-end.
@@ -36,13 +36,13 @@ afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   setAccessTokenProvider(null);
-  setDemoEmployeeIdProvider(null);
+  setDemoAuthHeaderApplier(null);
 });
 
 describe('store + baseApi integration (9.1)', () => {
   it('store_wires_baseApi_reducer_and_middleware: api slice present and a dispatched query resolves', async () => {
     vi.stubEnv('VITE_AUTH_MODE', 'demo');
-    setDemoEmployeeIdProvider(() => 'emp-1');
+    setDemoAuthHeaderApplier((h) => h.set('X-Demo-Employee-Id', 'emp-1'));
     mockOkFetch();
 
     const store = makeStore();
@@ -55,7 +55,7 @@ describe('store + baseApi integration (9.1)', () => {
   it('store_dispatch_sets_single_header_per_mode: exactly one auth header per VITE_AUTH_MODE (XOR end-to-end)', async () => {
     // ---- demo mode ----
     vi.stubEnv('VITE_AUTH_MODE', 'demo');
-    setDemoEmployeeIdProvider(() => 'emp-123');
+    setDemoAuthHeaderApplier((h) => h.set('X-Demo-Employee-Id', 'emp-123'));
     const demoFetch = mockOkFetch();
     const demoStore = makeStore();
     await demoStore.dispatch(testApi.endpoints.ping.initiate());
@@ -66,7 +66,7 @@ describe('store + baseApi integration (9.1)', () => {
     // ---- auth0 mode ----
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
-    setDemoEmployeeIdProvider(null);
+    setDemoAuthHeaderApplier(null);
     vi.stubEnv('VITE_AUTH_MODE', 'auth0');
     setAccessTokenProvider(async () => 'jwt-xyz');
     const authFetch = mockOkFetch();

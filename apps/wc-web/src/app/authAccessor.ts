@@ -5,10 +5,15 @@
  * `prepareHeaders` reads them to attach exactly one auth header per mode.
  */
 export type AccessTokenProvider = () => Promise<string>;
-export type DemoEmployeeIdProvider = () => string | null;
+/**
+ * Applies the demo auth header(s) onto an outgoing request. The applier OWNS the
+ * demo-header name literal — it lives in `src/standalone/` only (REQ-I-008), so
+ * the shared, remote-reachable `baseApi`/`authAccessor` never carry it.
+ */
+export type DemoAuthHeaderApplier = (headers: Headers) => void;
 
 let accessTokenProvider: AccessTokenProvider | null = null;
-let demoEmployeeIdProvider: DemoEmployeeIdProvider | null = null;
+let demoAuthHeaderApplier: DemoAuthHeaderApplier | null = null;
 
 /** Inject the auth0 bearer-token provider (or `null` to clear). */
 export function setAccessTokenProvider(
@@ -17,11 +22,11 @@ export function setAccessTokenProvider(
   accessTokenProvider = provider;
 }
 
-/** Inject the demo persona-id provider (or `null` to clear). */
-export function setDemoEmployeeIdProvider(
-  provider: DemoEmployeeIdProvider | null,
+/** Inject the demo auth-header applier (or `null` to clear). */
+export function setDemoAuthHeaderApplier(
+  applier: DemoAuthHeaderApplier | null,
 ): void {
-  demoEmployeeIdProvider = provider;
+  demoAuthHeaderApplier = applier;
 }
 
 /**
@@ -41,17 +46,18 @@ export function hasAccessTokenProvider(): boolean {
 }
 
 /**
- * Resolve the demo persona id, or `null` when unset/unavailable. Degrades on a
- * throwing provider (returns null) — a demo request with no persona sends no
+ * Apply the demo auth header(s) via the injected applier. No-op when no applier
+ * is registered (the exposed remote's default — it carries no demo path) and
+ * degrades on a throwing applier — a demo request with no persona then sends no
  * header and the backend demo-gate (`DEMO_AUTH_ENABLED`) rejects with 403.
  */
-export function getDemoEmployeeId(): string | null {
-  if (demoEmployeeIdProvider === null) {
-    return null;
+export function applyDemoAuthHeader(headers: Headers): void {
+  if (demoAuthHeaderApplier === null) {
+    return;
   }
   try {
-    return demoEmployeeIdProvider();
+    demoAuthHeaderApplier(headers);
   } catch {
-    return null;
+    /* degrade: a broken demo seam sends no demo header (backend 403 path). */
   }
 }

@@ -1,21 +1,43 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { prepareHeaders, baseApi, resolveApiBaseUrl } from './baseApi';
 import { TAG_TYPES } from './tags';
 import {
   setAccessTokenProvider,
-  setDemoEmployeeIdProvider,
+  setDemoAuthHeaderApplier,
 } from './authAccessor';
+import { stripComments } from '../test/util';
+
+const here = dirname(fileURLToPath(import.meta.url));
 
 afterEach(() => {
   vi.unstubAllEnvs();
   setAccessTokenProvider(null);
-  setDemoEmployeeIdProvider(null);
+  setDemoAuthHeaderApplier(null);
 });
 
-describe('prepareHeaders auth XOR (§7)', () => {
-  it('demo_mode_attaches_demo_header_only: VITE_AUTH_MODE=demo sets X-Demo-Employee-Id, never Authorization', async () => {
+describe('REQ-I-008 — baseApi source carries no demo-header literal (split out to standalone)', () => {
+  it('baseapi_source_has_no_demo_header_literal: the demo-header name lives only in src/standalone/, never in the shared baseApi', () => {
+    const code = stripComments(
+      readFileSync(resolve(here, 'baseApi.ts'), 'utf8'),
+    );
+    // The X-Demo-Employee-Id literal (and any direct headers.set of it) must be
+    // gone from the shared, remote-reachable baseApi — it is attached only via
+    // the injected applier seam, whose closure lives in src/standalone/.
+    expect(code).not.toMatch(/X-Demo-Employee-Id/);
+    expect(code).not.toMatch(/headers\.set\(\s*['"]X-Demo/i);
+  });
+});
+
+describe('prepareHeaders auth XOR (§7) — via the injected demo-applier seam', () => {
+  it('demo_mode_attaches_demo_header_via_injected_applier: VITE_AUTH_MODE=demo runs the injected applier (sets X-Demo-Employee-Id), never Authorization', async () => {
     vi.stubEnv('VITE_AUTH_MODE', 'demo');
-    setDemoEmployeeIdProvider(() => 'emp-123');
+    // The applier owns the header literal; baseApi only dispatches to it.
+    setDemoAuthHeaderApplier((headers) =>
+      headers.set('X-Demo-Employee-Id', 'emp-123'),
+    );
     // A bearer provider is present but MUST be ignored in demo mode.
     setAccessTokenProvider(async () => 'jwt-should-be-ignored');
 
@@ -25,29 +47,31 @@ describe('prepareHeaders auth XOR (§7)', () => {
     expect(headers.get('Authorization')).toBeNull();
   });
 
-  it('demo_mode_missing_or_failing_persona_degrades: no/throwing demo provider → no header, no crash (backend 403 path handles it)', async () => {
+  it('demo_mode_with_no_or_throwing_applier_degrades: no applier (remote default) or a throwing applier → no demo header, no crash (backend 403 path handles it)', async () => {
     vi.stubEnv('VITE_AUTH_MODE', 'demo');
 
-    // (a) no persona provider configured → resolves with no demo header.
-    setDemoEmployeeIdProvider(null);
+    // (a) no applier registered (the exposed remote's default) → no demo header.
+    setDemoAuthHeaderApplier(null);
     const a = await prepareHeaders(new Headers());
     expect(a.get('X-Demo-Employee-Id')).toBeNull();
     expect(a.get('Authorization')).toBeNull();
 
-    // (b) persona provider throws → still resolves cleanly (degrade, don't crash).
-    setDemoEmployeeIdProvider(() => {
-      throw new Error('persona seam not ready');
+    // (b) applier throws → still resolves cleanly (degrade, don't crash).
+    setDemoAuthHeaderApplier(() => {
+      throw new Error('demo seam not ready');
     });
     const b = await prepareHeaders(new Headers());
     expect(b.get('X-Demo-Employee-Id')).toBeNull();
     expect(b.get('Authorization')).toBeNull();
   });
 
-  it('auth0_mode_attaches_bearer_only: VITE_AUTH_MODE=auth0 awaits getAccessToken → Bearer, never demo header', async () => {
+  it('auth0_mode_attaches_bearer_only: VITE_AUTH_MODE=auth0 awaits getAccessToken → Bearer, never demo header (applier injected but ignored)', async () => {
     vi.stubEnv('VITE_AUTH_MODE', 'auth0');
     setAccessTokenProvider(async () => 'jwt-abc');
-    // A demo provider is present but MUST be ignored in auth0 mode.
-    setDemoEmployeeIdProvider(() => 'emp-should-be-ignored');
+    // A demo applier is present but MUST be ignored in auth0 mode.
+    setDemoAuthHeaderApplier((headers) =>
+      headers.set('X-Demo-Employee-Id', 'emp-should-be-ignored'),
+    );
 
     const headers = await prepareHeaders(new Headers());
 

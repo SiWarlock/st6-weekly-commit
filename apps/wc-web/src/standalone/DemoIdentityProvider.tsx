@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   setAccessTokenProvider,
-  setDemoEmployeeIdProvider,
+  setDemoAuthHeaderApplier,
 } from '../app/authAccessor';
 import {
   DEMO_PERSONAS,
@@ -27,11 +27,19 @@ export function DemoIdentityProvider({ children }: DemoIdentityProviderProps) {
 
   // Standalone is the single owner of the global accessor seam, so cleanup
   // clears it on unmount (best-effort — fine for the app-lifetime provider).
+  // The applier closure OWNS the X-Demo-Employee-Id literal (REQ-I-008: it lives
+  // in src/standalone/ only) and keeps the truthy guard so an empty persona
+  // degrades to no header (backend DEMO_AUTH_ENABLED 403), matching pre-split.
   useEffect(() => {
-    setDemoEmployeeIdProvider(() => personaRef.current);
+    setDemoAuthHeaderApplier((headers) => {
+      const id = personaRef.current;
+      if (id) {
+        headers.set('X-Demo-Employee-Id', id);
+      }
+    });
     setAccessTokenProvider(async () => `demo-token:${personaRef.current}`);
     return () => {
-      setDemoEmployeeIdProvider(null);
+      setDemoAuthHeaderApplier(null);
       setAccessTokenProvider(null);
     };
   }, []);

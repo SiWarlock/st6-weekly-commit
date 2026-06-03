@@ -1,13 +1,15 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import { TAG_TYPES } from './tags';
-import { getAccessToken, getDemoEmployeeId } from './authAccessor';
+import { getAccessToken, applyDemoAuthHeader } from './authAccessor';
 
 /**
  * Attach exactly ONE auth header per `VITE_AUTH_MODE` (§7 XOR):
  *   auth0 ⇒ `Authorization: Bearer <jwt>` only
- *   demo  ⇒ `X-Demo-Employee-Id: <persona>` only
- * The two are never combined. Mode is read at call-time; the credentials come
- * from the injectable accessor seam, so the remote build carries no demo branch.
+ *   demo  ⇒ the demo persona header only, attached by the injected applier seam
+ * The two are never combined. Mode is read at call-time; the auth0 token comes
+ * from the injectable accessor seam and the demo header from the injected
+ * applier (standalone-only), so this shared module carries no demo-header
+ * literal and the remote build carries no demo branch (REQ-I-008).
  *
  * Exported standalone (ignores the RTK `api` arg it doesn't need) so the XOR is
  * directly unit-testable; still assignable to `fetchBaseQuery`'s prepareHeaders.
@@ -24,14 +26,12 @@ export async function prepareHeaders(headers: Headers): Promise<Headers> {
     }
     headers.set('Authorization', `Bearer ${token}`);
   } else if (mode === 'demo') {
-    // demo: attach the persona header only when the seam yields one.
-    const demoEmployeeId = getDemoEmployeeId();
-    // Falsy (null OR an empty-string persona) → attach nothing; the backend
-    // demo-gate (DEMO_AUTH_ENABLED) rejects an unidentified demo request (403).
-    // Keep the truthy check (don't tighten to `!= null`) so '' also degrades.
-    if (demoEmployeeId) {
-      headers.set('X-Demo-Employee-Id', demoEmployeeId);
-    }
+    // demo: the injected applier (standalone-only) attaches the persona header.
+    // No-op when no applier is registered (the exposed remote) and degrades on a
+    // throwing/empty applier — the backend demo-gate (DEMO_AUTH_ENABLED) then
+    // rejects an unidentified demo request (403). The header-name literal and the
+    // empty-persona truthy guard live in the standalone applier, not here.
+    applyDemoAuthHeader(headers);
   } else {
     // Both real modes are wired (9.3) — fail loud on a misconfigured build
     // rather than silently falling through to a header-less request. No raw
