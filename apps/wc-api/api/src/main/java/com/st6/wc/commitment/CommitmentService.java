@@ -31,8 +31,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Draft-commitment writes (task 3.4a, §5 E5 / §6 rule #3 / §3 chess layer). {@link #create}
- * authorizes the <strong>parent plan</strong> FIRST (the chokepoint — no write before
- * authorization), requires the plan be {@code DRAFT} (else 409 {@code ILLEGAL_STATE_TRANSITION}),
+ * authorizes the <strong>parent plan owner-only</strong> FIRST (the chokepoint via {@link
+ * DomainAuthorizationService#authorizePlanMutation} — a manager-direct-report can READ a report's
+ * plan but must NOT author on it, §6; manager → 403 {@code PLAN_OWNER_REQUIRED}, cross-team/missing
+ * → IDOR-safe 404), requires the plan be {@code DRAFT} (else 409 {@code ILLEGAL_STATE_TRANSITION}),
  * rejects {@code workType=UNPLANNED} (planned-only endpoint → 400), validates an optional
  * Supporting-Outcome link (unknown → 400), forces {@code commitmentKind=PLANNED}, persists, and
  * maps to {@link WeeklyCommitmentDto}. The request's text fields are already normalized +
@@ -76,8 +78,8 @@ public class CommitmentService {
 
   @Transactional
   public WeeklyCommitmentDto create(UserPrincipal actor, UUID planId, CreateCommitmentRequest req) {
-    authz.authorizePlanAccess(
-        actor, planId); // chokepoint: codeless 404 (+ audit) on denial/missing
+    authz.authorizePlanMutation(
+        actor, planId); // chokepoint: owner-only (manager-direct-report→403, cross/missing→404)
     WeeklyPlan plan =
         plans.findById(planId).orElseThrow(ResourceNotFoundOrUnauthorizedException::new);
     if (plan.getState() != PlanState.DRAFT) {
@@ -114,16 +116,16 @@ public class CommitmentService {
    * E11 unplanned-commitment create (task 4.3, §3 / §5 / §6 rule #3 / §9 — REQ-F-025/026).
    * Authorizes the parent plan <strong>owner-only</strong> via {@link
    * DomainAuthorizationService#authorizePlanMutation} (the chokepoint — a manager-direct-report can
-   * READ a locked report's plan but must NOT author on it, §6) — deliberately NOT {@code
-   * authorizePlanAccess} (which also admits managers). Requires the plan be {@code LOCKED} or
-   * {@code RECONCILING} (else 409 — unplanned work surfaces post-lock, never on a {@code
-   * DRAFT}/{@code RECONCILED} plan), validates an optional Supporting-Outcome link (the link is
-   * enforced only at close, §4.5; unknown → 400), and <strong>server-forces</strong> {@code
-   * commitment_kind=UNPLANNED} + {@code work_type=UNPLANNED} (the inverse of the E5 planned-only
-   * create — {@code workType} is absent from the request, so a client value is ignored). An
-   * insert-only create: it never touches a planned-baseline row (REQ-F-025). One
-   * {@code @Transactional} unit — persist, recompute the manager projection (§9 {@code
-   * unplanned_count}, skipped if no manager), emit an IC audit.
+   * READ a locked report's plan but must NOT author on it, §6) — owner-only like the E5 planned
+   * create, never {@code authorizePlanAccess} (the read-authorizer admits managers: correct for
+   * reads, a §6 hole for authorship). Requires the plan be {@code LOCKED} or {@code RECONCILING}
+   * (else 409 — unplanned work surfaces post-lock, never on a {@code DRAFT}/{@code RECONCILED}
+   * plan), validates an optional Supporting-Outcome link (the link is enforced only at close, §4.5;
+   * unknown → 400), and <strong>server-forces</strong> {@code commitment_kind=UNPLANNED} + {@code
+   * work_type=UNPLANNED} (the inverse of the E5 planned-only create — {@code workType} is absent
+   * from the request, so a client value is ignored). An insert-only create: it never touches a
+   * planned-baseline row (REQ-F-025). One {@code @Transactional} unit — persist, recompute the
+   * manager projection (§9 {@code unplanned_count}, skipped if no manager), emit an IC audit.
    */
   @Transactional
   public WeeklyCommitmentDto createUnplanned(

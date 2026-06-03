@@ -14,6 +14,8 @@ import com.st6.wc.enums.PlanState;
 import com.st6.wc.enums.RoleType;
 import com.st6.wc.plan.WeeklyPlan;
 import com.st6.wc.plan.repo.WeeklyPlanRepository;
+import com.st6.wc.relationship.ManagerRelationship;
+import com.st6.wc.relationship.repo.ManagerRelationshipRepository;
 import com.st6.wc.support.AbstractAppBootTest;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
@@ -49,11 +51,13 @@ class CommitmentCreateEndpointTest extends AbstractAppBootTest {
   @Autowired private WeeklyPlanRepository plans;
   @Autowired private WeeklyCommitmentRepository commitments;
   @Autowired private AuditEventRepository auditEvents;
+  @Autowired private ManagerRelationshipRepository relationships;
 
   @AfterEach
   void cleanup() {
     auditEvents.deleteAll();
     commitments.deleteAll();
+    relationships.deleteAll();
     plans.deleteAll();
     employees.deleteAll();
   }
@@ -76,6 +80,25 @@ class CommitmentCreateEndpointTest extends AbstractAppBootTest {
     p.setWeekEndDate(WEEK.plusDays(6));
     p.setState(state);
     return plans.saveAndFlush(p);
+  }
+
+  private Employee saveManager(String email) {
+    Employee e = new Employee();
+    e.setId(UUID.randomUUID());
+    e.setEmail(email);
+    e.setDisplayName("Name " + email);
+    e.setRole(RoleType.MANAGER);
+    e.setActive(true);
+    return employees.saveAndFlush(e);
+  }
+
+  private void saveActiveRelationship(UUID managerId, UUID reportId) {
+    ManagerRelationship r = new ManagerRelationship();
+    r.setId(UUID.randomUUID());
+    r.setManagerEmployeeId(managerId);
+    r.setDirectReportEmployeeId(reportId);
+    r.setActive(true);
+    relationships.saveAndFlush(r);
   }
 
   /** Build an E5 request body from pre-formatted JSON value fragments (so bad enums/nulls work). */
@@ -115,6 +138,38 @@ class CommitmentCreateEndpointTest extends AbstractAppBootTest {
 
     assertThat(commitments.findAll()).hasSize(1);
     assertThat(commitments.findAll().get(0).getCommitmentKind()).isEqualTo(CommitmentKind.PLANNED);
+  }
+
+  // --- #1b: E5 create is OWNER-ONLY (§6) — a manager-direct-report who can READ the report's DRAFT
+  // plan must NOT author on it → 403 PLAN_OWNER_REQUIRED + a denial audit; no commitment persisted.
+  // The regression pin for the handoff-005 Finding (the create was on the read authorizer). ----
+  @Test
+  void create_managerDirectReport_403PlanOwnerRequired() throws Exception {
+    Employee ic = saveIc("ada@x.test");
+    Employee mgr = saveManager("boss@x.test");
+    saveActiveRelationship(mgr.getId(), ic.getId());
+    WeeklyPlan plan = savePlan(ic.getId(), PlanState.DRAFT);
+
+    mvc.perform(
+            post("/api/plans/" + plan.getId() + "/commitments")
+                .header(HEADER, mgr.getId().toString())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    body(
+                        q("manager-authored"),
+                        q("nope"),
+                        "null",
+                        q("P1"),
+                        q("STRATEGIC"),
+                        q("MEDIUM"),
+                        q("ALIGNED"))))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("PLAN_OWNER_REQUIRED"));
+
+    assertThat(commitments.findAll()).isEmpty(); // never authored on the report's plan
+    // exactly one safe-metadata denial audit (§15), consistent with the other mutation denials
+    assertThat(auditEvents.findAll()).hasSize(1);
+    assertThat(auditEvents.findAll().get(0).getAction()).isEqualTo("AUTHORIZATION_DENIED");
   }
 
   // --- #2: workType=UNPLANNED → 400 VALIDATION_ERROR (planned-only endpoint) ----

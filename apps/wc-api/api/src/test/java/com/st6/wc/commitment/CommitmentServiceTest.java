@@ -142,7 +142,7 @@ class CommitmentServiceTest {
 
     service.create(actor(), PLAN_ID, request(WorkType.STRATEGIC, null));
 
-    verify(authz).authorizePlanAccess(actor(), PLAN_ID); // the chokepoint ran
+    verify(authz).authorizePlanMutation(actor(), PLAN_ID); // owner-only chokepoint (NOT planAccess)
     ArgumentCaptor<WeeklyCommitment> saved = ArgumentCaptor.forClass(WeeklyCommitment.class);
     verify(commitments).save(saved.capture());
     assertThat(saved.getValue().getCommitmentKind()).isEqualTo(CommitmentKind.PLANNED); // forced
@@ -155,7 +155,7 @@ class CommitmentServiceTest {
   void create_deniedAuthorizer_neverPersists() {
     doThrow(new ResourceNotFoundOrUnauthorizedException())
         .when(authz)
-        .authorizePlanAccess(any(), eq(PLAN_ID));
+        .authorizePlanMutation(any(), eq(PLAN_ID));
 
     assertThatThrownBy(() -> service.create(actor(), PLAN_ID, request(WorkType.STRATEGIC, null)))
         .isInstanceOf(ResourceNotFoundOrUnauthorizedException.class);
