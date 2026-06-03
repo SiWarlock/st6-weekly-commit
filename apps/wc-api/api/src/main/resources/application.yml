@@ -18,6 +18,11 @@ app:
   org:
     # Blank passthrough: OrgTimeBindingConfig.resolveZone is the single fail-safe source of truth (D.6).
     timezone: ${ORG_TIMEZONE:}
+  cors:
+    # Exact-origin CORS allow-list (task 2.7, §12/D.2/§16). Base default = the dev SPA origin (F.7);
+    # prod overrides to the deployed origin (application-prod.yml). NEVER a wildcard; demo does not
+    # widen it (the CorsConfigurationSource bean reads only this list). Comma-separated → String[].
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
 
 # Auth0 audience for the custom AudienceValidator (§6 — Auth0 does not validate aud by default).
 auth0:
