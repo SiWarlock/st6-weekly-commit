@@ -4,7 +4,7 @@
 - **Phase:** 0 (Monorepo & toolchain foundation) → 1 (Physical schema)
 - **Role:** `st6-main-wc-api-implementer` (backend)
 - **Predecessor session:** _(none — first implementer session; follows bootstrap commit `72c149a`)_
-- **Successor session:** _(TBD — next backend slice is 1.5 JPA entities)_
+- **Successor session:** [003 — Phase 1 JPA entities + repos & Phase 2 Auth0 JWT decoder](003-2026-06-02-phase1-entities-repos-and-phase2-jwt.md)
 - **Commits this session (7 slices):** `555c2a8` (0.1) · `d888f92` (0.2) · `e8b5305` (0.3) · `7c4b649` (0.4+0.5) · `b230ad0` (1.2) · `a2230c5` (1.3) · `c1ae1f1` (1.4). _(The frontend track's `2a307b8 docs(design)` interleaved — not this session's.)_
 
 ## Why this session existed
