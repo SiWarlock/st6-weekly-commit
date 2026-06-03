@@ -118,7 +118,14 @@ Several typed models in this codebase are **contracts** mirrored in `ARCHITECTUR
 
 | Model | `ARCHITECTURE.md` section | Notes |
 |---|---|---|
-| <model> | §X | <field summary> |
+| `MeDto` (`shared/lib/dtos.ts`) | Appendix B.3 | identity: `employeeId`/`email`/`displayName`/`role`/`persona`/`isManager`/`timezone?` (9.5) |
+| `RcdoTreeDto` + `RallyCryNode`/`DefiningObjectiveNode`/`SupportingOutcomeNode` (`shared/lib/dtos.ts`) | Appendix B.4 | `{ rallyCries: RallyCryNode[] }` object wrapper; read-only RC→DO→SO hierarchy (9.5) |
+| `WeeklyPlanDto` (`shared/lib/dtos.ts`) | Appendix B.5 | plan + nested `commitments[]`/`managerReview?`/`allowedActions[]`/`version` (9.6) |
+| `WeeklyCommitmentDto` (`shared/lib/dtos.ts`) | Appendix B.6 | chess fields + `supportingOutcomeId?`/`reconciliationOutcome?`/`alignmentStatus`/`allowedActions[]`/`version` (9.6) |
+| `ManagerReviewDto` (`shared/lib/dtos.ts`) | Appendix B.7 | nested in B.5; forms own it at 9.9 (9.6) |
+| `RcdoBreadcrumbDto` (`shared/lib/dtos.ts`) | Appendix B.5 / §5 | RC→DO→SO labels for display (9.6) |
+| `CreateCommitmentRequest` / `PatchCommitmentRequest` / `CreateUnplannedCommitmentRequest` (`shared/lib/dtos.ts`) | Appendix B.6 (E5/E6/E11) | request DTOs; no `version` (per Appendix B) (9.6) |
+| B.1 enum unions (`PlanState`/`CommitmentKind`/`Priority`/`WorkType`/`Confidence`/`AlignmentStatus`/`ReconciliationOutcome`/`ReviewStatus`/`AllowedAction`) (`shared/lib/dtos.ts`) | Appendix B.1 | typed unions mirroring the B.1 wire vocab verbatim (9.6) |
 
 <!-- Starts empty (or with the first model if one exists). Populated as contract models land. -->
 
@@ -175,6 +182,10 @@ Lessons start at §1.
 | 5 | 2026-06-02 | [RTK Query base testing](LESSONS.md#5) | Test the `prepareHeaders` XOR by injecting both accessor-seam providers + asserting exactly-one-header (+ no-leak); give store integration tests an absolute `VITE_API_BASE_URL` + late-bound `fetchFn` so undici's `new Request()` doesn't throw before the mocked `fetch`. |
 | 6 | 2026-06-02 | [REQ-I-008 boundary proof](LESSONS.md#6) | Prove the remote build is demo-free with BOTH a fast fail-open static import-graph assertion AND a fail-closed auth0 build-output grep over the federation-exposed chunk (+ positive control); keep demo-header source out of remote-reachable modules via a standalone-only injected seam. |
 | 7 | 2026-06-02 | [Status-taxonomy single source of visual truth](LESSONS.md#7) | Port the §4.2/§4.3 enum→`{tone,icon,label,ring}` maps once into `statusTaxonomy.ts` + consume everywhere; never re-map a status inline; unknown→render nothing; `OVERDUE` is a derived overlay; every badge is glyph+text+color. |
+| 8 | 2026-06-02 | [Applier-seam pattern](LESSONS.md#8) | Keep a safety-mirror literal (e.g. `X-Demo-Employee-Id`) out of shared/remote-reachable modules by injecting it from `src/standalone/` via a no-op-default applier seam (`apply*`/`set*Applier`, try/catch-degrade); the literal + its falsy-value guard live only in the standalone closure; split in its own commit + pin with a source-literal scan + a positive-controlled §6 boundary walk. |
+| 9 | 2026-06-02 | [Query slices: read-only tags + §5 harness + problem+json](LESSONS.md#9) | Read-only query domains (`RCDO`/`Me`) tag-once-never-invalidate (pin the no-`*Mutation` half); reuse the §5 store harness; give `fetchBaseQuery` an `isJsonContentType` matching `application/problem+json` or RFC-7807 error bodies won't parse. |
+| 10 | 2026-06-02 | [Mutation cache-invalidation](LESSONS.md#10) | Per-id `{type:'plans',id}`+`'CURRENT'` tags (`planId` arg = invalidation key); guard `invalidatesTags` with `(_r,error)=>error?[]:tags` for success-only; assert via `endpoint.select()` raw `.status` not `.isFetching`; prove no-optimistic behaviorally (gated refetch) + structurally (no `updateQueryData`). |
+| 11 | 2026-06-02 | [Server-authoritative control gating](LESSONS.md#11) | Never re-derive eligibility/authz/lifecycle-legality client-side; gate controls only on server `allowedActions[]` (one `can()` helper) or server state; surface `409`/`safeMessage`/`fieldErrors[]` verbatim; lifecycle transition = invalidate→refetch-into-new-state, no optimistic flip. |
 
 <!-- Starts empty. Each row links to its `LESSONS.md` anchor. -->
 

@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import WeeklyCommitApp from './WeeklyCommitApp';
 import {
   getAccessToken,
@@ -9,11 +9,46 @@ import {
 } from '../app/authAccessor';
 import { prepareHeaders } from '../app/baseApi';
 import { useCurrentUser } from '../features/me/useCurrentUser';
+import {
+  useGetCurrentPlanQuery,
+  useLockPlanMutation,
+} from '../features/plan/plansApi';
+import type { WeeklyPlanDto } from '../shared/lib/dtos';
 
 // The eager route gating reads useCurrentUser (an RTK Query hook). Mock it so the
 // remote-module tests isolate router/accessor wiring from the store (the real
 // store-backed path is covered by StandaloneShell.test + meApi/useCurrentUser tests).
 vi.mock('../features/me/useCurrentUser');
+// /weekly-commit now renders WeeklyPlanView (9.7) → reads getCurrentPlan. Mock it.
+vi.mock('../features/plan/plansApi');
+
+const EMPTY_PLAN: WeeklyPlanDto = {
+  id: 'plan-1',
+  employeeId: 'emp-1',
+  employeeDisplayName: 'Ivy Chen',
+  weekStartDate: '2026-06-01',
+  weekEndDate: '2026-06-07',
+  state: 'DRAFT',
+  plannedCount: 0,
+  unplannedCount: 0,
+  commitments: [],
+  managerReview: null,
+  allowedActions: [],
+  version: 1,
+};
+
+beforeEach(() => {
+  vi.mocked(useGetCurrentPlanQuery).mockReturnValue({
+    data: EMPTY_PLAN,
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  } as unknown as ReturnType<typeof useGetCurrentPlanQuery>);
+  vi.mocked(useLockPlanMutation).mockReturnValue([
+    vi.fn(),
+    { isLoading: false, reset: vi.fn() },
+  ] as unknown as ReturnType<typeof useLockPlanMutation>);
+});
 
 function mockCurrentUser(value: {
   isManager?: boolean;
@@ -47,7 +82,7 @@ describe('WeeklyCommitApp (exposed remote module)', () => {
     );
     // The persona-aware '/' redirect resolves to the IC weekly workspace chunk,
     // rendered inside the host MemoryRouter (no BrowserRouter created by the remote).
-    expect(await screen.findByText(/coming in 9\.7/i)).toBeInTheDocument();
+    expect(await screen.findByText(/weekly commitments/i)).toBeInTheDocument();
   });
 
   it('remote_registers_host_accessor_into_seam: a host getAccessToken is wired into the 9.1 seam (auth0 Bearer uses the host token)', async () => {
@@ -77,6 +112,6 @@ describe('WeeklyCommitApp (exposed remote module)', () => {
     // The WeeklyCommitApp ready-guard renders before <AppRoutes/>, so no route
     // content is reached when the host provided no accessor.
     expect(screen.getByRole('alert')).toBeInTheDocument();
-    expect(screen.queryByText(/coming in 9\.7/i)).toBeNull();
+    expect(screen.queryByText(/weekly commitments/i)).toBeNull();
   });
 });

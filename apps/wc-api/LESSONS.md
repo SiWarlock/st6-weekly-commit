@@ -262,3 +262,66 @@ The `DemoAuthFilter` (env-gated demo identity, the production-backdoor control) 
 **DB-backed-app-boot migration (Option A — pairs with §9/§12/§13 "what loads/binds in which profile"):** from Phase 2 the app is **DB-dependent in every mode** (demo resolves the demo id + writes audits; real resolves `external_subject` + writes denial audits). So when an always-component-scanned DB-dependent `@Service` lands (`AuditService` injects `AuditEventRepository`), the DB-less skeleton boots can't survive via `autoconfigure.exclude` (it's a component-scanned `@Service`, not an autoconfig). The **DB-less skeleton boot is outgrown** — migrate the app-boot tests to a **shared** Testcontainers PG16 (one container reused across JPA + boot tests via a `SharedPostgres` holder) + Flyway + `ddl-auto=validate`, keeping only the security-autoconfig exclude. Durable vs a growing `@MockBean`/exclude list, and the boots become realistic.
 
 **Rule:** A backdoor-control filter runs in ALL modes to *reject* the disabled header (never gated out) and rejects the untrusted value WITHOUT a DB query; disabled+header → 403+one-safe-audit, enabled+unknown → convergent IDOR-safe 401 (no audit); register it as a plain-class `@Bean` (not `@Component`, to avoid double-registration); the central `AuditService` writes safe-metadata-only (SENTINEL-pinned, never echo untrusted input; denial audits need `REQUIRES_NEW`); and once an always-scanned DB-dependent `@Service` lands, migrate the DB-less skeleton boots to a shared Testcontainers PG (Option A), don't accrete mocks.
+
+---
+
+## <a id="15"></a>15. Relationship-driven principal resolution (identity → `UserPrincipal`, separate from authorization)
+
+**Date:** 2026-06-02.
+**Source slice:** 2.4 (principal-resolver).
+
+`PrincipalResolver` maps an authenticated identity — **either** a validated-JWT `Auth0Identity` (2.2) **or** a demo `employeeId` (2.3) — to a resolved `UserPrincipal`, and is the single input the central `DomainAuthorizationService` (2.5) reads. The load-bearing discipline is to **separate identity resolution (identity → principal) from domain authorization (principal → resource access)** and to make the manager signal **relationship-driven, not role-driven**:
+
+- **Authoritative `role` = the `Employee` DB row, never the JWT hint.** `Auth0Identity.role` is a *nullable coarse hint* (§6/F.1); once the resolver finds the `Employee` (by `externalSubject` in JWT mode, by `id` in demo mode), `principal.role = employee.role`. The JWT role is discarded — pinned by a test where the hint says `IC` but the row says `MANAGER` → principal is `MANAGER`. (Resolves 2.2's deferral: "the authoritative role is the Employee row in 2.4.")
+- **`isManager` is relationship-driven** — `existsByManagerEmployeeIdAndActiveTrue(employee.id)` (the *inverse* of the existing report→manager finder `findByDirectReportEmployeeIdAndActiveTrue`), **never** the role claim. A `MANAGER`-role employee with **no active managed report** is `isManager=false` for relationship-gated reads. This is the load-bearing foundation for the rule-#3 IDOR authorizer (2.5) — manager scope flows from active relationships, not from a self-asserted token role.
+- **Identity → no `Employee` → IDOR-safe `Optional.empty()`.** A valid identity that maps to no row resolves to `empty` with **no existence leak and no further DB probe on denial** (pin with `verifyNoInteractions(relationships)` — don't run the `isManager` lookup once the employee lookup misses). The resolver stays pure/unit-testable returning `Optional<UserPrincipal>`; the **2.6** filter chain translates `empty → 401`. This **pins the previously-unpinned authn-time status to 401** (an authenticated token that maps to no app user is *unauthenticated*, IDOR-safe).
+- **`UserPrincipal implements org.springframework.security.core.AuthenticatedPrincipal`** with `getName()` = `employeeId.toString()` — so once 2.6 stuffs it into the `Authentication`, `AbstractAuthenticationToken.getName()` delegates to it and `authentication.getName()` resolves to the employee id (read by the §15 audit actor + request logging). The no-HTTP **`SystemPrincipal`** (singleton `INSTANCE`) is a *distinct* boundary type that deliberately does NOT implement `AuthenticatedPrincipal` — the SYSTEM actor for the CronJob/worker (Phase 8/10), exempt from self/direct-report checks.
+- **Finders + tests:** back JWT-mode lookup with a derived `findByExternalSubject` (not unique-constrained → returns `Optional`) and `isManager` with the inverse `existsBy…ActiveTrue`; prove both under `@DataJpaTest` on PG16 (the active-scope branch — active=true vs inactive-only vs none — is load-bearing for rule #3). Resolver logic itself unit-tests cleanly with mocked repos. A `@Component` resolver is component-scanned (boots) but **not request-reachable until 2.6 wires it into the `SecurityFilterChain`** — a declared dependency, not an orphan.
+
+**Rule:** Resolve identity → `UserPrincipal` with the **authoritative `Employee.role`** (never the nullable JWT role hint) and **relationship-driven `isManager`** (`existsBy` active manager relationship, never the role claim — MANAGER-role-but-no-active-report ⇒ `isManager=false`); identity-maps-to-no-`Employee` ⇒ IDOR-safe `Optional.empty()` (→ 401 at the 2.6 chain, no existence leak, no further DB probe via `verifyNoInteractions`); keep resolution separate from authorization (2.5); `implements` Spring's `AuthenticatedPrincipal` so `authentication.getName()` = employeeId; keep `SystemPrincipal` a distinct no-HTTP boundary singleton.
+
+---
+
+## <a id="16"></a>16. A domain type that `implements` a framework interface must not shadow its simple name (SpotBugs gate)
+
+**Date:** 2026-06-02.
+**Source slice:** 2.4 (principal-resolver) — surfaced post-Step-2.5, reversed an approval.
+
+Naming a domain type the **same simple name** as a framework interface it `implements` fails the `./gradlew check` gate. We approved `record AuthenticatedPrincipal implements org.springframework.security.core.AuthenticatedPrincipal` (FQN import to dodge the name clash at the *language* level — it compiles), but SpotBugs at **effort=MAX / Confidence=MEDIUM** (the §13 gate) flagged **`NM_SAME_SIMPLE_NAME_AS_INTERFACE`** → `:api:spotbugsMain FAILED`, exit 1.
+
+- **The shadow itself is the finding, not the import.** FQN-`implements` does NOT placate the rule — SpotBugs flags that your type's simple name equals an implemented interface's simple name regardless of how you reference the interface. There is no language-level trick that satisfies the gate.
+- **Fix by renaming the domain type distinctly** — `UserPrincipal` (not `AuthenticatedPrincipal`) for the type implementing `o.s.s.core.AuthenticatedPrincipal`. Bonus: it reads better and pairs with its sibling (`UserPrincipal` ↔ `SystemPrincipal` = HTTP user actor ↔ no-HTTP system actor).
+- **Do NOT suppress it in `exclude.xml`.** That concedes a SpotBugs suppression on *production* code AND leaves two same-named types in the tree — the exact readability smell the rule legitimately flags (best-practice-over-pragmatic: remove the smell, don't hide it).
+- **Watch list:** the temptation recurs for any well-known framework interface name — `Clock`, `Filter`, `UserDetails`, `AuthenticatedPrincipal`, `Authentication`. When you implement one, give your type a distinct domain name up front.
+
+**Rule:** A domain type implementing a framework interface must not shadow the interface's simple name — `NM_SAME_SIMPLE_NAME_AS_INTERFACE` (SpotBugs MAX/MEDIUM) fails the gate *even with FQN-`implements`*; rename the domain type distinctly (`UserPrincipal`, not `AuthenticatedPrincipal`), never suppress it on production code.
+
+---
+
+## <a id="17"></a>17. Central domain-authorization service (rule #3, IDOR-safe) idiom
+
+**Date:** 2026-06-02.
+**Source slice:** 2.5 (domain-authorization-service) — SAFETY-CRITICAL, rule #3. Security-reviewed clean (0 critical / 0 high).
+
+A single `DomainAuthorizationService` (`@Service`) owns **every** resource check before any repository read/mutation — controllers/services carry only coarse authn/role gates (§6). It takes a `DomainPrincipal` (a `sealed interface permits UserPrincipal, SystemPrincipal` — the single authorizer input, introduced here as the 2.4-deferred marker) and enforces IC-self / manager-active-direct-report scope.
+
+- **IDOR-safe status split (§5/§11/§16):** cross-owner / cross-team / **genuinely-missing** all render **`404`** (`ResourceNotFoundOrUnauthorizedException`) — existence is never revealed; **capability/role** denials render **`403`** (`AuthorizationDeniedException` carrying a named `code` — `IC_CANNOT_RESOLVE_DISPUTE`, `MANAGER_ROLE_REQUIRED`). The rule: revealing the resource *exists* would leak ⇒ 404; the actor legitimately *sees* the resource but can't perform the action (or the surface is categorically role-gated) ⇒ 403.
+- **Manager scope = strictly the active `manager_relationship`** (reuse `findByDirectReportEmployeeIdAndActiveTrue`; an `active=false` row removes scope — ≤1 active by the V2 partial unique). A manager who **owns** a resource is authorized on it **as IC** (§4 relationship-driven — self short-circuit, no relationship lookup).
+- **One safe-metadata denial `audit_event` per GENUINE denial, in `REQUIRES_NEW`.** A separate `AuthorizationDeniedAuditer` `@Service` with `@Transactional(Propagation.REQUIRES_NEW)` writes the audit (across a real proxy boundary, audit written *before* the throw) so it **survives a rolled-back mutation** (consumes the 2.3 carry-forward §14). **A genuinely-missing resource → 404 with NO audit** (anti-spam / anti-DoS on random-id probing — consistent with 2.3's unknown-demo-id→401-no-audit; both paths return identical 404 so no existence leak). §6's denial cases are all *exists-but-wrong-actor* (→ they audit).
+- **Owner-resolution = flat-FK `findById` chains** (commitment→plan→owner; dispute→commitment→plan→owner; comment(target)→plan/commitment→owner; review→plan→owner; sync→ownerEmployeeId; heatmapCell→managerEmployeeId) — **zero new finders** beyond the existing active-direct-report one.
+- **SYSTEM exemption is unreachable from a request:** `SystemPrincipal` (singleton) is exempt from self/direct-report checks via an `instanceof` guard on the sealed marker, and is never produced from an HTTP request (only `UserPrincipal` is) — so the exemption can't be abused.
+- **Test surface:** unit (mocked repos, `verify`/`verifyNoMoreInteractions` on the auditer per denial), the Testcontainers §17 **IDOR matrix** (seed real entities with SENTINEL text → drive every denial row → assert each 403/404, exactly one audit per genuine denial, and **SENTINEL absence across every audit column**), and a real-proxy `@SpringBootTest` proving `REQUIRES_NEW` survives a `rollbackOnly` outer txn.
+
+**Rule:** One central `@Service` authorizes every resource access (controllers coarse-only); cross-owner/cross-team/missing → IDOR-safe `404`, capability/role → `403` + named code; manager scope = active `manager_relationship` (owner short-circuits as IC); each genuine denial writes one safe-metadata `audit_event` in `REQUIRES_NEW` (survives rollback), genuinely-missing → 404 no-audit; resolve owners via flat-FK `findById` chains; gate the SYSTEM exemption behind a sealed-marker `instanceof` that a request-built principal can't satisfy.
+
+---
+
+## <a id="18"></a>18. Two safety/coverage build gotchas: build-and-throw deny helpers + escaped-JSON audit metadata
+
+**Date:** 2026-06-02.
+**Source slice:** 2.5 (domain-authorization-service). Both surfaced during GREEN / the ad-hoc security-reviewer.
+
+- **Build-and-throw, don't throw-from-helper (JaCoCo coverage artifact).** A deny helper that *itself* throws (`private void deny(...) { audit(); throw new X(); }`) leaves an always-throwing line JaCoCo can mark as a partial/uncovered branch artifact — and it cost a real diagnostic cycle. Instead have the helper **build + return** the exception and **`throw` at the call site** (`throw deny(...)`). The audit side-effect happens in the helper; the `throw` is at the caller where coverage is clean. Keeps 100% line+branch honest without contortions.
+- **Audit metadata JSON via an escaped node, never raw string-concat (rule #7).** Building `metadata_json` by concatenating untrusted-or-semi-trusted values into a JSON string is safe *today* only by caller discipline — a latent rule-#7 leak the moment a caller passes a value with a quote/brace. The security-reviewer flagged it; the fix is to build the object with an escaped JSON node (Jackson `ObjectNode` / `JsonNodeFactory`) so escaping is structural, not manual. **Don't let a safety invariant rest on caller discipline.** (Pairs with §14's SENTINEL-pinned safe-metadata `AuditService` — §14 says *what* stays out; this says *how* to build the JSON so it can't leak.)
+
+**Rule:** Have deny/error helpers **build-and-return** the exception (throw at the call site) to avoid the JaCoCo always-throwing-helper coverage artifact; and build any audit/log JSON via an **escaped JSON node**, never string-concat, so rule-#7 safety is structural, not caller-dependent.

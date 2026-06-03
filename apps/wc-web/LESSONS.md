@@ -116,7 +116,9 @@ REQ-I-008 (the frontend mirror of root-`CLAUDE.md` safety rule #5 — demo ident
 
 **Durability gotcha (drove the 9.4 demo-branch split):** keeping both auth0+demo branches in a *shared* `baseApi.prepareHeaders` is fine ONLY while baseApi is not remote-reachable. Once the store/route-tree wires baseApi into the remote graph, the source-level literal scan false-positives — so **split the demo-header attach into a standalone-only injected seam** (header name + attach in the standalone provider; `prepareHeaders` calls an injected seam) to keep baseApi source demo-literal-free. Promote the build-output grep to a CI-enforced guard (Phase 11) as the fail-closed backstop to the fail-open static walker.
 
-**Rule:** Prove REQ-I-008 with BOTH a fast fail-open static import-graph assertion AND a fail-closed auth0 build-output grep over the federation-exposed chunk (with a positive control); keep demo-header source out of shared/remote-reachable modules via a standalone-only injected seam.
+**Refinement (9.5 — the positive-control string must survive auth0 DCE).** When the build-output grep runs in **auth0** mode (`VITE_AUTH_MODE=auth0`), Vite treats the demo branch as dead code and DCEs `X-Demo-Employee-Id` out of **every** bundle — including the standalone one (the `demoAuthHeaderApplier` closure becomes write-only and tree-shakes away). So a positive control keyed on `X-Demo-Employee-Id` **fails in an auth0 build** (it's absent from the standalone bundle too) → a false "detection broken" signal. Key the positive control on a demo string that **survives auth0 DCE** — `demo-token` (the standalone `getAccessToken` closure) or a persona seed id (`demo-employee-*`) referenced by the always-rendered persona UI. Carry this into the Phase-11 CI guard.
+
+**Rule:** Prove REQ-I-008 with BOTH a fast fail-open static import-graph assertion AND a fail-closed auth0 build-output grep over the federation-exposed chunk (with a positive control keyed on an auth0-DCE-surviving demo string, e.g. `demo-token`/persona seed — not `X-Demo-Employee-Id`); keep demo-header source out of shared/remote-reachable modules via a standalone-only injected seam.
 
 ---
 
@@ -133,3 +135,67 @@ Every status/risk/chess enum in WC (`PlanState`, `ReviewStatus`, `RiskBadge`, `R
 - Status/risk is **never color-only** — every badge carries glyph + text label + color (grayscale/colorblind legible, REQ-S-005); the token-driven `Badge` atom (a thin Tailwind-utility span — design-faithful to Cadence's own `.wc-badge`, still approach-A) bakes that in.
 
 **Rule:** Port the §4.2/§4.3 enum→`{tone,icon,label,ring}` maps once into `statusTaxonomy.ts` and consume them everywhere; never re-map a status inline; unknown value → render nothing; `OVERDUE` is a derived overlay, not a stored entry; every badge is glyph + text + color.
+
+---
+
+## <a id="8"></a>8. The applier-seam pattern — keep a safety-mirror literal out of any shared/remote-reachable module by injecting it from `src/standalone/`
+
+**Date:** 2026-06-02.
+**Source slice:** 9.4 (lazy route tree + demo-header split).
+
+9.4 wires the lazy route tree into the federation-exposed `WeeklyCommitApp`, bringing `app/baseApi.ts` + `app/authAccessor.ts` (the shared RTK Query base + auth seam) one import away from the remote graph. The REQ-I-008 fail-open static guard (LESSONS §6) scans the remote import closure's **source** for demo/persona literals (`X-Demo-Employee-Id`, `demo-token`); the moment a shared module carrying such a literal becomes remote-reachable, the guard false-positives (and a real demo path could leak). The durable fix is the **applier-seam pattern**, the generalization of the §1/§5 accessor seam from credential *resolution* to header *attachment*:
+
+- **The shared module exposes only a typed no-op-default seam, never the literal.** `authAccessor.ts` adds `type DemoAuthHeaderApplier = (headers: Headers) => void`, a `setDemoAuthHeaderApplier(applier | null)` injector, and an `applyDemoAuthHeader(headers)` dispatcher that **no-ops when unset and try/catch-degrades on throw**. `baseApi.prepareHeaders`'s demo branch becomes a single `applyDemoAuthHeader(headers)` call — the `X-Demo-Employee-Id` string is gone from every shared/remote-reachable module. (The old `getDemoEmployeeId`/`DemoEmployeeIdProvider` were deleted, not layered over — no dead prod surface.)
+- **The literal lives only in `src/standalone/`.** `DemoIdentityProvider` (standalone-only, tree-shaken from the remote) registers the applier closure that does `headers.set('X-Demo-Employee-Id', personaId)`, and **preserves the falsy-persona truthy guard** (`if (id)`) so an empty persona degrades to no header — parity with the pre-split branch (the backend `DEMO_AUTH_ENABLED` 403 handles an unidentified demo request).
+- **Split it in its own bisectable, behavior-preserving commit** (the safety-mirror seam is REQ-I-008 territory). Prove it with (a) a source-literal scan over `baseApi.ts` (`not.toMatch(/X-Demo-Employee-Id/)`), (b) the §7 XOR still holding through the injected applier, (c) the no-applier / throwing-applier / empty-persona degrades, and (d) the §6 boundary test extended with a **positive control** (assert the new mount, e.g. `AppRoutes.tsx`, IS in the remote closure) so the fail-open walker can't silently no-op if the mount is later removed.
+
+This is the canonical move whenever a shared module would otherwise carry a demo/persona/secret literal that must not reach the remote build. The fail-closed auth0 build-grep (§6) stays the backstop: re-run it when the first feature slice actually pulls `baseApi` into the remote **build** closure (≥9.5 — 9.4's placeholder pages don't), and promote it to a CI guard at Phase 11.
+
+**Rule:** Keep a safety-mirror literal (`X-Demo-Employee-Id`, `demo-token`) out of any shared/remote-reachable module by injecting it from `src/standalone/` via a typed no-op-default applier seam (`apply*` dispatcher + `set*Applier` injector, try/catch-degrade); the literal lives only in the standalone closure (with its falsy-value guard); split it in its own commit and pin with a source-literal scan + a positive-controlled §6 boundary walk.
+
+---
+
+## <a id="9"></a>9. Query slices — read-only tags, the §5 store harness, and the `application/problem+json` parsing gotcha
+
+**Date:** 2026-06-02.
+**Source slice:** 9.5 (me/rcdo read slices).
+
+Three conventions every RTK Query read slice (`injectEndpoints` into `baseApi`) follows:
+
+- **Read-only domains tag once and are NEVER invalidated.** `RCDO` (the RC→DO→SO hierarchy — REQ-D-003, no mutation endpoint exists) and `Me` (`MeDto` — relationship-driven, per-session-static in MVP) `providesTags` their read tag and appear in **no** mutation's `invalidatesTags`. That's the opposite of the plan/commitment/manager tags (which mutations invalidate to force refetch). The "never invalidated anywhere" invariant **can't be fully unit-pinned from the slice module** (future cross-module mutations don't exist yet); the deterministically-enforceable half is: assert the read module exports a query hook and **no `*Mutation`** export, plus a documenting comment that no later mutation may invalidate the tag. The full guarantee is this convention.
+- **Reuse the §5 store-integration harness** for the happy/error test of every slice: absolute `VITE_API_BASE_URL` + late-bound `fetchFn` + mocked `fetch`, driven through a real store; assert the request path + the single auth header (the slice rides `prepareHeaders`).
+- **`fetchBaseQuery` won't parse `application/problem+json` (RFC-7807) by default.** Its default `isJsonContentType` predicate matches `application/json` (and `vnd.api+json`) but **not** `problem+json`, so a 4xx/5xx error body arrives as a raw **string** and `transformErrorResponse`→`parseProblemDetail` (the 9.1 parser) silently degrades to a generic message. Fix once at the base: `fetchBaseQuery({ isJsonContentType: (h) => /application\/(problem\+)?json/.test(h.get('content-type') ?? '') })`. Pin it with an error test asserting a `problem+json` body parses to `{ safeMessage, code }` and never leaks `detail`/`type`/`traceId` (safety rule #7). (Aside: under `tsc` `exactOptionalPropertyTypes`, type an always-present hook result's optional fields as explicit `| undefined`, not `?:`, so they can hold `undefined`.)
+
+**Rule:** Read-only query domains (`RCDO`/`Me`) tag-once-never-invalidate (pin the no-`*Mutation` half + a documenting comment); reuse the §5 store harness; and give `fetchBaseQuery` an `isJsonContentType` that matches `application/problem+json` or RFC-7807 error bodies won't parse.
+
+---
+
+## <a id="10"></a>10. Mutation cache-invalidation — per-id tags, success-only `invalidatesTags`, and the `endpoint.select()` test gotcha
+
+**Date:** 2026-06-02.
+**Source slice:** 9.6 (plans + commitments slices).
+
+The cache-invalidation harness every mutation slice (9.8/9.9/9.11/9.12) reuses, plus two RTK Query gotchas pinned standing up `plansApi`/`commitmentsApi`:
+
+- **Per-id provides/invalidates tags.** Read endpoints `providesTags` `[{type:'plans', id}]` (+ a `{type:'plans', id:'CURRENT'}` sentinel on `getCurrentPlan`); mutations `invalidatesTags` the affected plan id + `'CURRENT'` (+ the general `'manager'` tag, no id, since the §9 manager projections — command-center summary + heatmap cell — always co-change, so one tag covers both; there is **no `heatmap` tag**). The mutation **arg carries `planId`** as the invalidation key even when the URL is `/commitments/{id}` (E6/E7), because the tag is plan-scoped.
+- **`invalidatesTags` must be guarded `(_r, error) => error ? [] : tags` for success-only invalidation.** In this setup a static `invalidatesTags` array fires **even when the mutation errors** — so a failed `deleteCommitment` (a `409`) would wrongly invalidate + refetch. Guard every mutation's tags with the error-callback form so only a SUCCESSFUL mutation invalidates. Pin it with a test asserting a failed mutation does **not** trigger a refetch.
+- **`api.endpoints.X.select()(state)` returns the RAW cache entry** (`.status === 'pending'` during a refetch), **not** the hook-derived `.isFetching`. For a store-level (non-render) cache test, read the raw entry's `.status` + `.data`.
+- **No-optimistic proof is two-pronged:** behavioral (hold the refetch open at a gated mock `fetch`; assert the cache still shows the OLD count while `status==='pending'`, the new count only after release, and **exactly 2** read calls) + structural (source-scan the slice for no `onQueryStarted`/`updateQueryData`/`patchQueryData`). §7 forbids optimistic updates. Reuse the §5 store harness throughout.
+
+**Rule:** Mutation slices use per-id `{type:'plans', id}` + `'CURRENT'` tags with the `planId` arg as the invalidation key; guard `invalidatesTags` with `(_r, error) => error ? [] : tags` for success-only invalidation; assert cache state via `endpoint.select()`'s raw `.status` (not `.isFetching`); and prove no-optimistic both behaviorally (gated refetch) and structurally (no `updateQueryData`).
+
+---
+
+## <a id="11"></a>11. Server-authoritative control gating — never re-derive eligibility/authz; render via `can(action, allowedActions[])`
+
+**Date:** 2026-06-02.
+**Source slice:** 9.7 (IC workspace + lifecycle/lock bar).
+
+The frontend NEVER re-derives lock eligibility, authorization, or lifecycle legality client-side — the server is the source of truth (e.g. rule #1 lock enforcement lives in `PlanLifecycleService`). The UI's whole job is to render the affordance and surface the server's verdict:
+
+- **Gate every action control ONLY on the server-provided `allowedActions[]`,** through a single `shared/lib/allowedActions.ts` `can(action, list)` helper consumed by every call site (lock, lifecycle, carry-forward, comment, …). Never inline-re-derive "this plan can lock because it has linked commitments" — render `LockButton` enabled iff `LOCK ∈ plan.allowedActions[]` and let the server reject. For actions that aren't `AllowedAction` enum values (e.g. DRAFT edit/delete — there is **no** `EDIT`/`DELETE` action), gate on server *state* (`plan.state==='DRAFT'`), still server-enforced via the relevant `409` (`LOCKED_BASELINE_EDIT`), never a client authz computation.
+- **Surface the server's `409`/`safeMessage`/`fieldErrors[]` verbatim** (e.g. `UNLINKED_PLANNED_COMMITMENT`/`EMPTY_PLAN_LOCK` for lock — rule #1) as stable, Cypress-assertable text; never leak `detail`/`traceId` (safety rule #7).
+- **A lifecycle transition is a cache-invalidation refetch into the new state, NOT an optimistic flip** — `lockPlan` (E8) invalidates the plan tag (success-only, §10) so the view refetches `DRAFT→LOCKED`; the pinned test holds the refetch open and asserts the state is still `DRAFT` while `status==='pending'`. Lifecycle mutations live on `plansApi`; the shared `planTags(planId)` lives in `app/tags.ts` so commitment + lifecycle mutations share one invalidation key.
+- **§3 read-only-post-lock is a render decision, not an edit-guard:** a field frozen by state (`alignmentStatus` when `plan.state!=='DRAFT'`) renders as static labelled text, not a disabled input.
+
+**Rule:** Never re-derive eligibility/authz/lifecycle-legality client-side; gate controls only on the server's `allowedActions[]` (via one `can()` helper) or server state, surface its `409`/`safeMessage`/`fieldErrors[]` verbatim, and treat every lifecycle transition as an invalidate→refetch-into-new-state (no optimistic flip). Recurs for 9.8/9.9/9.11/9.12.
