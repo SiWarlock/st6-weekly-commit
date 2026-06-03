@@ -132,6 +132,9 @@ Several typed models in this codebase are **contracts** mirrored in `ARCHITECTUR
 | B.1 enums `RiskBadge` / `SyncStatus` / `EventKind` / `SyncRelatedType` (`shared/lib/dtos.ts`) | Appendix B.1 | typed unions mirroring the B.1 wire vocab verbatim (`RiskBadge` 9.10; sync trio 9.12) |
 | `HeatmapCellDto` / `HeatmapResponseDto` / `HeatmapDrilldownDto` / `DrilldownOutcomeGroup` (`shared/lib/dtos.ts`) | Appendix B.12 | manager heatmap grid + per-cell SO→commitment drilldown (drilldown commitments = `PageEnvelope<WeeklyCommitmentDto>`) (9.10) |
 | `OutlookSyncRecordDto` (`shared/lib/dtos.ts`) | Appendix B.10 | IC sync record; `safeMessage` is the only user-visible failure text (rule #7); `RETRY_SYNC` iff `FAILED` (9.12) |
+| `CommentDto` (`shared/lib/dtos.ts`) | Appendix B.9 | flat one-level comment; `parentCommentId: string \| null` (always null MVP), `depth: number` (always 0); body React-escaped, no `dangerouslySetInnerHTML` (REQ-S-005) (9.11b) |
+| `CommentTargetType` (`shared/lib/dtos.ts`) | Appendix B.1 | `PLAN \| COMMITMENT` comment target (9.11b) |
+| `CreateCommentRequest` (`shared/lib/dtos.ts`) | Appendix B.9 (E21) | `{ targetType, targetId, body }`; unseeable/nonexistent target → `404` (target-id IDOR) (9.11b) |
 
 <!-- Starts empty (or with the first model if one exists). Populated as contract models land. -->
 
