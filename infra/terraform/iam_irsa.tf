@@ -189,7 +189,9 @@ resource "aws_iam_role" "external_dns" {
       Principal = { Federated = module.eks.oidc_provider_arn }
       Action    = "sts:AssumeRoleWithWebIdentity"
       Condition = { StringEquals = {
-        "${local.oidc_issuer}:sub" = "system:serviceaccount:${var.k8s_namespace}:external-dns"
+        # external-dns installs as a cluster add-on into kube-system (12.2b helm_release),
+        # NOT the wc app namespace — the trust sub matches that SA identity.
+        "${local.oidc_issuer}:sub" = "system:serviceaccount:kube-system:external-dns"
         "${local.oidc_issuer}:aud" = "sts.amazonaws.com"
       } }
     }]
