@@ -10,7 +10,7 @@
 - `6844a20` impl session doc 005. **85 Vitest tests green at cycle.**
 
 ## Next slice
-- **9.8 — IC reconciliation** (outcome form + unplanned + carry-forward). Extends `PlanLifecycleBar` (`START`/`CLOSE_RECONCILIATION` E9/E10) + `commitmentsApi`; **wires `CommitmentList`'s carry-forward inline handler** (the `can()`-gated control is already built+tested with a handler — just pass the production one). Brief number = **on-disk `ls docs/briefs/` + highest+1** (currently `022` — but **`ls` first**, don't assume).
+- **9.8 — IC reconciliation** (outcome form + unplanned + carry-forward). Extends `PlanLifecycleBar` (`START`/`CLOSE_RECONCILIATION` E9/E10) + `commitmentsApi`; **wires `CommitmentList`'s carry-forward inline handler** (the `can()`-gated control is already built+tested with a handler — just pass the production one). Brief number = **on-disk `ls docs/briefs/` + highest+1** (next free = **`023`** — backend holds `022` (2.5); but **`ls` first**, don't assume).
 
 ## Open follow-ups (also in session 005 + the Carry-forward section)
 - **9.7b** (new task) — IC commitment **edit/delete UI** (E6/E7, gated on `plan.state==='DRAFT'`; backend + `commitmentsApi` mutations already exist).
@@ -25,4 +25,4 @@
 - No separate `heatmap` tag (manager projections co-change). `dtos.ts` = the typed Appendix-B contract (verbatim; no field drift). `planTags` lives in `app/tags.ts`.
 
 ## Shared-tree protocol (with `st6-main-orchestrator`, the backend orch)
-Frontend owns `§7` + Phase ST/9 frontend tasks + `apps/wc-web/*` + the color taxonomy; backend owns the rest. **Brief numbers: one shared sequence, `ls`+highest+1+mention** (used: backend 015/017/020, frontend 016/018/019/021 → next `022`). **Ping before staging `MVP_TASKS.md`/`ARCHITECTURE.md`; explicit `git add <own paths>`, never `-A`.** `git add -p` is non-TTY-blocked → use `git apply --cached` for hunk-level if the docs carry both parties' uncommitted hunks. `RiskBadge`/enum *values* are a backend invariant (render is frontend).
+Frontend owns `§7` + Phase ST/9 frontend tasks + `apps/wc-web/*` + the color taxonomy; backend owns the rest. **Brief numbers: one shared sequence, `ls`+highest+1+mention** (used: backend 015/017/020/022, frontend 016/018/019/021 → next `023`). **Ping before staging `MVP_TASKS.md`/`ARCHITECTURE.md`; explicit `git add <own paths>`, never `-A`.** `git add -p` is non-TTY-blocked → use `git apply --cached` for hunk-level if the docs carry both parties' uncommitted hunks. `RiskBadge`/enum *values* are a backend invariant (render is frontend).
