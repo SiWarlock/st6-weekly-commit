@@ -4,7 +4,7 @@
 - **Track:** st6-main (backend, `apps/wc-api/`)
 - **Authored by:** st6-main-orchestrator (the implementer was shut down at HARD-STOP without `/session-end` — see note — so the orchestrator, who reviewed every slice, captured this doc on its behalf as part of `/orchestrate-end`).
 - **Predecessor:** `006-2026-06-03-phase2-identity-authz-chain.md` (Phase 2 close).
-- **Successor:** _(next backend session — fresh impl takes 3.4b + 3.5)_
+- **Successor:** `009-2026-06-03-backend-phase3-complete-plan-lock.md` (3.4b–3.5, Phase 3 backend complete).
 
 > **Why orchestrator-authored:** the backend implementer hit HARD-STOP (81%) at the clean 3.4a→3.4b boundary. The lead shut it down **directly** (no `/session-end`) to avoid the HARD-STOP confabulation that bit the prior impl (a fabricated doc/hash at ~86%). All 3.1–3.4a code is committed + each slice was green/security-reviewed, so nothing is lost; the orchestrator persisted (52%) and authored this doc faithfully from the slices it reviewed.
 
