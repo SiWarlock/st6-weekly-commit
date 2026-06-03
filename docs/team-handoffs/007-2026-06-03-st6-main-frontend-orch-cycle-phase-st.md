@@ -1,0 +1,32 @@
+# Handoff 007 — st6-main frontend orchestrator cycle (post-Phase-ST, at WARN 73%)
+
+- **Date:** 2026-06-03 · **Track:** st6-main · **Cycling:** `st6-main-wc-web-orchestrator` (frontend orch) at WARN 73%, clean **round boundary** (Phase-ST sealed). **Impl persists** (`st6-main-wc-web-implementer` = fresh `d7b154a7`, ~50%, idle awaiting the next dispatch). Backend pair untouched (active on Phase 5 disputes).
+- **HEAD:** `e3596ed` (my Phase-ST `/orchestrate-end` round seal). **Last frontend slice commit:** `31acd0f` (ST.7e). **205/205 Vitest green.** No remote configured → nothing pushed.
+
+## Where the frontend is — Phase-ST COMPLETE (ST.1→ST.7e)
+The **entire Cadence styling spine landed + was real-browser-validated** this round (10 slices):
+- **ST.4** (`62b4b92`) surface/density skin · **ST.5a** (`e49e46a`) stepper/lock-glyph/redundancy · **ST.5b** (`7e247d4`) RcdoBreadcrumb/OutcomePill/readOnly · **ST.6a** (`41f1052`) heatmap volume-fill · **ST.6b** (`86a2173`) command-center dense-table/pills/chips · **ST.6c** (`046b5f1`) manager Drawers · **ST.7a** (`692e666`) standalone MSW mock-data layer · **ST.7c** (`e9c9b01`) QA visual fixes · **ST.7d** (`632d11d`/`794133a`) persona-refetch + Flowbite theme-sync · **ST.7e** (`31acd0f`) Drawer right-slide position.
+- **All render-only; cross-doc invariant NONE** throughout. **wc-web LESSONS §14–§18 banked.** Phase-9 FUNCTIONAL surface was already complete (9.1–9.13).
+- **Real-browser QA done-via-(b)** (gstack `/connect-chrome` — the MCP Chrome extension would NOT connect; headless `/browse` can't drive the React persona `<select>`; gstack's real Chromium can). IC (dark+light) + manager command-center/heatmap + both Drawers + RECONCILED state confirmed; **the persona-switch stale-data bug fixed + behaviorally confirmed.**
+
+## NEXT (fresh orch) — unblocks-driven; NO standing styling work
+- **The disputes chain is the main pending frontend work, gated on the backend.** When **backend 5.3 / brief 058** lands the **B.6 Option-A** contract edit (nest `dispute?: AlignmentDisputeDto`, drop `hasUnresolvedDispute`), the **backend orch (`st6-main-orchestrator`) pings you**. Then: (1) mirror `dtos.ts` (coordinated, NOT ahead); (2) brief **9.11a** disputes UI; (3) drop in the deferred **ST.4 disputed→failure card left-accent** — the `cardAccent` helper in `CommitmentList.tsx` already has the one-line slot (unplanned-accent ships; add the `dispute`-keyed failure branch); (4) brief the **ST.6 `DisputePanel`** (3-step stepper — reuse the ST.5a stepper pattern). All four ride that single B.6 landing. **Don't touch any of it until the backend pings** (don't mirror `dtos.ts` ahead of the contract).
+- **Tracker-hygiene follow-up (do at your FIRST `/orchestrate-end`, or as a quick `docs(tasks)` commit):** tick the granular Phase-9 sub-`[ ]` boxes (9.4–9.10/9.7b/9.8/9.11b/9.12/9.13 — work done; the section *headers* carry ✅ + hashes; only the sub-bullets are stale) + mark **9.11a ⏸ BLOCKED** at the task level. I **deliberately deferred this from my seal** to bound the close-out at WARN; the user flagged it as "not urgent, fold into the next round commit."
+- **Other deferred (Carry-forward — backend dep / nice-to-have):** manager **SLA strip** (needs a §9 command-center `summary` field, Phase-6 backend); heatmap **a11y hatch/dot pattern-mode** (enhancement; REQ-S-005 already met — user-gated, default defer); **formal AA-contrast numeric** verification of the net-new light tones; the **MSW mutable in-memory `db`** (Phase-13 demo-video interactivity; ST.7a shipped static-coherent responses); `RcdoBrowser` consumer surface; `PlanHistoryPage` real view.
+
+## Locked constraints (ALL frontend work)
+- **Render-only, Tailwind/token-native, NO `.wc-*` CSS / second stylesheet / hex / arbitrary `[…]` hatches** (forbidden #3; `surfaceSkin.test.ts` structural guard enforces it across touched surfaces). The one permitted CSS is `src/styles/theme.css` (token vars).
+- **No enum/Appendix-A cross-doc change** without the atomic doc-edit pairing (ST was render-only → none).
+- **Real-browser QA = gstack `/connect-chrome`** (a real Chromium that drives the React `<select>`); the MCP Chrome extension didn't register this session + headless can't fire controlled-select onChange. See LESSONS §18.
+
+## Pending / cross-track
+- **Brief lane:** frontend used through **057** (040/042/043/044/046/047/048/051/053/054/057); **backend holds 058+** (058 = 5.3 disputes — the unblock). `ls docs/briefs/` + next-free for any new frontend brief; coordinate with `st6-main-orchestrator`.
+- **Shared-doc serialize (two-way w/ `st6-main-orchestrator`):** `ls`-first / claim-window / git-confirm-clean / hold-until-clear, whole-file your frontend MVP_TASKS regions, never sweep backend edits. ST was render-only → no ARCHITECTURE edit. The backend is active on Phase 5 (disputes) — its work touches `apps/wc-api/*` + will claim the ARCHITECTURE window for the B.6 Appendix edit at 5.3.
+- **The standing impl (`d7b154a7`) is idle, fresh-ish (~50%), full runway.** It did ST.6c→7e cleanly. Its session doc for 6c→7e is NOT yet written (it persisted through the round; it'll write one at its next `/session-end`). My seal's Log entry + the per-slice commits document that work meanwhile.
+
+## Read on resume
+`docs/orchestrator-briefing.md`, `docs/tdd-brief-template.md`; this round's Log entry in `MVP_TASKS.md` (2026-06-03 Frontend Phase-ST COMPLETE); the Carry-forward section (disputes-chain + deferred items); wc-web `LESSONS.md` §1–§18 + `CLAUDE.md` (lookup + cross-doc + lessons index); impl session doc `011` (ST.4→6b); briefs `040/042–048/051/053/054/057`; the Cadence design system (`docs/design/cadence-design-system/`). **Register your identity + run `/orchestrate-start`** (NOT `/session-start`).
+
+## Standing memories (already in `~/.claude/.../memory/`)
+- `frontend-real-browser-qa.md` — Claude-in-Chrome / gstack authorized for wc-web styling QA (impl optional per-surface, orch comprehensive at ST.7 — DONE this round via gstack `/connect-chrome`).
+- `per-slice-reviewers-disabled.md`, `cycle-cleanup-stale-registry.md`, `parallel-track-handoff-numbering.md`, `lead-cycle-timing-no-thrash.md` — still apply.
