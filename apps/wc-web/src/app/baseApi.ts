@@ -71,6 +71,13 @@ export const baseApi = createApi({
     // on import (fail-fast/loud) rather than silently using a relative '/'.
     baseUrl: resolveApiBaseUrl(import.meta.env),
     prepareHeaders,
+    // Parse RFC-7807 error bodies as JSON. fetchBaseQuery's default predicate
+    // only matches `application/json`, so an `application/problem+json` (B.21)
+    // body would arrive as a raw text string and never reach a slice's
+    // `transformErrorResponse`→`parseProblemDetail` (it would yield the generic
+    // message). Accept both so the safe error shape surfaces (safety rule #7).
+    isJsonContentType: (headers) =>
+      /application\/(problem\+)?json/.test(headers.get('content-type') ?? ''),
     // Late-bind the global fetch at call-time (host/remote may swap it; also
     // keeps it mockable in tests) instead of capturing it at module import.
     fetchFn: (input, init) => globalThis.fetch(input, init),
