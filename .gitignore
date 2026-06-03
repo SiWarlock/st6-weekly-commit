@@ -16,3 +16,4 @@ build/
 
 # Code-intelligence index (CodeGraph MCP) — local SQLite knowledge-graph cache, never committed.
 .codegraph/
+.gstack/
