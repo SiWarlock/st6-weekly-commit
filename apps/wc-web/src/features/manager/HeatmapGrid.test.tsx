@@ -238,3 +238,82 @@ describe('HeatmapGrid → volume-fill (ST.6a)', () => {
     expect(within(btn).getByText(/misaligned/i)).toBeInTheDocument();
   });
 });
+
+// ST.6c — the cell drilldown opens in a themed Flowbite Drawer (right-slide +
+// scrim) instead of the inline panel. Render-only container swap: the existing
+// HeatmapCellDrilldown body + groups + pager + view-states are unchanged.
+describe('HeatmapGrid → drilldown Drawer (ST.6c)', () => {
+  it('heatmap_drilldown_opens_in_drawer: selecting a cell opens the drilldown inside a [data-cy="drilldown-drawer"] Drawer (not the inline panel); onClose clears selectedCellId', async () => {
+    const user = userEvent.setup();
+    mockHeatmap({ data: { weekStart: '2026-06-01', cells: [cell()] } });
+    mockDrilldown({
+      cellId: 'cell-1',
+      employeeId: 'emp-1',
+      definingObjectiveId: 'do-1',
+      supportingOutcomes: [
+        {
+          supportingOutcomeId: 'so-1',
+          supportingOutcomeTitle: 'Streamline onboarding',
+          commitments: {
+            content: [],
+            page: { number: 0, size: 25, totalElements: 0, totalPages: 0 },
+            sort: [],
+          },
+        },
+      ],
+    });
+
+    render(<HeatmapGrid />);
+    // Closed: no drilldown content mounted yet (skip-until-selected).
+    expect(document.querySelector('[data-cy="heatmap-drilldown"]')).toBeNull();
+
+    await user.click(
+      screen.getByRole('button', { name: /ivy chen.*grow activation/i }),
+    );
+
+    // The drilldown content renders INSIDE the Drawer, not the inline panel.
+    const drawer = document.querySelector(
+      '[data-cy="drilldown-drawer"]',
+    ) as HTMLElement;
+    expect(drawer).not.toBeNull();
+    expect(
+      drawer.querySelector('[data-cy="heatmap-drilldown"]'),
+    ).not.toBeNull();
+    expect(
+      within(drawer).getByText('Streamline onboarding'),
+    ).toBeInTheDocument();
+    // Header identifies the cell (report × DO).
+    expect(within(drawer).getByText(/ivy chen/i)).toBeInTheDocument();
+    expect(within(drawer).getByText(/grow activation/i)).toBeInTheDocument();
+
+    // onClose clears the selection → the drilldown content unmounts.
+    await user.click(within(drawer).getByRole('button', { name: /close/i }));
+    expect(document.querySelector('[data-cy="heatmap-drilldown"]')).toBeNull();
+  });
+
+  it('drilldown_drawer_preserves_view_states: a 404 ErrorState(safeMessage) renders inside the Drawer body — IDOR-safe, no regression from the container swap (§6/§7)', async () => {
+    const user = userEvent.setup();
+    mockHeatmap({ data: { weekStart: '2026-06-01', cells: [cell()] } });
+    vi.mocked(useGetHeatmapDrilldownQuery).mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: { safeMessage: 'That cell is not available.' },
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useGetHeatmapDrilldownQuery>);
+
+    render(<HeatmapGrid />);
+    await user.click(
+      screen.getByRole('button', { name: /ivy chen.*grow activation/i }),
+    );
+
+    const drawer = document.querySelector(
+      '[data-cy="drilldown-drawer"]',
+    ) as HTMLElement;
+    expect(drawer).not.toBeNull();
+    expect(
+      within(drawer).getByText('That cell is not available.'),
+    ).toBeInTheDocument();
+    expect(drawer.querySelector('[data-cy="error-state"]')).not.toBeNull();
+  });
+});

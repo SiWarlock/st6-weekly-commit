@@ -5,12 +5,12 @@ import { ErrorState } from '../../shared/components/ErrorState';
 import { EmptyState } from '../../shared/components/EmptyState';
 import { Pagination, type PageInfo } from '../../shared/components/Pagination';
 
+// The drilldown body. The surrounding chrome (raised surface, border, padding,
+// scrim) is now the ST.6c Flowbite Drawer that hosts this component; the panel is
+// just the content wrapper (keeps the `data-cy` + group spacing).
 function DrilldownPanel({ children }: { children: ReactNode }) {
   return (
-    <section
-      data-cy="heatmap-drilldown"
-      className="mt-4 space-y-3 rounded-lg border border-border bg-surface p-4"
-    >
+    <section data-cy="heatmap-drilldown" className="space-y-3">
       {children}
     </section>
   );

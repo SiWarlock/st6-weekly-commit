@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { HiX } from 'react-icons/hi';
+import { Drawer } from 'flowbite-react';
 import { useGetHeatmapQuery } from './managerApi';
 import { HeatmapCellDrilldown } from './HeatmapCellDrilldown';
 import { RiskBadge } from '../../shared/components/RiskBadge';
@@ -108,6 +110,10 @@ export function HeatmapGrid() {
   }
 
   const { reports, objectives, cellAt } = pivot(data.cells);
+  const selectedCell =
+    selectedCellId !== null
+      ? data.cells.find((c) => c.cellId === selectedCellId)
+      : undefined;
 
   return (
     <section
@@ -191,7 +197,46 @@ export function HeatmapGrid() {
         </table>
       )}
 
-      {selectedCellId ? <HeatmapCellDrilldown cellId={selectedCellId} /> : null}
+      {/*
+       * The cell drilldown opens in a themed Flowbite Drawer (right-slide +
+       * scrim, raised surface — ST.6c). The Drawer always renders its children
+       * (open = off-screen translate), so the drilldown body is mounted ONLY
+       * while a cell is selected — preserving skip-until-selected (the E15 query
+       * fires only when open). The groups + pager + view-states are unchanged:
+       * they now render inside the Drawer body via `HeatmapCellDrilldown`.
+       */}
+      <Drawer
+        open={selectedCellId !== null}
+        onClose={() => setSelectedCellId(null)}
+        position="right"
+        data-cy="drilldown-drawer"
+      >
+        {selectedCellId !== null && selectedCell ? (
+          <>
+            <div className="flex items-start justify-between gap-4 border-b border-border px-4 py-3">
+              <div>
+                <h2 className="text-h3 font-semibold text-ink-primary">
+                  {selectedCell.employeeDisplayName}
+                </h2>
+                <p className="text-meta text-ink-secondary">
+                  {selectedCell.definingObjectiveTitle}
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label="Close"
+                onClick={() => setSelectedCellId(null)}
+                className="rounded-md p-1 text-ink-secondary hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-brand-ring"
+              >
+                <HiX aria-hidden className="h-5 w-5" />
+              </button>
+            </div>
+            <Drawer.Items className="p-4">
+              <HeatmapCellDrilldown cellId={selectedCellId} />
+            </Drawer.Items>
+          </>
+        ) : null}
+      </Drawer>
     </section>
   );
 }

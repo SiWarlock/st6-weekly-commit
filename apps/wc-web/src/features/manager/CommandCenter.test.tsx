@@ -311,3 +311,95 @@ describe('CommandCenter → dense table (ST.6b)', () => {
     expect(pill('blocked')).toHaveTextContent('0');
   });
 });
+
+// ST.6c — the per-row review surface opens in a themed Flowbite Drawer (right-
+// slide + scrim) instead of an inline detail <tr>. Render-only container swap:
+// the existing ManagerRowReview body + view-states + server-gating are unchanged.
+describe('CommandCenter → review Drawer (ST.6c)', () => {
+  const lockedPlan = {
+    id: 'plan-1',
+    employeeId: 'emp-1',
+    employeeDisplayName: 'Ivy Chen',
+    weekStartDate: '2026-06-01',
+    weekEndDate: '2026-06-07',
+    state: 'LOCKED' as const,
+    plannedCount: 1,
+    unplannedCount: 0,
+    commitments: [],
+    managerReview: {
+      id: 'rev-1',
+      weeklyPlanId: 'plan-1',
+      managerEmployeeId: 'mgr-1',
+      status: 'NOT_REVIEWED' as const,
+      reviewDueAt: '2026-06-09T17:00:00Z',
+      isOverdue: false,
+      unresolvedDisputeCount: 0,
+      allowedActions: ['MARK_REVIEWED' as const],
+      version: 1,
+    },
+    allowedActions: [],
+    version: 1,
+  };
+
+  it('command_center_review_opens_in_drawer: clicking Review opens the review surface inside a [data-cy="review-drawer"] Drawer (not an inline cc-row-detail <tr>); onClose clears it', async () => {
+    const user = userEvent.setup();
+    mockQuery({ data: env([row({ weeklyPlanId: 'plan-1' })]) });
+    mockPlanById({ data: lockedPlan });
+    vi.mocked(useMarkReviewedMutation).mockReturnValue([
+      vi.fn(),
+      { isLoading: false, reset: vi.fn() },
+    ] as unknown as ReturnType<typeof useMarkReviewedMutation>);
+
+    render(<CommandCenter />);
+    // Closed: the review body is not mounted (lazy plan fetch) and there is no
+    // inline detail row — the old expand-in-place <tr> is gone.
+    expect(screen.queryByRole('button', { name: /mark reviewed/i })).toBeNull();
+    expect(document.querySelector('[data-cy="cc-row-detail"]')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: /review/i }));
+
+    // The review surface now renders INSIDE the Drawer, not an inline <tr>.
+    const drawer = document.querySelector(
+      '[data-cy="review-drawer"]',
+    ) as HTMLElement;
+    expect(drawer).not.toBeNull();
+    expect(
+      within(drawer).getByRole('button', { name: /mark reviewed/i }),
+    ).toBeInTheDocument();
+    expect(document.querySelector('[data-cy="cc-row-detail"]')).toBeNull();
+    // Header identifies the report.
+    expect(within(drawer).getByText('Ivy Chen')).toBeInTheDocument();
+
+    // onClose (the Drawer's close control) clears the expand → the body unmounts.
+    await user.click(within(drawer).getByRole('button', { name: /close/i }));
+    expect(screen.queryByRole('button', { name: /mark reviewed/i })).toBeNull();
+  });
+
+  it('review_drawer_preserves_view_states_and_gating: an IDOR-safe ErrorState(safeMessage) renders inside the Drawer body and mark-reviewed still self-gates — no regression from the container swap (§6/§7)', async () => {
+    const user = userEvent.setup();
+    mockQuery({ data: env([row({ weeklyPlanId: 'plan-1' })]) });
+    vi.mocked(useMarkReviewedMutation).mockReturnValue([
+      vi.fn(),
+      { isLoading: false, reset: vi.fn() },
+    ] as unknown as ReturnType<typeof useMarkReviewedMutation>);
+    mockPlanById({
+      isError: true,
+      error: { safeMessage: 'This plan is not available.' },
+    });
+
+    render(<CommandCenter />);
+    await user.click(screen.getByRole('button', { name: /review/i }));
+
+    const drawer = document.querySelector(
+      '[data-cy="review-drawer"]',
+    ) as HTMLElement;
+    expect(drawer).not.toBeNull();
+    // View-state preserved INSIDE the drawer body (IDOR-safe safeMessage).
+    expect(
+      within(drawer).getByText('This plan is not available.'),
+    ).toBeInTheDocument();
+    expect(drawer.querySelector('[data-cy="error-state"]')).not.toBeNull();
+    // Gating preserved: a 404 → no review → no mark-reviewed affordance.
+    expect(screen.queryByRole('button', { name: /mark reviewed/i })).toBeNull();
+  });
+});

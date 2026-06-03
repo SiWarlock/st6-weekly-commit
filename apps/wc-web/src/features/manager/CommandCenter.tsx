@@ -1,6 +1,7 @@
-import { Fragment, useState } from 'react';
+import { useState } from 'react';
 import type { IconType } from 'react-icons';
-import { HiFlag } from 'react-icons/hi';
+import { HiFlag, HiX } from 'react-icons/hi';
+import { Drawer } from 'flowbite-react';
 import {
   useGetCommandCenterQuery,
   type CommandCenterParams,
@@ -13,6 +14,7 @@ import { ErrorState } from '../../shared/components/ErrorState';
 import { EmptyState } from '../../shared/components/EmptyState';
 import { StatusBadge } from '../../shared/components/StatusBadge';
 import { Pagination } from '../../shared/components/Pagination';
+import { WeekRangeLabel } from '../../shared/components/WeekRangeLabel';
 import { RISK_TAXONOMY, type Tone } from '../../shared/lib/statusTaxonomy';
 import type { ManagerCommandCenterRowDto } from '../../shared/lib/dtos';
 
@@ -132,6 +134,10 @@ export function CommandCenter() {
   }
 
   const rows = data.content;
+  const expandedRow =
+    expandedPlanId !== null
+      ? rows.find((r) => r.weeklyPlanId === expandedPlanId)
+      : undefined;
   return (
     <section
       data-cy="command-center"
@@ -171,84 +177,70 @@ export function CommandCenter() {
           </thead>
           <tbody>
             {rows.map((r, i) => {
-              const expanded =
-                expandedPlanId !== null && expandedPlanId === r.weeklyPlanId;
-              // Zebra striping by data-row index (NOT CSS nth-child — the
-              // interleaved review-expand detail row would break parity).
+              // Zebra striping by data-row index (NOT CSS nth-child — kept stable
+              // and explicit; the review surface is now an overlay Drawer, not an
+              // interleaved detail row).
               const parity = i % 2 === 0 ? 'even' : 'odd';
               return (
-                <Fragment key={r.employeeId}>
-                  <tr
-                    data-cy="cc-row"
-                    data-row-parity={parity}
-                    className={`border-t border-border align-top hover:bg-surface-hover ${parity === 'odd' ? 'bg-surface-raised' : ''}`}
-                  >
-                    <td className="py-3 text-body text-ink-primary">
-                      {r.employeeDisplayName}
-                    </td>
-                    <td className="py-3">
-                      <StatusBadge kind="plan" value={r.planState} />
-                    </td>
-                    <td className="py-3">
-                      {r.reviewStatus ? (
-                        <StatusBadge
-                          kind="review"
-                          value={r.reviewStatus}
-                          derivedOverdue={r.isReviewOverdue}
-                        />
-                      ) : (
-                        <span className="text-meta text-ink-muted">—</span>
-                      )}
-                    </td>
-                    <td className="py-3">
-                      <div className="flex flex-wrap gap-1.5">
-                        {COUNTS.map((c) => {
-                          const meta = countMeta(c.kind);
-                          const n = r[c.key] as number;
-                          const Icon = meta.icon;
-                          return (
-                            <span
-                              key={c.kind}
-                              data-cy={`cc-${c.kind}`}
-                              data-tone={meta.tone}
-                              title={`${c.label}: ${n}`}
-                              aria-label={`${c.label}: ${n}`}
-                              className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono text-meta ${n === 0 ? 'border-border bg-transparent text-ink-muted' : TONE_PILL[meta.tone]}`}
-                            >
-                              <Icon aria-hidden className="h-3 w-3" />
-                              {n}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    </td>
-                    <td className="py-3">
-                      {r.weeklyPlanId ? (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setExpandedPlanId(
-                              expanded ? null : (r.weeklyPlanId ?? null),
-                            )
-                          }
-                          className="rounded-md border border-border-strong bg-surface-raised px-3 py-1 text-label text-ink-primary hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-brand-ring"
-                        >
-                          Review
-                        </button>
-                      ) : null}
-                    </td>
-                  </tr>
-                  {expanded && r.weeklyPlanId ? (
-                    <tr
-                      data-cy="cc-row-detail"
-                      className="border-t border-border"
-                    >
-                      <td colSpan={5} className="py-3">
-                        <ManagerRowReview planId={r.weeklyPlanId} />
-                      </td>
-                    </tr>
-                  ) : null}
-                </Fragment>
+                <tr
+                  key={r.employeeId}
+                  data-cy="cc-row"
+                  data-row-parity={parity}
+                  className={`border-t border-border align-top hover:bg-surface-hover ${parity === 'odd' ? 'bg-surface-raised' : ''}`}
+                >
+                  <td className="py-3 text-body text-ink-primary">
+                    {r.employeeDisplayName}
+                  </td>
+                  <td className="py-3">
+                    <StatusBadge kind="plan" value={r.planState} />
+                  </td>
+                  <td className="py-3">
+                    {r.reviewStatus ? (
+                      <StatusBadge
+                        kind="review"
+                        value={r.reviewStatus}
+                        derivedOverdue={r.isReviewOverdue}
+                      />
+                    ) : (
+                      <span className="text-meta text-ink-muted">—</span>
+                    )}
+                  </td>
+                  <td className="py-3">
+                    <div className="flex flex-wrap gap-1.5">
+                      {COUNTS.map((c) => {
+                        const meta = countMeta(c.kind);
+                        const n = r[c.key] as number;
+                        const Icon = meta.icon;
+                        return (
+                          <span
+                            key={c.kind}
+                            data-cy={`cc-${c.kind}`}
+                            data-tone={meta.tone}
+                            title={`${c.label}: ${n}`}
+                            aria-label={`${c.label}: ${n}`}
+                            className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono text-meta ${n === 0 ? 'border-border bg-transparent text-ink-muted' : TONE_PILL[meta.tone]}`}
+                          >
+                            <Icon aria-hidden className="h-3 w-3" />
+                            {n}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </td>
+                  <td className="py-3">
+                    {r.weeklyPlanId ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedPlanId(r.weeklyPlanId ?? null)
+                        }
+                        className="rounded-md border border-border-strong bg-surface-raised px-3 py-1 text-label text-ink-primary hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-brand-ring"
+                      >
+                        Review
+                      </button>
+                    ) : null}
+                  </td>
+                </tr>
               );
             })}
           </tbody>
@@ -259,6 +251,45 @@ export function CommandCenter() {
         page={data.page}
         onPageChange={(n) => setParams((p) => ({ ...p, page: n }))}
       />
+
+      {/*
+       * The per-row review surface opens in a themed Flowbite Drawer (right-slide
+       * + scrim, raised surface — ST.6c). The Drawer always renders its children
+       * (open = off-screen translate), so the review body is mounted ONLY while a
+       * row is expanded — preserving the lazy `getPlanById` fetch (skip-until-
+       * open). Server-authoritative gating / view-states are unchanged: they now
+       * render inside the Drawer body via `ManagerRowReview`.
+       */}
+      <Drawer
+        open={expandedPlanId !== null}
+        onClose={() => setExpandedPlanId(null)}
+        position="right"
+        data-cy="review-drawer"
+      >
+        {expandedPlanId !== null && expandedRow ? (
+          <>
+            <div className="flex items-start justify-between gap-4 border-b border-border px-4 py-3">
+              <div>
+                <h2 className="text-h3 font-semibold text-ink-primary">
+                  {expandedRow.employeeDisplayName}
+                </h2>
+                <WeekRangeLabel weekStart={expandedRow.weekStartDate} />
+              </div>
+              <button
+                type="button"
+                aria-label="Close"
+                onClick={() => setExpandedPlanId(null)}
+                className="rounded-md p-1 text-ink-secondary hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-brand-ring"
+              >
+                <HiX aria-hidden className="h-5 w-5" />
+              </button>
+            </div>
+            <Drawer.Items className="p-4">
+              <ManagerRowReview planId={expandedPlanId} />
+            </Drawer.Items>
+          </>
+        ) : null}
+      </Drawer>
     </section>
   );
 }

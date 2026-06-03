@@ -19,6 +19,7 @@ const TOUCHED_SURFACES = [
   'features/manager/CommandCenter.tsx',
   'features/manager/CommandCenterFilters.tsx', // ST.6b
   'features/manager/HeatmapGrid.tsx',
+  'features/manager/HeatmapCellDrilldown.tsx', // ST.6c (drilldown Drawer body)
   'features/commitment/CommitmentList.tsx',
   'features/commitment/RcdoBreadcrumb.tsx', // ST.5b
   'features/commitment/OutcomePill.tsx', // ST.5b
