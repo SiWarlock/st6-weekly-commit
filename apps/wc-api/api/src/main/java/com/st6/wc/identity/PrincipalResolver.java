@@ -39,14 +39,17 @@ public class PrincipalResolver {
 
   /** JWT mode: resolve a validated {@link Auth0Identity} by its {@code externalSubject}. */
   public Optional<UserPrincipal> resolve(Auth0Identity identity) {
-    return employees.findByExternalSubject(identity.externalSubject()).map(this::toPrincipal);
+    return employees
+        .findByExternalSubject(identity.externalSubject())
+        .filter(Employee::isActive)
+        .map(this::toPrincipal);
   }
 
   /**
    * Demo mode: resolve a demo employee id (the {@code DemoAuthFilter} principal) by primary key.
    */
   public Optional<UserPrincipal> resolve(UUID demoEmployeeId) {
-    return employees.findById(demoEmployeeId).map(this::toPrincipal);
+    return employees.findById(demoEmployeeId).filter(Employee::isActive).map(this::toPrincipal);
   }
 
   private UserPrincipal toPrincipal(Employee employee) {

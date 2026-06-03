@@ -1,15 +1,18 @@
 package com.st6.wc.config;
 
 import com.st6.wc.audit.AuditService;
-import com.st6.wc.employee.repo.EmployeeRepository;
+import com.st6.wc.identity.PrincipalResolver;
+import com.st6.wc.identity.UserPrincipal;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.lang.NonNull;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.preauth.PreAuthenticatedAuthenticationToken;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -40,13 +43,13 @@ public class DemoAuthFilter extends OncePerRequestFilter {
   static final String AUDIT_ACTION = "DEMO_AUTH_REJECTED";
 
   private final boolean demoEnabled;
-  private final EmployeeRepository employees;
+  private final PrincipalResolver principalResolver;
   private final AuditService auditService;
 
   public DemoAuthFilter(
-      boolean demoEnabled, EmployeeRepository employees, AuditService auditService) {
+      boolean demoEnabled, PrincipalResolver principalResolver, AuditService auditService) {
     this.demoEnabled = demoEnabled;
-    this.employees = employees;
+    this.principalResolver = principalResolver;
     this.auditService = auditService;
   }
 
@@ -83,14 +86,21 @@ public class DemoAuthFilter extends OncePerRequestFilter {
       return;
     }
     UUID employeeId = parseUuid(demoHeader);
-    if (employeeId == null || employees.findById(employeeId).isEmpty()) {
-      // IDOR-safe: blank/malformed/unknown -> generic 401, no existence disclosure, no audit-spam.
+    Optional<UserPrincipal> principal =
+        (employeeId == null) ? Optional.empty() : principalResolver.resolve(employeeId);
+    if (principal.isEmpty()) {
+      // IDOR-safe: blank/malformed/unknown/inactive (Q-B) -> generic 401, no existence disclosure,
+      // no audit-spam.
       response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
       return;
     }
-    // the demo header IS the principal (F.1); demo branch wins over any bearer (single source).
+    // the resolved UserPrincipal IS the principal (F.1); demo branch wins over any bearer (single
+    // source). The coarse role gate reads the ROLE_<role> authority off the principal.
+    UserPrincipal up = principal.get();
     SecurityContextHolder.getContext()
-        .setAuthentication(new PreAuthenticatedAuthenticationToken(employeeId, null, List.of()));
+        .setAuthentication(
+            new PreAuthenticatedAuthenticationToken(
+                up, null, List.of(new SimpleGrantedAuthority("ROLE_" + up.role().name()))));
     chain.doFilter(request, response);
   }
 

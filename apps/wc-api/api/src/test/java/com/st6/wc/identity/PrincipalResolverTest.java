@@ -43,6 +43,7 @@ class PrincipalResolverTest {
     Employee e = new Employee();
     e.setId(id);
     e.setRole(role);
+    e.setActive(true); // resolution requires an active employee (Q-B, task 2.6)
     return e;
   }
 
@@ -149,6 +150,22 @@ class PrincipalResolverTest {
     assertThat(jwtResult).isEmpty();
     assertThat(demoResult).isEmpty();
     // no Employee -> the relationship/isManager probe never runs (no DB-state echo on a denial).
+    verifyNoInteractions(relationships);
+  }
+
+  // --- 6b. an inactive employee's valid identity resolves to empty (Q-B, fail-closed) ----
+  @Test
+  void inactiveEmployee_resolvesEmpty_bothModes() {
+    UUID id = UUID.randomUUID();
+    Employee inactive = employee(id, RoleType.IC);
+    inactive.setActive(false); // offboarded — valid JWT/demo id but no longer active
+    when(employees.findByExternalSubject("auth0|gone")).thenReturn(Optional.of(inactive));
+    when(employees.findById(id)).thenReturn(Optional.of(inactive));
+
+    // inactive -> empty (the 2.6 chain maps empty -> 401 IDOR-safe), both entry points.
+    assertThat(resolver.resolve(new Auth0Identity("auth0|gone", RoleType.IC, null))).isEmpty();
+    assertThat(resolver.resolve(id)).isEmpty();
+    // inactive short-circuits before the isManager probe (no DB-state echo).
     verifyNoInteractions(relationships);
   }
 
