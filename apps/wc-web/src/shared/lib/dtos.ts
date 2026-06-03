@@ -35,6 +35,14 @@ export type AllowedAction =
   | 'RESOLVE_DISPUTE'
   | 'COMMENT'
   | 'RETRY_SYNC';
+/** Enumerated heatmap badge vocabulary (B.1 / §4) — `riskBadges[]` on a cell. */
+export type RiskBadge =
+  | 'MISALIGNED'
+  | 'NEEDS_REVIEW'
+  | 'BLOCKED'
+  | 'CARRY_FORWARD'
+  | 'UNREVIEWED'
+  | 'OVERDUE_REVIEW';
 
 // ── B.6 — WeeklyCommitmentDto (nested in B.5) ────────────────────────────────
 export interface RcdoBreadcrumbDto {
@@ -191,4 +199,46 @@ export interface PageEnvelope<T> {
  */
 export interface MarkReviewedRequest {
   summaryNote?: string;
+}
+
+// ── B.12 — Heatmap (E14 cells) + drilldown (E15) ─────────────────────────────
+/** One report × Defining-Objective heatmap cell (mirrors `manager_heatmap_cell`). */
+export interface HeatmapCellDto {
+  cellId: string;
+  managerEmployeeId: string;
+  employeeId: string;
+  employeeDisplayName: string;
+  weekStartDate: string;
+  definingObjectiveId: string;
+  definingObjectiveTitle: string;
+  commitmentCount: number;
+  plannedCount: number;
+  unplannedCount: number;
+  misalignedCount: number;
+  needsReviewCount: number;
+  blockedCount: number;
+  carryForwardCount: number;
+  unresolvedDisputeCount: number;
+  riskBadges: RiskBadge[];
+}
+
+/** E14 response — cells scoped to the manager's active direct reports (NOT paginated). */
+export interface HeatmapResponseDto {
+  weekStart: string;
+  cells: HeatmapCellDto[];
+}
+
+/** One Supporting-Outcome group in the E15 drilldown — its commitments are paginated (B.20). */
+export interface DrilldownOutcomeGroup {
+  supportingOutcomeId: string;
+  supportingOutcomeTitle: string;
+  commitments: PageEnvelope<WeeklyCommitmentDto>;
+}
+
+/** E15 response — the SO→commitment breakdown for one cell (own-cell-only, IDOR `404`). */
+export interface HeatmapDrilldownDto {
+  cellId: string;
+  employeeId: string;
+  definingObjectiveId: string;
+  supportingOutcomes: DrilldownOutcomeGroup[];
 }

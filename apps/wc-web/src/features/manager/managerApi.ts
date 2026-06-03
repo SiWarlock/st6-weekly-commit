@@ -8,6 +8,8 @@ import type {
   Priority,
   WorkType,
   AlignmentStatus,
+  HeatmapResponseDto,
+  HeatmapDrilldownDto,
 } from '../../shared/lib/dtos';
 
 /**
@@ -72,7 +74,56 @@ export const managerApi = baseApi.injectEndpoints({
       providesTags: ['manager'],
       transformErrorResponse: (response) => parseProblemDetail(response.data),
     }),
+    /**
+     * E14 heatmap — report × Defining-Objective cells + enumerated `riskBadges[]`.
+     * **Not paginated** (bounded by reports × DOs, §14). Tagged `manager` (no
+     * heatmap tag — §9); IDOR `403`/`404` surfaces `safeMessage` only (§6).
+     */
+    getHeatmap: build.query<
+      HeatmapResponseDto,
+      {
+        weekStart: string;
+        definingObjectiveId?: string;
+        supportingOutcomeId?: string;
+      }
+    >({
+      query: ({ weekStart, definingObjectiveId, supportingOutcomeId }) => {
+        const qs = new URLSearchParams();
+        qs.set('weekStart', weekStart);
+        if (definingObjectiveId) {
+          qs.append('definingObjectiveId', definingObjectiveId);
+        }
+        if (supportingOutcomeId) {
+          qs.append('supportingOutcomeId', supportingOutcomeId);
+        }
+        return `/api/manager/heatmap?${qs.toString()}`;
+      },
+      providesTags: ['manager'],
+      transformErrorResponse: (response) => parseProblemDetail(response.data),
+    }),
+    /**
+     * E15 drilldown — the SO→commitment breakdown for one cell (own-cell-only;
+     * a `404` on a non-own cell is IDOR-safe, §6). Commitments are bounded +
+     * paginated (B.20, §14); a single `page`/`size` paginates every group.
+     */
+    getHeatmapDrilldown: build.query<
+      HeatmapDrilldownDto,
+      { cellId: string; page?: number; size?: number }
+    >({
+      query: ({ cellId, page, size }) => {
+        const qs = new URLSearchParams();
+        qs.set('page', String(page ?? 0));
+        qs.set('size', String(size ?? 25));
+        return `/api/manager/heatmap/${cellId}/drilldown?${qs.toString()}`;
+      },
+      providesTags: ['manager'],
+      transformErrorResponse: (response) => parseProblemDetail(response.data),
+    }),
   }),
 });
 
-export const { useGetCommandCenterQuery } = managerApi;
+export const {
+  useGetCommandCenterQuery,
+  useGetHeatmapQuery,
+  useGetHeatmapDrilldownQuery,
+} = managerApi;

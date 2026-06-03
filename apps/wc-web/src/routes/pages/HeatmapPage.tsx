@@ -1,16 +1,10 @@
+import { HeatmapGrid } from '../../features/manager/HeatmapGrid';
+
 /**
- * PLACEHOLDER route module for `/manager/heatmap` so the lazy chunk resolves.
- * Replaced by the real manager heatmap grid + drilldown in 9.10.
+ * `/manager/heatmap` route module — the manager alignment heatmap grid +
+ * per-cell drilldown (9.10). Renders the real `HeatmapGrid` (replaces the 9.4
+ * placeholder). The route is manager-gated in `AppRoutes` (REQ-UX-005).
  */
 export default function HeatmapPage() {
-  return (
-    <section data-cy="page-heatmap" className="p-6">
-      <h1 className="text-display font-semibold text-ink-primary">
-        Alignment heatmap
-      </h1>
-      <p className="mt-2 text-body text-ink-secondary">
-        The manager alignment heatmap is coming in 9.10.
-      </p>
-    </section>
-  );
+  return <HeatmapGrid />;
 }

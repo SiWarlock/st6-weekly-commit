@@ -13,7 +13,10 @@ import {
   useStartReconciliationMutation,
   useCloseReconciliationMutation,
 } from '../features/plan/plansApi';
-import { useGetCommandCenterQuery } from '../features/manager/managerApi';
+import {
+  useGetCommandCenterQuery,
+  useGetHeatmapQuery,
+} from '../features/manager/managerApi';
 import type { WeeklyPlanDto } from '../shared/lib/dtos';
 
 vi.mock('../features/me/useCurrentUser');
@@ -71,6 +74,14 @@ beforeEach(() => {
     isError: false,
     refetch: vi.fn(),
   } as unknown as ReturnType<typeof useGetCommandCenterQuery>);
+  // HeatmapGrid (9.10) reads getHeatmap; a loaded empty response renders the
+  // heatmap shell (the chunk-resolved marker the routing tests assert).
+  vi.mocked(useGetHeatmapQuery).mockReturnValue({
+    data: { weekStart: '2026-06-01', cells: [] },
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  } as unknown as ReturnType<typeof useGetHeatmapQuery>);
 });
 
 function mockCurrentUser(value: {
@@ -119,7 +130,11 @@ describe('AppRoutes — lazy route tree + real-role gating (9.5 / REQ-NF-005 / R
         phrase: /direct-report alignment/i,
         manager: true,
       },
-      { path: '/manager/heatmap', phrase: /coming in 9\.10/i, manager: true },
+      {
+        path: '/manager/heatmap',
+        phrase: /risk by report/i,
+        manager: true,
+      },
     ];
     for (const { path, phrase, manager } of ROUTES) {
       mockCurrentUser({ isManager: manager });
@@ -179,7 +194,7 @@ describe('AppRoutes — lazy route tree + real-role gating (9.5 / REQ-NF-005 / R
     cc.unmount();
 
     renderAt('/manager/heatmap');
-    expect(await screen.findByText(/coming in 9\.10/i)).toBeInTheDocument();
+    expect(await screen.findByText(/risk by report/i)).toBeInTheDocument();
   });
 
   it('gating_fails_closed_while_me_pending: while getMe is pending, a manager URL renders no manager element (fail-closed, REQ-UX-005)', async () => {
