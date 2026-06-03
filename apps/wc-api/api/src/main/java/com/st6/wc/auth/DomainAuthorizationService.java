@@ -60,6 +60,7 @@ public class DomainAuthorizationService {
   private static final String REASON_MANAGER_ROLE = "manager_role_required";
   private static final String REASON_NOT_OWNER = "not_commitment_owner";
   private static final String REASON_NOT_PLAN_OWNER = "not_plan_owner";
+  private static final String REASON_NOT_DIRECT_MANAGER = "not_direct_manager";
 
   private static final String CODE_IC_CANNOT_RESOLVE = "IC_CANNOT_RESOLVE_DISPUTE";
   private static final String CODE_MANAGER_ROLE_REQUIRED = "MANAGER_ROLE_REQUIRED";
@@ -200,6 +201,33 @@ public class DomainAuthorizationService {
     // an authorized manager (or SYSTEM) may resolve
   }
 
+  /**
+   * Mutating a manager review (E16 mark-reviewed, task 5.2) is a
+   * <strong>manager-of-owner-only</strong> capability — the inverse of the IC-owner mutations: the
+   * plan-owning IC can <em>see</em> their review (nested in the plan read, E3/E4) but must NOT mark
+   * it reviewed. Access chokepoint first (cross-team / missing → IDOR-safe {@code 404};
+   * genuinely-missing un-audited), then reject the owner-self with an <strong>audited</strong>
+   * {@code 404} — the IC passed access (owns the plan) but fails the capability, a genuine rule-#3
+   * denial, so it writes one safe-metadata audit (not a bare not-found). The surviving non-owner is
+   * necessarily the active direct manager (the only non-owner {@code authorizeOwnership} admits).
+   *
+   * <p><strong>Why {@code 404} here but {@code 403 IC_CANNOT_RESOLVE} in {@link
+   * #authorizeDisputeResolution}</strong> — namespace-legitimacy, not artifact-ownership: the IC
+   * legitimately uses {@code /api/disputes/*} (they respond via E18), so a dispute's existence is
+   * not hidden → a capability {@code 403}; but the IC has <em>no</em> legitimate {@code
+   * /api/manager/*} endpoint, so the whole manager namespace is existence-hidden from them → {@code
+   * 404} IDOR. Do not "fix" this asymmetry. SYSTEM is exempt.
+   */
+  public void authorizeReviewMutation(DomainPrincipal principal, UUID reviewId) {
+    UUID owner = reviewOwner(reviewId); // missing → 404 WITHOUT audit
+    authorizeOwnership(principal, owner, REVIEW, reviewId); // no access at all → 404 + audit
+    if (principal instanceof UserPrincipal up && up.employeeId().equals(owner)) {
+      throw deny404(
+          principal, REVIEW, reviewId, REASON_NOT_DIRECT_MANAGER); // IC-self → audited 404
+    }
+    // an active direct manager (or SYSTEM) may mark the review
+  }
+
   // ===== core ownership check =====
 
   private void authorizeOwnership(
@@ -254,7 +282,13 @@ public class DomainAuthorizationService {
 
   private ResourceNotFoundOrUnauthorizedException deny404(
       DomainPrincipal principal, String entityType, UUID entityId) {
-    auditer.recordDenial(principal, entityType, entityId, REASON_CROSS_OWNER);
+    return deny404(principal, entityType, entityId, REASON_CROSS_OWNER);
+  }
+
+  /** An audited IDOR {@code 404} carrying a specific denial reason (safe metadata, §15). */
+  private ResourceNotFoundOrUnauthorizedException deny404(
+      DomainPrincipal principal, String entityType, UUID entityId, String reason) {
+    auditer.recordDenial(principal, entityType, entityId, reason);
     return new ResourceNotFoundOrUnauthorizedException();
   }
 

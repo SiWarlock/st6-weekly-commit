@@ -16,4 +16,13 @@ public interface AlignmentDisputeRepository extends JpaRepository<AlignmentDispu
 
   Optional<AlignmentDispute> findByCommitmentIdAndStatusIn(
       UUID commitmentId, Collection<DisputeStatus> statuses);
+
+  /**
+   * Counts disputes across a set of commitments in the given status bucket — {@code
+   * ReviewStatusDeriver} (task 5.2, {@code :api}) passes a plan's commitment ids + the unresolved
+   * bucket {@code {OPEN, IC_RESPONDED}} to derive {@code REVIEWED_WITH_DISPUTES}. The caller
+   * short-circuits an empty commitment set (no query) — an empty SQL {@code IN} is invalid.
+   */
+  int countByCommitmentIdInAndStatusIn(
+      Collection<UUID> commitmentIds, Collection<DisputeStatus> statuses);
 }
