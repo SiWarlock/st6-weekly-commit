@@ -5,6 +5,7 @@ import com.st6.wc.commitment.WeeklyCommitment;
 import com.st6.wc.enums.CommitmentKind;
 import com.st6.wc.enums.PlanState;
 import com.st6.wc.enums.ReconciliationOutcome;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
@@ -37,13 +38,41 @@ public class AllowedActionResolver {
    */
   public List<AllowedAction> planActions(
       UUID actorEmployeeId, WeeklyPlan plan, List<WeeklyCommitment> commitments) {
+    List<AllowedAction> actions = new ArrayList<>();
     if (canLock(actorEmployeeId, plan, commitments)) {
-      return List.of(AllowedAction.LOCK);
+      actions.add(AllowedAction.LOCK); // DRAFT-lockable
     }
     if (canStartReconciliation(actorEmployeeId, plan)) {
-      return List.of(AllowedAction.START_RECONCILIATION);
+      actions.add(AllowedAction.START_RECONCILIATION); // LOCKED
     }
-    return List.of();
+    if (canCloseReconciliation(actorEmployeeId, plan)) {
+      actions.add(AllowedAction.CLOSE_RECONCILIATION); // RECONCILING (4.5)
+    }
+    if (canAddUnplanned(actorEmployeeId, plan)) {
+      actions.add(AllowedAction.ADD_UNPLANNED); // LOCKED ∨ RECONCILING (4.3 enforces both)
+    }
+    return List.copyOf(actions);
+  }
+
+  /**
+   * The {@code CLOSE_RECONCILIATION} precondition (task 4.5) — the owning IC may attempt close on a
+   * {@code RECONCILING} plan; NOT completeness-gated (the close attempt surfaces the {@code 422} if
+   * incomplete — same forward-only guard {@code PlanLifecycleService.closeReconciliation}
+   * enforces).
+   */
+  public boolean canCloseReconciliation(UUID actorEmployeeId, WeeklyPlan plan) {
+    return plan.getEmployeeId().equals(actorEmployeeId) && plan.getState() == PlanState.RECONCILING;
+  }
+
+  /**
+   * The {@code ADD_UNPLANNED} precondition (task 4.3 enforcement, affordance task 4.5) — the owning
+   * IC may add unplanned work while the plan is {@code LOCKED} or {@code RECONCILING} (the same
+   * states {@code CommitmentService.createUnplanned} accepts — "no affordance without
+   * enforcement").
+   */
+  public boolean canAddUnplanned(UUID actorEmployeeId, WeeklyPlan plan) {
+    return plan.getEmployeeId().equals(actorEmployeeId)
+        && (plan.getState() == PlanState.LOCKED || plan.getState() == PlanState.RECONCILING);
   }
 
   /**

@@ -168,9 +168,11 @@ class StartReconciliationEndpointTest extends AbstractAppBootTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.state").value("RECONCILING"))
         .andExpect(jsonPath("$.reconciliationStartedAt").exists())
-        // RECONCILING does NOT yet offer the 4.3/4.4/4.5 actions (no affordance without
-        // enforcement)
-        .andExpect(jsonPath("$.allowedActions").isEmpty());
+        // a RECONCILING plan offers CLOSE_RECONCILIATION (4.5) + ADD_UNPLANNED (4.3 enforces
+        // unplanned-create in RECONCILING); per-commitment CARRY_FORWARD rides the commitments[]
+        .andExpect(
+            jsonPath("$.allowedActions")
+                .value(org.hamcrest.Matchers.contains("CLOSE_RECONCILIATION", "ADD_UNPLANNED")));
 
     assertThat(plans.findById(plan.getId()).orElseThrow().getState())
         .isEqualTo(PlanState.RECONCILING);
@@ -271,7 +273,7 @@ class StartReconciliationEndpointTest extends AbstractAppBootTest {
         .andExpect(jsonPath("$.state").value("LOCKED"))
         .andExpect(
             jsonPath("$.allowedActions")
-                .value(org.hamcrest.Matchers.contains("START_RECONCILIATION")));
+                .value(org.hamcrest.Matchers.contains("START_RECONCILIATION", "ADD_UNPLANNED")));
   }
 
   // --- #7 unauthenticated → 401 ----

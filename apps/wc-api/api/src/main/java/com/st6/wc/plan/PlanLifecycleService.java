@@ -25,6 +25,7 @@ import com.st6.wc.sync.SyncRecordService;
 import com.st6.wc.web.EmptyPlanLockException;
 import com.st6.wc.web.IllegalStateTransitionException;
 import com.st6.wc.web.UnlinkedPlannedCommitmentException;
+import com.st6.wc.web.UnplannedMissingLinkAtCloseException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -228,6 +229,76 @@ public class PlanLifecycleService {
         "{}");
 
     publishAfterCommit(List.of(icReconciliation.getId()));
+
+    String displayName =
+        employees
+            .findById(plan.getEmployeeId())
+            .orElseThrow(ResourceNotFoundOrUnauthorizedException::new)
+            .getDisplayName();
+    return planMapper.toWeeklyPlanDto(plan, displayName, planCommitments, actor.employeeId());
+  }
+
+  /**
+   * Owns the forward-only {@code RECONCILING → RECONCILED} transition (task 4.5, E10, §3/§5/§9) —
+   * the symmetric close to {@link #startReconciliation}. Authorizes IC-owner-only (the chokepoint),
+   * guards the source state ({@code RECONCILING}-only, else {@code ILLEGAL_STATE_TRANSITION}),
+   * validates the <strong>completeness precondition</strong> (every PLANNED has a {@code
+   * reconciliationOutcome} AND every UNPLANNED has both outcome AND a Supporting-Outcome link —
+   * else {@code 422 UNPLANNED_MISSING_LINK_AT_CLOSE} with per-commitment {@code fieldErrors}; a
+   * {@code CARRIED_FORWARD} is a non-null outcome so it counts, §30), then in ONE {@code @Version}
+   * txn: sets {@code RECONCILED} + {@code reconciledAt}; refreshes the manager projection's {@code
+   * plan_state} (§9, when the IC has a manager + review); writes the {@code PLAN_RECONCILED} audit.
+   * <strong>No sync record</strong> (§10 has no close trigger — unlike start's {@code
+   * IC_RECONCILIATION}). Close is non-blocking on manager review (REQ-F-024).
+   */
+  @Transactional
+  public WeeklyPlanDto closeReconciliation(UserPrincipal actor, UUID planId) {
+    authz.authorizePlanMutation(actor, planId); // chokepoint: IC-owner-only (404/403 + audit)
+    WeeklyPlan plan =
+        plans.findById(planId).orElseThrow(ResourceNotFoundOrUnauthorizedException::new);
+    if (plan.getState() != PlanState.RECONCILING) {
+      throw new IllegalStateTransitionException(); // forward-only: only RECONCILING → RECONCILED
+    }
+    List<WeeklyCommitment> planCommitments = commitments.findByWeeklyPlanIdOrderByIdAsc(planId);
+
+    Map<String, String> fieldErrors = new LinkedHashMap<>();
+    for (WeeklyCommitment c : planCommitments) {
+      boolean unplanned = c.getCommitmentKind() == CommitmentKind.UNPLANNED;
+      if (c.getReconciliationOutcome() == null) {
+        fieldErrors.put(
+            "commitments[" + c.getId() + "].reconciliationOutcome",
+            unplanned ? "unplanned_missing_outcome" : "planned_missing_outcome");
+      }
+      if (unplanned && c.getSupportingOutcomeId() == null) {
+        fieldErrors.put(
+            "commitments[" + c.getId() + "].supportingOutcomeId",
+            "unplanned_missing_supporting_outcome");
+      }
+    }
+    if (!fieldErrors.isEmpty()) {
+      throw new UnplannedMissingLinkAtCloseException(fieldErrors);
+    }
+
+    plan.setState(PlanState.RECONCILED);
+    plan.setReconciledAt(clock.instant());
+    plans.save(
+        plan); // @Version-guarded: a concurrent double-close → ObjectOptimisticLockingFailure
+
+    UUID managerId =
+        relationships
+            .findByDirectReportEmployeeIdAndActiveTrue(actor.employeeId())
+            .map(ManagerRelationship::getManagerEmployeeId)
+            .orElse(null);
+    if (managerId != null) {
+      reviews
+          .findByWeeklyPlanId(planId)
+          .ifPresent(
+              review -> projectionService.recompute(plan, managerId, planCommitments, review));
+    }
+
+    auditService.record(
+        "PLAN_RECONCILED", "WeeklyPlan", planId, actor.employeeId(), "Reconciliation closed", "{}");
+    // No Outlook sync record (§10 has no close trigger — unlike start's IC_RECONCILIATION).
 
     String displayName =
         employees

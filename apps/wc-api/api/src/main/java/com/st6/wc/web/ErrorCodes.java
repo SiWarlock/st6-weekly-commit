@@ -26,4 +26,12 @@ public final class ErrorCodes {
 
   /** A lock attempted with an unlinked planned commitment (409; rule #1 / REQ-E-001, task 3.5). */
   public static final String UNLINKED_PLANNED_COMMITMENT = "UNLINKED_PLANNED_COMMITMENT";
+
+  /**
+   * A close-reconciliation attempted while a commitment is incomplete — a PLANNED missing its
+   * outcome, or an UNPLANNED missing its outcome or its Supporting-Outcome link (422; §5/B.21, task
+   * 4.5). Carries {@code fieldErrors[]} naming each offending commitment + the per-violation
+   * constraint.
+   */
+  public static final String UNPLANNED_MISSING_LINK_AT_CLOSE = "UNPLANNED_MISSING_LINK_AT_CLOSE";
 }

@@ -67,4 +67,16 @@ public class PlanController {
       @AuthenticationPrincipal UserPrincipal principal, @PathVariable("id") UUID id) {
     return planLifecycleService.startReconciliation(principal, id);
   }
+
+  /**
+   * {@code POST /api/plans/{id}/close-reconciliation} (E10, §3 — the forward-only {@code
+   * RECONCILING→RECONCILED} close). Thin: {@link PlanLifecycleService} authorizes IC-owner-only
+   * first (the chokepoint), guards the source state, validates the completeness precondition (else
+   * {@code 422 UNPLANNED_MISSING_LINK_AT_CLOSE}), and runs the atomic transition; no request body.
+   */
+  @PostMapping("/api/plans/{id}/close-reconciliation")
+  public WeeklyPlanDto closeReconciliation(
+      @AuthenticationPrincipal UserPrincipal principal, @PathVariable("id") UUID id) {
+    return planLifecycleService.closeReconciliation(principal, id);
+  }
 }

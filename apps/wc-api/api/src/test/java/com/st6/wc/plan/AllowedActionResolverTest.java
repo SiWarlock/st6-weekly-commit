@@ -98,6 +98,58 @@ class AllowedActionResolverTest {
     assertThat(actions).doesNotContain(AllowedAction.LOCK);
   }
 
+  // ===================== CLOSE_RECONCILIATION plan affordance (4.5) =====================
+
+  // --- CLOSE_RECONCILIATION present for a RECONCILING owning-IC plan (the close attempt surfaces a
+  // 422 if incomplete — not gated on completeness) ----
+  @Test
+  void close_present_whenReconcilingOwner() {
+    List<AllowedAction> actions =
+        resolver.planActions(OWNER, plan(OWNER, PlanState.RECONCILING), List.of());
+    assertThat(actions).contains(AllowedAction.CLOSE_RECONCILIATION);
+  }
+
+  @Test
+  void close_absent_whenNotOwner() {
+    List<AllowedAction> actions =
+        resolver.planActions(OTHER, plan(OWNER, PlanState.RECONCILING), List.of());
+    assertThat(actions).doesNotContain(AllowedAction.CLOSE_RECONCILIATION);
+  }
+
+  @Test
+  void close_absent_whenNotReconciling() {
+    for (PlanState state : List.of(PlanState.DRAFT, PlanState.LOCKED, PlanState.RECONCILED)) {
+      assertThat(resolver.planActions(OWNER, plan(OWNER, state), List.of()))
+          .as("no CLOSE_RECONCILIATION affordance in %s", state)
+          .doesNotContain(AllowedAction.CLOSE_RECONCILIATION);
+    }
+  }
+
+  // --- ADD_UNPLANNED present for an owning IC in LOCKED AND RECONCILING (4.3 enforces both) ----
+  @Test
+  void addUnplanned_present_whenLockedOrReconcilingOwner() {
+    for (PlanState state : List.of(PlanState.LOCKED, PlanState.RECONCILING)) {
+      assertThat(resolver.planActions(OWNER, plan(OWNER, state), List.of()))
+          .as("ADD_UNPLANNED affordance in %s", state)
+          .contains(AllowedAction.ADD_UNPLANNED);
+    }
+  }
+
+  @Test
+  void addUnplanned_absent_whenDraftOrReconciled() {
+    for (PlanState state : List.of(PlanState.DRAFT, PlanState.RECONCILED)) {
+      assertThat(resolver.planActions(OWNER, plan(OWNER, state), List.of()))
+          .as("no ADD_UNPLANNED affordance in %s", state)
+          .doesNotContain(AllowedAction.ADD_UNPLANNED);
+    }
+  }
+
+  @Test
+  void addUnplanned_absent_whenNotOwner() {
+    assertThat(resolver.planActions(OTHER, plan(OWNER, PlanState.LOCKED), List.of()))
+        .doesNotContain(AllowedAction.ADD_UNPLANNED);
+  }
+
   // ===================== commitmentActions — per-commitment CARRY_FORWARD (4.4b)
   // =====================
 

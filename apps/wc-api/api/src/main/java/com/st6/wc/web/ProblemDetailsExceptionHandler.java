@@ -137,6 +137,22 @@ public class ProblemDetailsExceptionHandler {
         .body(body);
   }
 
+  @ExceptionHandler(UnplannedMissingLinkAtCloseException.class)
+  ResponseEntity<ProblemDetail> handleUnplannedMissingLinkAtClose(
+      UnplannedMissingLinkAtCloseException ex) {
+    // E10 close gate (task 4.5, REQ-F-026/029) — every planned needs an outcome + every unplanned
+    // needs outcome + Supporting Outcome; 422 with per-commitment fieldErrors (safe constants).
+    ProblemDetail body =
+        ProblemDetailFactory.of(
+            HttpStatus.UNPROCESSABLE_ENTITY,
+            "Every commitment needs an outcome (and every unplanned a Supporting Outcome) before you can close reconciliation.",
+            ErrorCodes.UNPLANNED_MISSING_LINK_AT_CLOSE);
+    body.setProperty("fieldErrors", ex.fieldErrors());
+    return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+        .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+        .body(body);
+  }
+
   @ExceptionHandler(OptimisticLockingFailureException.class)
   ResponseEntity<ProblemDetail> handleOptimisticLock(OptimisticLockingFailureException ex) {
     // a concurrent command (e.g. a double-lock) lost the @Version race (§5) → 409, never a 500.

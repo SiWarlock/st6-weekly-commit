@@ -129,8 +129,23 @@ class CommitmentOutcomePatchTest {
     return req;
   }
 
+  private static PatchCommitmentRequest patchSupportingOutcome(UUID soId) {
+    PatchCommitmentRequest req = new PatchCommitmentRequest();
+    req.setSupportingOutcomeId(soId);
+    return req;
+  }
+
   private void loadReconciling() {
     when(commitments.findById(COMMITMENT_ID)).thenReturn(Optional.of(commitment()));
+    when(plans.findById(PLAN_ID)).thenReturn(Optional.of(plan(PlanState.RECONCILING)));
+  }
+
+  private void loadReconcilingUnplanned() {
+    WeeklyCommitment c = commitment();
+    c.setCommitmentKind(CommitmentKind.UNPLANNED);
+    c.setWorkType(WorkType.UNPLANNED);
+    c.setSupportingOutcomeId(null); // unplanned starts unlinked — the IC links it before close
+    when(commitments.findById(COMMITMENT_ID)).thenReturn(Optional.of(c));
     when(plans.findById(PLAN_ID)).thenReturn(Optional.of(plan(PlanState.RECONCILING)));
   }
 
@@ -343,5 +358,49 @@ class CommitmentOutcomePatchTest {
     verify(commitments, never()).findById(COMMITMENT_ID);
     verify(commitments, never()).save(any());
     verify(projectionService, never()).recompute(any(), any(), any(), any());
+  }
+
+  // ===================== E6 allow-list extension (4.5): unplanned SO-link in RECONCILING
+  // ==========
+
+  // --- an UNPLANNED commitment's supportingOutcomeId IS editable in RECONCILING (link before
+  // close)
+  @Test
+  void patch_unplannedSoLink_inReconciling_applies() {
+    loadReconcilingUnplanned();
+    withManagerAndReview();
+    UUID soId = UUID.randomUUID(); // rcdoReadService default mock returns (no throw) → valid
+
+    service.update(actor(), COMMITMENT_ID, patchSupportingOutcome(soId));
+
+    verify(rcdoReadService).findSupportingOutcome(soId); // validated
+    ArgumentCaptor<WeeklyCommitment> saved = ArgumentCaptor.forClass(WeeklyCommitment.class);
+    verify(commitments).save(saved.capture());
+    assertThat(saved.getValue().getSupportingOutcomeId()).isEqualTo(soId);
+  }
+
+  // --- a PLANNED commitment's supportingOutcomeId stays FROZEN in RECONCILING (never widen, rule
+  // #2)
+  @Test
+  void patch_plannedSoEdit_inReconciling_throwsLockedBaselineEdit() {
+    loadReconciling(); // PLANNED commitment
+
+    assertThatThrownBy(
+            () -> service.update(actor(), COMMITMENT_ID, patchSupportingOutcome(UUID.randomUUID())))
+        .isInstanceOf(LockedBaselineEditException.class);
+    verify(commitments, never()).save(any());
+  }
+
+  // --- an unknown SO on the unplanned link → 400 VALIDATION_ERROR; nothing saved ----
+  @Test
+  void patch_unplannedSoLink_unknownSo_throwsValidation() {
+    loadReconcilingUnplanned();
+    UUID soId = UUID.randomUUID();
+    when(rcdoReadService.findSupportingOutcome(soId))
+        .thenThrow(new ResourceNotFoundOrUnauthorizedException());
+
+    assertThatThrownBy(() -> service.update(actor(), COMMITMENT_ID, patchSupportingOutcome(soId)))
+        .isInstanceOf(ValidationException.class);
+    verify(commitments, never()).save(any());
   }
 }

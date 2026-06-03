@@ -207,10 +207,20 @@ public class CommitmentService {
             .findById(commitment.getWeeklyPlanId())
             .orElseThrow(ResourceNotFoundOrUnauthorizedException::new);
     PlanState state = plan.getState();
+    // (state, kind) allow-list: an UNPLANNED commitment's Supporting-Outcome link is editable in
+    // RECONCILING (the pre-close link, 4.5) — PLANNED stays frozen; never widened (LESSONS
+    // §27-ext).
+    boolean unplannedSoLinkAllowed =
+        state == PlanState.RECONCILING
+            && commitment.getCommitmentKind() == CommitmentKind.UNPLANNED;
 
     if (state != PlanState.DRAFT && touchesBaseline(req)) {
       throw new LockedBaselineEditException(); // rule #2 — baseline-first precedence (every
       // non-DRAFT)
+    }
+    if (state != PlanState.DRAFT && req.supportingOutcomeIdProvided() && !unplannedSoLinkAllowed) {
+      throw new LockedBaselineEditException(); // SO frozen post-lock EXCEPT the unplanned pre-close
+      // link
     }
     if (state != PlanState.DRAFT && req.alignmentStatusProvided()) {
       throw new IllegalStateTransitionException("alignment_status_read_only_post_lock");
@@ -226,9 +236,15 @@ public class CommitmentService {
       return commitmentMapper.toDto(commitment);
     }
 
-    if (state == PlanState.RECONCILING
-        && (req.reconciliationOutcomeProvided() || req.outcomeNoteProvided())) {
-      applyOutcome(commitment, req);
+    boolean recordsOutcome = req.reconciliationOutcomeProvided() || req.outcomeNoteProvided();
+    boolean linksUnplannedSo = unplannedSoLinkAllowed && req.supportingOutcomeIdProvided();
+    if (state == PlanState.RECONCILING && (recordsOutcome || linksUnplannedSo)) {
+      if (recordsOutcome) {
+        applyOutcome(commitment, req);
+      }
+      if (linksUnplannedSo) {
+        applyUnplannedSoLink(commitment, req);
+      }
       commitments.save(commitment); // @Version-guarded: stale conflict → 409
       recomputeProjection(
           plan); // §9 synchronous manager-projection refresh (skipped if no manager)
@@ -238,11 +254,50 @@ public class CommitmentService {
           commitmentId,
           actor.employeeId(),
           "Reconciliation outcome recorded",
-          "{}");
+          reconciliationAuditMetadata(
+              req)); // safe field NAMES only (§15) — distinguishes link-only
       return commitmentMapper.toDto(commitment);
     }
 
     return commitmentMapper.toDto(commitment); // non-DRAFT, nothing editable provided → no-op
+  }
+
+  /**
+   * Link an UNPLANNED commitment's Supporting Outcome during {@code RECONCILING} (the pre-close
+   * link, 4.5) — validated via {@link RcdoReadService} (unknown → 400); a present {@code null}
+   * unlinks.
+   */
+  private void applyUnplannedSoLink(WeeklyCommitment commitment, PatchCommitmentRequest req) {
+    UUID supportingOutcomeId = req.getSupportingOutcomeId();
+    if (supportingOutcomeId != null) {
+      try {
+        rcdoReadService.findSupportingOutcome(supportingOutcomeId);
+      } catch (ResourceNotFoundOrUnauthorizedException e) {
+        throw ValidationException.field("supportingOutcomeId", "unknown Supporting Outcome");
+      }
+    }
+    commitment.setSupportingOutcomeId(supportingOutcomeId);
+  }
+
+  /**
+   * Safe audit metadata for a RECONCILING E6 mutation — the touched field NAMES only (never values,
+   * §15), built via an escaped JSON node (LESSONS §18) so a link-only edit is distinguishable in
+   * the log from an outcome write under the shared {@code OUTCOME_RECORDED} umbrella.
+   */
+  private static String reconciliationAuditMetadata(PatchCommitmentRequest req) {
+    com.fasterxml.jackson.databind.node.ObjectNode node =
+        com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode();
+    com.fasterxml.jackson.databind.node.ArrayNode fields = node.putArray("fields");
+    if (req.reconciliationOutcomeProvided()) {
+      fields.add("reconciliationOutcome");
+    }
+    if (req.outcomeNoteProvided()) {
+      fields.add("outcomeNote");
+    }
+    if (req.supportingOutcomeIdProvided()) {
+      fields.add("supportingOutcomeId");
+    }
+    return node.toString();
   }
 
   /**
@@ -273,11 +328,15 @@ public class CommitmentService {
     commitments.delete(commitment);
   }
 
-  /** True when the patch provides any frozen planned-baseline field (rule #2 freeze set, §3). */
+  /**
+   * True when the patch provides an <strong>always-frozen</strong> planned-baseline field (rule #2,
+   * §3). {@code supportingOutcomeId} is NOT here — it is gated separately because it is frozen for
+   * PLANNED but linkable for an UNPLANNED commitment in {@code RECONCILING} (the pre-close link,
+   * 4.5); the per-(state, kind) allow-list, never a widened condition (LESSONS §27-ext).
+   */
   private static boolean touchesBaseline(PatchCommitmentRequest req) {
     return req.titleProvided()
         || req.descriptionProvided()
-        || req.supportingOutcomeIdProvided()
         || req.priorityProvided()
         || req.workTypeProvided()
         || req.confidenceProvided();
