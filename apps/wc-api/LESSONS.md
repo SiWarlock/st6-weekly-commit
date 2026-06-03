@@ -325,3 +325,50 @@ A single `DomainAuthorizationService` (`@Service`) owns **every** resource check
 - **Audit metadata JSON via an escaped node, never raw string-concat (rule #7).** Building `metadata_json` by concatenating untrusted-or-semi-trusted values into a JSON string is safe *today* only by caller discipline — a latent rule-#7 leak the moment a caller passes a value with a quote/brace. The security-reviewer flagged it; the fix is to build the object with an escaped JSON node (Jackson `ObjectNode` / `JsonNodeFactory`) so escaping is structural, not manual. **Don't let a safety invariant rest on caller discipline.** (Pairs with §14's SENTINEL-pinned safe-metadata `AuditService` — §14 says *what* stays out; this says *how* to build the JSON so it can't leak.)
 
 **Rule:** Have deny/error helpers **build-and-return** the exception (throw at the call site) to avoid the JaCoCo always-throwing-helper coverage artifact; and build any audit/log JSON via an **escaped JSON node**, never string-concat, so rule-#7 safety is structural, not caller-dependent.
+
+---
+
+## <a id="19"></a>19. SS6 per-mode `SecurityFilterChain` wiring — the integration slice that makes the auth spine fire
+
+**Date:** 2026-06-03.
+**Source slice:** 2.6 (securityconfig-filter-chain) — safety-touching (rule #5 + #3 operational halves). Security-reviewed (rule #5/#3/#7 PASS; one HIGH fixed in-slice).
+
+`SecurityConfig` (`@EnableWebSecurity @EnableMethodSecurity`) is the slice that makes the whole Phase-2 identity spine (decoder, claim mapper, demo filter, principal resolver, authorizer) actually fire in the request path — they're component-scanned-but-unreachable until a chain invokes them.
+
+- **One `SecurityFilterChain` bean per mode, `@ConditionalOnProperty(demo-auth.enabled)`** (real = `havingValue=false, matchIfMissing=true`; demo = `true`) — mirrors `JwtConfig`'s gate (LESSONS §12). **demo** chain: `DemoAuthFilter` authenticates `X-Demo-Employee-Id` (no JWT path). **real** chain: OAuth2 resource server validates the Auth0 JWT, and `DemoAuthFilter` runs **disabled as the production-backdoor rejector** (rule #5 operational half — proven *in the chain*, not just at the unit level). Modes are **mutually exclusive** (only one chain bean exists at runtime) → bearer-XOR-demo holds structurally.
+- **Resolve every identity to a `UserPrincipal` in BOTH modes** so the `SecurityContext` carries a uniform principal type for `DomainAuthorizationService` + the coarse gate. Real mode: a `Converter<Jwt,AbstractAuthenticationToken>` (`Auth0ClaimMapper.map` → `PrincipalResolver.resolve(Auth0Identity)` → `PreAuthenticatedAuthenticationToken(userPrincipal, jwt, ROLE_<role>)`); empty resolve (no employee / **inactive** / unknown subject) → throw `OAuth2AuthenticationException` → 401. Demo mode: swap `DemoAuthFilter`'s `EmployeeRepository` dep → `PrincipalResolver` so its principal is a `UserPrincipal` too (disabled-mode presence-only backdoor rejection unchanged). Coarse role gate = `@PreAuthorize("hasRole('MANAGER')")` with `ROLE_<role>` authority from the **authoritative** `UserPrincipal.role`.
+- **THE RFC-7807 render gotcha — 3 render points, not 1.** Chain-level **authn** failures (`AuthenticationEntryPoint`) and **access-denied** failures (`AccessDeniedHandler`) are thrown by FILTERS and **never reach `@RestControllerAdvice`**. So you need all three feeding one shared body builder: a `ProblemDetailsAuthenticationEntryPoint` (401), a `ProblemDetailsAccessDeniedHandler` (coarse 403), AND the `@RestControllerAdvice` (the authorizer's `…NotFoundOrUnauthorized`→404 / `AuthorizationDenied`→403+code, thrown from within request handling, + a safe 500 fallback). A single advice silently misses every chain-level denial.
+- **Prove the custom `JwtDecoder` wins** over `OAuth2ResourceServerAutoConfiguration`'s `@ConditionalOnMissingBean` decoder by registering the autoconfig in an `ApplicationContextRunner` and asserting OUR bean (with the audience validator) is the one wired.
+- **⚠ HIGH (fixed in-slice) — fail-fast on a non-boolean security-mode gate.** A malformed `demo-auth.enabled` (`yes`/`1`/typo) matches **neither** `@ConditionalOnProperty` chain → Boot's *default* chain silently takes over (fails closed, but drops the rule-#5 rejector + Auth0 validation + RFC-7807 with **no signal**). Fix: the config **fails fast at startup** on a non-boolean gate (refuse to start with an ambiguous security mode) — secure-by-default made *loud*. Whenever a security posture is keyed on a `@ConditionalOnProperty` boolean, validate it's actually boolean at startup.
+- **Reachability:** the `@EnableWebSecurity` chain provides its own beans independently of an excluded `SecurityAutoConfiguration` — so existing DB-less/skeleton boot tests that `spring.autoconfigure.exclude` it keep passing unchanged once a real chain exists (no harness churn).
+
+**Rule:** Wire one `@ConditionalOnProperty(demo-auth.enabled)` `SecurityFilterChain` per mode (mutually exclusive → bearer-XOR-demo structural); resolve every identity to a `UserPrincipal` in both modes (JWT-converter + demo-filter-via-`PrincipalResolver`, empty→401); render RFC-7807 at **three** points (entry-point 401 + access-denied 403 + `@RestControllerAdvice` 404/403+code/500 — chain-filter exceptions never hit the advice); prove the custom decoder wins over autoconfig; and **fail-fast at startup on a non-boolean security-mode gate** (a malformed value silently falls through to Boot's default chain).
+
+---
+
+## <a id="20"></a>20. Three SpotBugs/Jackson gotchas wiring the RFC-7807 problem+json path
+
+**Date:** 2026-06-03.
+**Source slice:** 2.6 (securityconfig-filter-chain). Each cost a real diagnostic cycle at GREEN.
+
+- **`EI_EXPOSE_REP2` on a `@Component` storing a concrete-mutable dependency.** A render component that stores an injected `ObjectMapper` (concrete, mutable) trips EI2 (same family as §10). Make the body builder a **pure static utility** that stores only interfaces/immutables (or constructs its own writer), rather than holding a mutable collaborator field.
+- **`CT_CONSTRUCTOR_THROW` on a validating constructor.** A `@Configuration` whose constructor validates + throws (e.g. the fail-fast non-boolean-gate check) trips `CT_CONSTRUCTOR_THROW` (partially-constructed-object finalizer-attack guard). Resolve with **`@Configuration(proxyBeanMethods = false)` + a `final` class** (no subclass → no finalizer attack surface), mirroring `JwtConfig`'s shape.
+- **A plain `ObjectMapper` nests `ProblemDetail`'s custom properties under `properties`.** Spring MVC's normal serialization path uses a mixin that **flattens** `ProblemDetail.getProperties()` to top level; a **filter-level** write (entry-point / access-denied handler, outside MVC) using a plain `ObjectMapper` does NOT get that mixin, so `safeMessage`/`code`/`traceId` come out nested under `"properties": {...}`. Flatten them manually (build the body map yourself, or register the mixin) on the filter write path so the demo + real chains emit an identical flat RFC-7807 shape.
+
+**Rule:** On the RFC-7807 path — make the body builder a pure static util (no stored mutable `ObjectMapper` → EI2); give a validating `@Configuration` `proxyBeanMethods=false`+`final` (→ CT_CONSTRUCTOR_THROW); and flatten `ProblemDetail`'s custom props yourself on any **filter-level** (non-MVC) write, since the flattening mixin isn't applied there.
+
+---
+
+## <a id="21"></a>21. First controller + DTO across the boundary (record-not-entity) + CORS via `http.cors()`
+
+**Date:** 2026-06-03.
+**Source slice:** 2.7 (cors-and-me-endpoint) — Phase-2 closer.
+
+`GET /api/me` established the reference **controller → service → DTO** pattern + the CORS security boundary that every Phase-3+ endpoint follows:
+
+- **Thin `@RestController` → `@Service` → DTO record.** The controller reads the resolved `@AuthenticationPrincipal UserPrincipal`; a small `@Service` reloads the `Employee` (one `findById`) for display fields (the principal carries only id/role/isManager) and maps to a **DTO `record`**. **Entities NEVER cross the boundary** (forbidden-pattern #3) — pin it with a leak test asserting entity-only fields are absent: `jsonPath("$.active"/"$.externalSubject"/"$.createdAt"/"$.version").doesNotExist()`.
+- **`/me`-style self endpoints are authenticated-only — NO `DomainAuthorizationService` call** (the caller's own identity is self by definition; don't add a no-op self-authz check). Other resource endpoints DO call the authorizer before any repo access (the rule-#3 chokepoint).
+- **`MeDto` mirrors Appendix B.3 verbatim** (`employeeId/email/displayName/role/persona/isManager/timezone?`) — the **first DTO contract** = a cross-doc invariant (the executable mirror of B.3). `persona=email` in both modes (simplest stable per-identity key; a persona switch → a different `MeDto`, satisfying REQ-F-032).
+- **CORS = a `CorsConfigurationSource` bean wired via `http.cors()` into BOTH mode chains** — exact-origin allow-list (**no wildcard**), `allowCredentials=false` (bearer transport), the configured methods/headers, preflight `OPTIONS` bypasses auth (Spring Security short-circuits preflight before the authz filter). **MODE-INDEPENDENT:** the bean reads only `app.cors.allowed-origins`, never `demo-auth.enabled` → demo mode **cannot widen** the allow-list (RISK-008 corollary, §12/§16). A disallowed origin is never reflected.
+
+**Rule:** First controller = thin `@RestController` → `@Service` → **DTO `record`** (entity never crosses the boundary — assert via a `.doesNotExist()` leak test); `/me`-style self endpoints are authenticated-only (no authorizer call), all other resource endpoints call the authorizer first; wire CORS as a `CorsConfigurationSource` via `http.cors()` into every mode chain — exact-origin + `allowCredentials=false` + **mode-independent** (read only `app.cors.allowed-origins` so demo can't widen).
