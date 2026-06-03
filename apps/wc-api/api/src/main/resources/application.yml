@@ -15,6 +15,13 @@ spring:
           issuer-uri: ${AUTH0_ISSUER_URI:}
 
 app:
+  # One-shot job activation (task 3.2, §8). Unset/blank on the normal web image → the
+  # PlanShellGenerationRunner is inert (@ConditionalOnProperty does not match). The generation
+  # CronJob launches the SAME image with `--app.job=generate-plan-shells
+  # --spring.main.web-application-type=none` → the runner generates the week's DRAFT shells once
+  # (SYSTEM actor) then exits one-shot (no web server → main returns → JVM terminates). Infra owns
+  # the CronJob manifest (+ activeDeadlineSeconds backstop).
+  job: ${APP_JOB:}
   org:
     # Blank passthrough: OrgTimeBindingConfig.resolveZone is the single fail-safe source of truth (D.6).
     timezone: ${ORG_TIMEZONE:}

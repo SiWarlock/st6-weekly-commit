@@ -43,4 +43,12 @@ public final class OrgTimeConfig {
   public LocalDate weekStartDate(Instant instant) {
     return weekStartDate(LocalDate.ofInstant(instant, zoneId));
   }
+
+  /**
+   * @return the {@code week_end_date} (Sunday) that ends the Mon–Sun week containing {@code date} —
+   *     the Sunday pair to {@link #weekStartDate(LocalDate)} (task 3.2 / §3 weekly cadence).
+   */
+  public LocalDate weekEndDate(LocalDate date) {
+    return weekStartDate(date).plusDays(6);
+  }
 }
