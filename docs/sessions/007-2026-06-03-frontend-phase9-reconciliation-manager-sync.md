@@ -4,7 +4,7 @@
 - **Phase:** 9 (Frontend — `apps/wc-web/`)
 - **Track:** `st6-main` frontend (`st6-main-wc-web-implementer`)
 - **Predecessor:** [`005-2026-06-02-frontend-phase9-ic-workspace.md`](005-2026-06-02-frontend-phase9-ic-workspace.md)
-- **Successor:** _(next frontend session — fresh impl after cycle)_
+- **Successor:** [011 — frontend Phase-ST styling spine (ST.4→ST.6b) + Phase-9 closeout](011-2026-06-03-frontend-st-styling-spine.md)
 
 ## Why this session existed
 
