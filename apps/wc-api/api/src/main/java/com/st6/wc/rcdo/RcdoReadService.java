@@ -1,6 +1,7 @@
 package com.st6.wc.rcdo;
 
 import com.st6.wc.auth.ResourceNotFoundOrUnauthorizedException;
+import com.st6.wc.commitment.dto.RcdoBreadcrumbDto;
 import com.st6.wc.rcdo.dto.RcdoTreeDto;
 import com.st6.wc.rcdo.mapper.RcdoMapper;
 import com.st6.wc.rcdo.repo.DefiningObjectiveRepository;
@@ -57,5 +58,33 @@ public class RcdoReadService {
     return supportingOutcomes
         .findById(id)
         .orElseThrow(ResourceNotFoundOrUnauthorizedException::new);
+  }
+
+  /**
+   * Resolves the RC→DO→SO display breadcrumb for a linked commitment's Supporting Outcome (task
+   * 3.3a, Appendix B.6) — walks SO → its Defining Objective → its Rally Cry via the flat-FK chain.
+   * Keeps RCDO knowledge in the RCDO service (callers pass only a {@code supportingOutcomeId}). A
+   * missing link is a data-integrity violation (the FKs guarantee the chain) → IDOR-safe 404.
+   */
+  public RcdoBreadcrumbDto resolveBreadcrumb(UUID supportingOutcomeId) {
+    SupportingOutcome so =
+        supportingOutcomes
+            .findById(supportingOutcomeId)
+            .orElseThrow(ResourceNotFoundOrUnauthorizedException::new);
+    DefiningObjective definingObjective =
+        definingObjectives
+            .findById(so.getDefiningObjectiveId())
+            .orElseThrow(ResourceNotFoundOrUnauthorizedException::new);
+    RallyCry rallyCry =
+        rallyCries
+            .findById(definingObjective.getRallyCryId())
+            .orElseThrow(ResourceNotFoundOrUnauthorizedException::new);
+    return new RcdoBreadcrumbDto(
+        rallyCry.getId(),
+        rallyCry.getTitle(),
+        definingObjective.getId(),
+        definingObjective.getTitle(),
+        so.getId(),
+        so.getTitle());
   }
 }

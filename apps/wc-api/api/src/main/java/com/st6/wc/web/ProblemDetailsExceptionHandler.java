@@ -2,6 +2,7 @@ package com.st6.wc.web;
 
 import com.st6.wc.auth.AuthorizationDeniedException;
 import com.st6.wc.auth.ResourceNotFoundOrUnauthorizedException;
+import com.st6.wc.plan.PlanNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
@@ -34,6 +35,13 @@ public class ProblemDetailsExceptionHandler {
   @ExceptionHandler(ResourceNotFoundOrUnauthorizedException.class)
   ResponseEntity<ProblemDetail> handleNotFound(ResourceNotFoundOrUnauthorizedException ex) {
     return render(HttpStatus.NOT_FOUND, "The requested resource was not found.", null);
+  }
+
+  @ExceptionHandler(PlanNotFoundException.class)
+  ResponseEntity<ProblemDetail> handlePlanNotFound(PlanNotFoundException ex) {
+    // self-scoped (E3): the caller's own week has no plan yet — a NAMED 404 (no existence leak).
+    return render(
+        HttpStatus.NOT_FOUND, "No plan found for the current week.", PlanNotFoundException.CODE);
   }
 
   @ExceptionHandler(AuthorizationDeniedException.class)

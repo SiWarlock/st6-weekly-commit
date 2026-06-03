@@ -3,6 +3,7 @@ package com.st6.wc.plan.repo;
 import com.st6.wc.plan.WeeklyPlan;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -14,4 +15,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface WeeklyPlanRepository extends JpaRepository<WeeklyPlan, UUID> {
 
   List<WeeklyPlan> findByWeekStartDate(LocalDate weekStartDate);
+
+  /**
+   * IC self-read current-plan lookup (task 3.3a, E3) — at most one by the unique(employee,week).
+   */
+  Optional<WeeklyPlan> findByEmployeeIdAndWeekStartDate(UUID employeeId, LocalDate weekStartDate);
 }
