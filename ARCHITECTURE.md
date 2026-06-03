@@ -1240,7 +1240,7 @@ sequenceDiagram
   alt empty plan
     API-->>Web: 409 EMPTY_PLAN_LOCK
   else unlinked planned commitment
-    API-->>Web: 422 UNLINKED_PLANNED_COMMITMENT
+    API-->>Web: 409 UNLINKED_PLANNED_COMMITMENT
   else valid
     API->>DB: weekly_plan.state = LOCKED, locked_at; freeze planned baseline
     API->>DB: insert manager_review (status=NOT_REVIEWED, review_due_at = end of next business day, org tz, weekdays-only)
