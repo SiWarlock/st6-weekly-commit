@@ -1,0 +1,9 @@
+# namespace.yaml — the WC workload namespace (§12, Appendix C.7).
+# Pins the IRSA trust `sub` namespace (system:serviceaccount:wc:<sa>) — MUST equal
+# the 12.7b var.k8s_namespace ("wc"); the four ServiceAccounts + external-dns live here.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: wc
+  labels:
+    app.kubernetes.io/part-of: wc

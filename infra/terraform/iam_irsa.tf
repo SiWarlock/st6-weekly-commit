@@ -167,3 +167,54 @@ resource "aws_iam_role_policy" "irsa_migration" {
     }]
   })
 }
+
+# ---- external-dns: route53 record management on the project hosted zone ONLY ----
+# Decision 2 (docs/decisions/001): external-dns owns the api.wc.${ROOT_DOMAIN} -> ALB
+# alias record. The ALB is created by the AWS Load Balancer Controller from the 12.8
+# ingress at deploy time (post-apply), so the alias can't be a pure-Terraform record;
+# external-dns (k8s Deployment, 12.8) watches the Ingress hostname annotation and
+# upserts it. The SA `system:serviceaccount:wc:external-dns` assumes this role (IRSA).
+# Least-privilege: ChangeResourceRecordSets + ListResourceRecordSets are scoped to the
+# project hosted-zone ARN (NOT `*`); ListHostedZones cannot be resource-scoped by IAM,
+# so it is the only `*` action. Decision 3 (Option A): carries the ci_boundary
+# permissions boundary like every other TF-created role (ci_boundary Allows route53:*,
+# so it's a superset — no cap).
+resource "aws_iam_role" "external_dns" {
+  name                 = "${local.cluster_name}-irsa-external-dns"
+  permissions_boundary = aws_iam_policy.ci_boundary.arn # 12.7c/D3 — every TF-created role is bounded
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Federated = module.eks.oidc_provider_arn }
+      Action    = "sts:AssumeRoleWithWebIdentity"
+      Condition = { StringEquals = {
+        "${local.oidc_issuer}:sub" = "system:serviceaccount:${var.k8s_namespace}:external-dns"
+        "${local.oidc_issuer}:aud" = "sts.amazonaws.com"
+      } }
+    }]
+  })
+  tags = local.common_tags
+}
+
+resource "aws_iam_role_policy" "external_dns" {
+  name = "external-dns-route53-least-priv"
+  role = aws_iam_role.external_dns.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "ChangeProjectZoneRecords"
+        Effect   = "Allow"
+        Action   = ["route53:ChangeResourceRecordSets", "route53:ListResourceRecordSets"]
+        Resource = "arn:aws:route53:::hostedzone/${data.aws_route53_zone.root.zone_id}" # project zone ONLY
+      },
+      {
+        Sid      = "ListZones"
+        Effect   = "Allow"
+        Action   = "route53:ListHostedZones"
+        Resource = "*" # ListHostedZones has no resource-level scoping (AWS IAM limitation)
+      },
+    ]
+  })
+}

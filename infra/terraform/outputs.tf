@@ -149,6 +149,14 @@ output "irsa_migration_role_arn" {
   value       = aws_iam_role.irsa_migration.arn
 }
 
+# --- 12.8: external-dns IRSA role (Decision 2) — LIVE ------------------------
+# Consumed by the external-dns ServiceAccount annotation (eks.amazonaws.com/role-arn).
+
+output "external_dns_role_arn" {
+  description = "IRSA role ARN for the external-dns ServiceAccount (Decision 2; owns the api.wc.<ROOT_DOMAIN> -> ALB record)."
+  value       = aws_iam_role.external_dns.arn
+}
+
 # --- 12.7c: CI deploy role — LIVE -------------------------------------------
 
 output "ci_deploy_role_arn" {

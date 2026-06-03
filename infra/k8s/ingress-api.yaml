@@ -1,0 +1,36 @@
+# ingress-api.yaml — internet-facing ALB ingress for the API (REQ-O-008, REQ-O-012).
+# The AWS Load Balancer Controller provisions the ALB from these annotations:
+#   - scheme internet-facing, target-type ip (routes to pod IPs)
+#   - HTTPS:443 listener terminating the regional ACM cert (${ALB_CERT_ARN}, 12.7a)
+#   - ALB target-group health check -> the api readiness probe path (13.3)
+# external-dns watches the hostname annotation and upserts the api.wc.${ROOT_DOMAIN}
+# -> ALB alias Route53 record (Decision 2) — inert until external-dns.yaml deploys.
+# ${ALB_CERT_ARN} + ${ROOT_DOMAIN} are injected at deploy via CI envsubst (12.11).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: wc-api
+  namespace: wc
+  labels:
+    app.kubernetes.io/part-of: wc
+    app.kubernetes.io/component: api
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/certificate-arn: ${ALB_CERT_ARN}
+    alb.ingress.kubernetes.io/healthcheck-path: /actuator/health/readiness
+    external-dns.alpha.kubernetes.io/hostname: api.wc.${ROOT_DOMAIN}
+spec:
+  ingressClassName: alb
+  rules:
+    - host: api.wc.${ROOT_DOMAIN}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: wc-api
+                port:
+                  number: 80
