@@ -1,0 +1,64 @@
+# cronjob-generation.yaml — weekly plan-shell generation (§8, §12, Appendix D.4).
+# Reuses the wc-api IMAGE (no third image — forbidden-pattern #5) with arg
+# --app.job=generate-plan-shells under the generation profile. Runs as wc-cronjob SA
+# (IRSA: GetSecretValue DB ONLY); mounts wc-cronjob-secrets (db only) at /mnt/secrets.
+# spring.flyway.enabled=false (forbidden-pattern #3). NO SNS / SQS / Graph / Auth0 / CORS
+# env. concurrencyPolicy Forbid — never overlap a generation run. Idempotent via
+# unique(employee_id, week_start_date). Schedule: Monday 06:00 (org-tz interpreted
+# in-app; week boundaries are Monday–Sunday).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: wc-generation
+  namespace: wc
+  labels:
+    app.kubernetes.io/part-of: wc
+    app.kubernetes.io/component: cronjob
+spec:
+  schedule: "0 6 * * 1"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/part-of: wc
+            app.kubernetes.io/component: cronjob
+        spec:
+          serviceAccountName: wc-cronjob
+          restartPolicy: Never
+          containers:
+            - name: wc-generation
+              image: ${ECR_API_IMAGE}
+              args:
+                - "--app.job=generate-plan-shells"
+              env:
+                - name: SPRING_PROFILES_ACTIVE
+                  value: "aws,generation"
+                - name: SPRING_FLYWAY_ENABLED
+                  value: "false"
+                - name: AWS_REGION
+                  value: "${AWS_REGION}"
+                - name: ORG_TIMEZONE
+                  value: "America/Chicago"
+              resources:
+                requests:
+                  cpu: 250m
+                  memory: 512Mi
+                limits:
+                  memory: 1Gi
+              volumeMounts:
+                - name: secrets-store
+                  mountPath: /mnt/secrets
+                  readOnly: true
+          volumes:
+            - name: secrets-store
+              csi:
+                driver: secrets-store.csi.k8s.io
+                readOnly: true
+                volumeAttributes:
+                  secretProviderClass: wc-cronjob-secrets
