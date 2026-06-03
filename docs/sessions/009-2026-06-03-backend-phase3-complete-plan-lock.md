@@ -4,7 +4,7 @@
 - **Track:** st6-main (backend, `apps/wc-api/`)
 - **Authored by:** st6-main-orchestrator (fresh successor orch — the predecessor cycled deliberately pre-3.5 so a full-budget orch reviewed the safety-critical lock). The implementer (`7ae8e1cd`) ran the `/tdd` cycles and is continuing into Phase 4 (no `/session-end` cycle this round), so the orchestrator captured this doc as part of `/orchestrate-end`.
 - **Predecessor:** `008-2026-06-03-backend-phase3-rcdo-plan-commitment.md` (3.1–3.4a).
-- **Successor:** _(next backend session — Phase 4 post-lock IC lifecycle)_
+- **Successor:** [010-2026-06-03-backend-phase3-close-and-phase4-entry.md](010-2026-06-03-backend-phase3-close-and-phase4-entry.md) (impl-perspective 3.4b/3.5 recap + 4.2 start-reconciliation, Phase-4 entry).
 
 > **Why orchestrator-authored:** 3.4b was sealed in the predecessor orch's round commit (`9f71e70`) and 3.5 in this orch's round; the implementer is continuing into Phase 4 rather than ending its session, so there is no implementer `/session-end` doc this round. This doc captures the 3.4b–3.5 narrative (the Phase-3-complete milestone) faithfully from the slices the orchestrator reviewed at Step 2.5 + Step 9.
 
