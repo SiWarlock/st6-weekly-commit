@@ -151,6 +151,13 @@ variable "k8s_namespace" {
   default     = "wc"
 }
 
+# --- 12.7c: CI deploy role --------------------------------------------------
+
+variable "github_repo" {
+  description = "GitHub `owner/repo` for the CI deploy role's OIDC trust subject (repo:<owner>/<repo>:environment:production). Required, no default — deploy-specific (like ROOT_DOMAIN)."
+  type        = string
+}
+
 # --- 12.10: CloudWatch ------------------------------------------------------
 
 variable "cloudwatch_log_retention_days" {

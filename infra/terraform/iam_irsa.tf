@@ -15,7 +15,8 @@ locals {
 
 # ---- api: sns:Publish (lifecycle topic) + GetSecretValue (db, auth0, graph) ----
 resource "aws_iam_role" "irsa_api" {
-  name = "${local.cluster_name}-irsa-api"
+  name                 = "${local.cluster_name}-irsa-api"
+  permissions_boundary = aws_iam_policy.ci_boundary.arn # 12.7c — every TF-created role is bounded
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -59,7 +60,8 @@ resource "aws_iam_role_policy" "irsa_api" {
 
 # ---- worker: sqs Receive/Delete/GetQueueAttributes (queue+DLQ) + graph secret ----
 resource "aws_iam_role" "irsa_worker" {
-  name = "${local.cluster_name}-irsa-worker"
+  name                 = "${local.cluster_name}-irsa-worker"
+  permissions_boundary = aws_iam_policy.ci_boundary.arn # 12.7c — every TF-created role is bounded
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -102,7 +104,8 @@ resource "aws_iam_role_policy" "irsa_worker" {
 
 # ---- cronjob: GetSecretValue (db ONLY) ----
 resource "aws_iam_role" "irsa_cronjob" {
-  name = "${local.cluster_name}-irsa-cronjob"
+  name                 = "${local.cluster_name}-irsa-cronjob"
+  permissions_boundary = aws_iam_policy.ci_boundary.arn # 12.7c — every TF-created role is bounded
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -134,7 +137,8 @@ resource "aws_iam_role_policy" "irsa_cronjob" {
 
 # ---- migration: GetSecretValue (db ONLY) ----
 resource "aws_iam_role" "irsa_migration" {
-  name = "${local.cluster_name}-irsa-migration"
+  name                 = "${local.cluster_name}-irsa-migration"
+  permissions_boundary = aws_iam_policy.ci_boundary.arn # 12.7c — every TF-created role is bounded
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{

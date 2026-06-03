@@ -149,6 +149,13 @@ output "irsa_migration_role_arn" {
   value       = aws_iam_role.irsa_migration.arn
 }
 
+# --- 12.7c: CI deploy role — LIVE -------------------------------------------
+
+output "ci_deploy_role_arn" {
+  description = "Hardened CI deploy role ARN — the 12.11 GitHub Actions workflow's role-to-assume (OIDC, environment:production)."
+  value       = aws_iam_role.ci_deploy.arn
+}
+
 # --- 12.10: CloudWatch log groups — LIVE (keyed by workload) -----------------
 
 output "cloudwatch_log_group_names" {

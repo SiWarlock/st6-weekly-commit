@@ -12,6 +12,11 @@ module "eks" {
   name               = local.cluster_name
   kubernetes_version = var.eks_cluster_version
 
+  # Hardened CI (12.7c / Decision 3 Option A): the module-created CLUSTER role
+  # carries ci_boundary so CI's terraform apply can create it (the deploy role
+  # denies creating unbounded roles).
+  iam_role_permissions_boundary = aws_iam_policy.ci_boundary.arn
+
   # Public API endpoint so the HITL operator + CI can reach it; cluster creator is
   # granted admin via an access entry (API auth mode — v21 default). The CI-deploy-
   # role access entry is added in 12.7 alongside the role itself (deferred here to
@@ -44,6 +49,11 @@ module "eks" {
       min_size     = var.node_min_size
       max_size     = var.node_max_size
       desired_size = var.node_desired_size
+
+      # Node-group role carries ci_boundary (12.7c). NOTE: the per-node-group
+      # input, NOT the module's node_iam_role_permissions_boundary (that one is
+      # for EKS Auto Mode, which we don't use).
+      iam_role_permissions_boundary = aws_iam_policy.ci_boundary.arn
     }
   }
 
@@ -58,6 +68,7 @@ module "alb_controller_irsa" {
   version = "~> 6.0" # latest 6.6.1 verified at author time
 
   name                                   = "${local.cluster_name}-alb-controller"
+  permissions_boundary                   = aws_iam_policy.ci_boundary.arn # 12.7c — guardrail boundary (superset; doesn't cap)
   attach_load_balancer_controller_policy = true
 
   oidc_providers = {
