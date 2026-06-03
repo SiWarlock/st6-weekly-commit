@@ -35,6 +35,11 @@ export async function getAccessToken(): Promise<string> {
   return accessTokenProvider();
 }
 
+/** Whether an access-token provider has been injected (remote/standalone wiring). */
+export function hasAccessTokenProvider(): boolean {
+  return accessTokenProvider !== null;
+}
+
 /**
  * Resolve the demo persona id, or `null` when unset/unavailable. Degrades on a
  * throwing provider (returns null) — a demo request with no persona sends no

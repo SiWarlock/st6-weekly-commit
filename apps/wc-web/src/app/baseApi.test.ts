@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { prepareHeaders, baseApi } from './baseApi';
+import { prepareHeaders, baseApi, resolveApiBaseUrl } from './baseApi';
 import { TAG_TYPES } from './tags';
 import {
   setAccessTokenProvider,
@@ -75,6 +75,13 @@ describe('prepareHeaders auth XOR (§7)', () => {
     // The raw cause IS preserved (debug-only) — hidden from the message, kept for logs.
     expect((err as Error).cause).toBeInstanceOf(Error);
   });
+
+  it('unknown_auth_mode_fails_defensively: an unrecognized VITE_AUTH_MODE throws (no silent demo fall-through)', async () => {
+    vi.stubEnv('VITE_AUTH_MODE', 'bogus');
+    await expect(prepareHeaders(new Headers())).rejects.toThrow(
+      /unsupported .*auth.*mode/i,
+    );
+  });
 });
 
 describe('tag types (§7 cache invalidation)', () => {
@@ -92,5 +99,17 @@ describe('tag types (§7 cache invalidation)', () => {
     ]);
     expect(new Set(TAG_TYPES).size).toBe(9);
     expect(baseApi.reducerPath).toBe('api');
+  });
+});
+
+describe('env enforcement (folded 9.1 TODOs)', () => {
+  it('api_base_url_enforced: required in prod builds, dev/test fall back to /', () => {
+    expect(
+      resolveApiBaseUrl({ VITE_API_BASE_URL: 'http://api', PROD: true }),
+    ).toBe('http://api');
+    expect(() => resolveApiBaseUrl({ PROD: true })).toThrow(
+      /VITE_API_BASE_URL/,
+    );
+    expect(resolveApiBaseUrl({ PROD: false })).toBe('/');
   });
 });
