@@ -771,7 +771,8 @@ apps/wc-api/
     build.gradle                  # depends on :shared; spring-boot-starter-web/security/data-jpa, flyway, micrometer, aws sdk sns
     src/main/java/com/st6/wc/
       WcApiApplication.java                   # @SpringBootApplication; main image entrypoint
-      job/PlanShellGenerationRunner.java      # ApplicationRunner gated on --app.job=generate-plan-shells (§8)
+      job/PlanShellGenerator.java             # @Transactional generate() — shell-creation logic (3.2)
+      job/PlanShellGenerationRunner.java      # thin @ConditionalOnProperty(app.job=generate-plan-shells) ApplicationRunner → generate() (§8, 3.2)
       job/FlywayMigrateRunner.java            # active under flyway-migrate profile (sole migration owner, §12)
       config/SecurityConfig.java              # OAuth2 resource server; OPTIONS bypass; demo-header filter chain
       config/JwtConfig.java                   # JwtDecoder = createDefaultWithIssuer + DelegatingOAuth2TokenValidator
