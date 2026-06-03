@@ -123,6 +123,15 @@ public class ProblemDetailsExceptionHandler {
         ErrorCodes.EMPTY_PLAN_LOCK);
   }
 
+  @ExceptionHandler(SecondOpenDisputeException.class)
+  ResponseEntity<ProblemDetail> handleSecondOpenDispute(SecondOpenDisputeException ex) {
+    // rule #6 — at most one unresolved dispute per commitment (§3 / §4 partial-unique, task 5.3).
+    return render(
+        HttpStatus.CONFLICT,
+        "This commitment already has an unresolved dispute.",
+        ErrorCodes.SECOND_OPEN_DISPUTE);
+  }
+
   @ExceptionHandler(UnlinkedPlannedCommitmentException.class)
   ResponseEntity<ProblemDetail> handleUnlinked(UnlinkedPlannedCommitmentException ex) {
     // rule #1 — every planned commitment must link a Supporting Outcome before lock (REQ-E-001).

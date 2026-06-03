@@ -34,4 +34,11 @@ public final class ErrorCodes {
    * constraint.
    */
   public static final String UNPLANNED_MISSING_LINK_AT_CLOSE = "UNPLANNED_MISSING_LINK_AT_CLOSE";
+
+  /**
+   * A second unresolved dispute attempted on a commitment that already has an {@code OPEN}/{@code
+   * IC_RESPONDED} dispute (409; safety rule #6, task 5.3). Enforced by the service pre-check + the
+   * V2 partial-unique DB backstop.
+   */
+  public static final String SECOND_OPEN_DISPUTE = "SECOND_OPEN_DISPUTE";
 }

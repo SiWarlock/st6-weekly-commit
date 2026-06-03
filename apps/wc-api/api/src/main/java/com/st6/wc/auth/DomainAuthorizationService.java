@@ -61,8 +61,10 @@ public class DomainAuthorizationService {
   private static final String REASON_NOT_OWNER = "not_commitment_owner";
   private static final String REASON_NOT_PLAN_OWNER = "not_plan_owner";
   private static final String REASON_NOT_DIRECT_MANAGER = "not_direct_manager";
+  private static final String REASON_IC_NO_OPEN = "ic_cannot_open_dispute";
 
   private static final String CODE_IC_CANNOT_RESOLVE = "IC_CANNOT_RESOLVE_DISPUTE";
+  private static final String CODE_IC_CANNOT_OPEN_DISPUTE = "IC_CANNOT_OPEN_DISPUTE";
   private static final String CODE_MANAGER_ROLE_REQUIRED = "MANAGER_ROLE_REQUIRED";
   private static final String CODE_COMMITMENT_OWNER_REQUIRED = "COMMITMENT_OWNER_REQUIRED";
   private static final String CODE_PLAN_OWNER_REQUIRED = "PLAN_OWNER_REQUIRED";
@@ -218,6 +220,27 @@ public class DomainAuthorizationService {
    * /api/manager/*} endpoint, so the whole manager namespace is existence-hidden from them → {@code
    * 404} IDOR. Do not "fix" this asymmetry. SYSTEM is exempt.
    */
+  /**
+   * Opening an alignment dispute (E17, task 5.3) is a <strong>manager-of-owner</strong> capability:
+   * the IC owner can SEE their commitment (E6/E7) but must NOT dispute their own work. Access
+   * chokepoint first (cross-owner / cross-team / missing → IDOR-safe {@code 404} + audit), then
+   * reject the owner-self with a {@code 403} — the IC <em>legitimately</em> uses {@code
+   * /api/commitments/*} (E6/E7), so existence is NOT hidden → a capability {@code 403
+   * IC_CANNOT_OPEN_DISPUTE} (contrast {@link #authorizeReviewMutation}'s {@code 404}, where the IC
+   * has no legitimate {@code /api/manager/*} endpoint — the §33 namespace-legitimacy tree). The
+   * inverse-action sibling of {@link #authorizeDisputeResolution}. SYSTEM is exempt.
+   */
+  public void authorizeDisputeCreation(DomainPrincipal principal, UUID commitmentId) {
+    UUID owner = commitmentOwner(commitmentId); // missing → 404 WITHOUT audit
+    authorizeOwnership(
+        principal, owner, COMMITMENT, commitmentId); // no access at all → 404 + audit
+    if (principal instanceof UserPrincipal up && up.employeeId().equals(owner)) {
+      throw deny403(
+          principal, COMMITMENT, commitmentId, REASON_IC_NO_OPEN, CODE_IC_CANNOT_OPEN_DISPUTE);
+    }
+    // an active direct manager (or SYSTEM) may open a dispute
+  }
+
   public void authorizeReviewMutation(DomainPrincipal principal, UUID reviewId) {
     UUID owner = reviewOwner(reviewId); // missing → 404 WITHOUT audit
     authorizeOwnership(principal, owner, REVIEW, reviewId); // no access at all → 404 + audit
