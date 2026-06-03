@@ -6,6 +6,7 @@ import { flowbiteTheme } from '../app/flowbiteTheme';
 import { store } from '../app/store';
 import WeeklyCommitApp from '../remote/WeeklyCommitApp';
 import { DemoIdentityProvider } from './DemoIdentityProvider';
+import { FlowbiteThemeSync } from './FlowbiteThemeSync';
 import { PersonaSwitcher } from './PersonaSwitcher';
 import { ThemeToggle } from './ThemeToggle';
 
@@ -25,6 +26,9 @@ export function StandaloneShell() {
         <ThemeProvider>
           <DemoIdentityProvider>
             <Flowbite theme={{ theme: flowbiteTheme }}>
+              {/* Keep Flowbite's own theme-mode in sync with our [data-theme]
+                  single source (#6, ST.7d) — must be inside <Flowbite>. */}
+              <FlowbiteThemeSync />
               <header className="flex items-center justify-end gap-4 border-b border-border px-6 py-3">
                 <PersonaSwitcher />
                 <ThemeToggle />
