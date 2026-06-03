@@ -59,10 +59,12 @@ public class DomainAuthorizationService {
   private static final String REASON_IC_NO_RESOLVE = "ic_cannot_resolve_dispute";
   private static final String REASON_MANAGER_ROLE = "manager_role_required";
   private static final String REASON_NOT_OWNER = "not_commitment_owner";
+  private static final String REASON_NOT_PLAN_OWNER = "not_plan_owner";
 
   private static final String CODE_IC_CANNOT_RESOLVE = "IC_CANNOT_RESOLVE_DISPUTE";
   private static final String CODE_MANAGER_ROLE_REQUIRED = "MANAGER_ROLE_REQUIRED";
   private static final String CODE_COMMITMENT_OWNER_REQUIRED = "COMMITMENT_OWNER_REQUIRED";
+  private static final String CODE_PLAN_OWNER_REQUIRED = "PLAN_OWNER_REQUIRED";
 
   private final WeeklyPlanRepository plans;
   private final WeeklyCommitmentRepository commitments;
@@ -150,6 +152,22 @@ public class DomainAuthorizationService {
     if (principal instanceof UserPrincipal up && !up.isManager()) {
       throw deny403(principal, HEATMAP, null, REASON_MANAGER_ROLE, CODE_MANAGER_ROLE_REQUIRED);
     }
+  }
+
+  /**
+   * Locking a plan (E8, task 3.5) is an <strong>IC-owner-only</strong> capability: a
+   * manager-direct-report can <em>read</em> the plan (E4) but cannot lock it. Same shape as {@link
+   * #authorizeCommitmentMutation} — access chokepoint (cross-owner/cross-team/missing → IDOR-safe
+   * {@code 404} + audit) then an owner check (a manager-direct-report who can see but does not own
+   * it → {@code 403 PLAN_OWNER_REQUIRED} + audit). SYSTEM is exempt.
+   */
+  public void authorizePlanMutation(DomainPrincipal principal, UUID planId) {
+    UUID owner = planOwner(planId); // missing → 404 WITHOUT audit
+    authorizeOwnership(principal, owner, PLAN, planId); // no access at all → 404 + audit
+    if (principal instanceof UserPrincipal up && !up.employeeId().equals(owner)) {
+      throw deny403(principal, PLAN, planId, REASON_NOT_PLAN_OWNER, CODE_PLAN_OWNER_REQUIRED);
+    }
+    // the owning IC (or SYSTEM) may lock
   }
 
   /**

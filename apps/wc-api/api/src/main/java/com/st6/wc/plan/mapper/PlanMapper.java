@@ -7,6 +7,9 @@ import com.st6.wc.enums.CommitmentKind;
 import com.st6.wc.plan.AllowedActionResolver;
 import com.st6.wc.plan.WeeklyPlan;
 import com.st6.wc.plan.dto.WeeklyPlanDto;
+import com.st6.wc.review.dto.ManagerReviewDto;
+import com.st6.wc.review.mapper.ReviewMapper;
+import com.st6.wc.review.repo.ManagerReviewRepository;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
@@ -24,11 +27,18 @@ public class PlanMapper {
 
   private final CommitmentMapper commitmentMapper;
   private final AllowedActionResolver allowedActionResolver;
+  private final ManagerReviewRepository reviews;
+  private final ReviewMapper reviewMapper;
 
   public PlanMapper(
-      CommitmentMapper commitmentMapper, AllowedActionResolver allowedActionResolver) {
+      CommitmentMapper commitmentMapper,
+      AllowedActionResolver allowedActionResolver,
+      ManagerReviewRepository reviews,
+      ReviewMapper reviewMapper) {
     this.commitmentMapper = commitmentMapper;
     this.allowedActionResolver = allowedActionResolver;
+    this.reviews = reviews;
+    this.reviewMapper = reviewMapper;
   }
 
   public WeeklyPlanDto toWeeklyPlanDto(
@@ -46,6 +56,14 @@ public class PlanMapper {
                 .count();
     int unplannedCount = commitments.size() - plannedCount;
 
+    // The review exists once the plan is LOCKED+ (3.5); null while DRAFT. unresolvedDisputeCount is
+    // 0 until the disputes slice wires it. RC→DO→SO/review knowledge stays in the review service.
+    ManagerReviewDto managerReview =
+        reviews
+            .findByWeeklyPlanId(plan.getId())
+            .map(review -> reviewMapper.toDto(review, 0))
+            .orElse(null);
+
     return new WeeklyPlanDto(
         plan.getId(),
         plan.getEmployeeId(),
@@ -60,7 +78,7 @@ public class PlanMapper {
         plannedCount,
         unplannedCount,
         commitmentDtos,
-        null, // managerReview — null while DRAFT (B.5); 3.5 wires the entity→DTO mapping
+        managerReview,
         allowedActionResolver.planActions(actorEmployeeId, plan, commitments),
         plan.getVersion());
   }

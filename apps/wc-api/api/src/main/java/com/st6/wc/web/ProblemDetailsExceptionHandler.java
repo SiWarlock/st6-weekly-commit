@@ -6,6 +6,7 @@ import com.st6.wc.auth.ResourceNotFoundOrUnauthorizedException;
 import com.st6.wc.plan.PlanNotFoundException;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
@@ -112,6 +113,38 @@ public class ProblemDetailsExceptionHandler {
         HttpStatus.CONFLICT,
         "Locked plan commitments cannot be edited.",
         ErrorCodes.LOCKED_BASELINE_EDIT);
+  }
+
+  @ExceptionHandler(EmptyPlanLockException.class)
+  ResponseEntity<ProblemDetail> handleEmptyPlanLock(EmptyPlanLockException ex) {
+    return render(
+        HttpStatus.CONFLICT,
+        "A plan must have at least one planned commitment to lock.",
+        ErrorCodes.EMPTY_PLAN_LOCK);
+  }
+
+  @ExceptionHandler(UnlinkedPlannedCommitmentException.class)
+  ResponseEntity<ProblemDetail> handleUnlinked(UnlinkedPlannedCommitmentException ex) {
+    // rule #1 — every planned commitment must link a Supporting Outcome before lock (REQ-E-001).
+    ProblemDetail body =
+        ProblemDetailFactory.of(
+            HttpStatus.CONFLICT,
+            "Every planned commitment must link a Supporting Outcome before you can lock this plan.",
+            ErrorCodes.UNLINKED_PLANNED_COMMITMENT);
+    body.setProperty("fieldErrors", ex.fieldErrors());
+    return ResponseEntity.status(HttpStatus.CONFLICT)
+        .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+        .body(body);
+  }
+
+  @ExceptionHandler(OptimisticLockingFailureException.class)
+  ResponseEntity<ProblemDetail> handleOptimisticLock(OptimisticLockingFailureException ex) {
+    // a concurrent command (e.g. a double-lock) lost the @Version race (§5) → 409, never a 500.
+    // Render only a safe message — never the exception detail (which can carry entity state).
+    return render(
+        HttpStatus.CONFLICT,
+        "The resource was modified concurrently. Please retry.",
+        ErrorCodes.ILLEGAL_STATE_TRANSITION);
   }
 
   @ExceptionHandler(Exception.class)

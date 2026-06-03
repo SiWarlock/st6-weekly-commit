@@ -46,6 +46,13 @@ class ProblemDetailsExceptionHandlerTest {
     void boom() {
       throw new IllegalStateException("internal-secret-detail-xyz"); // must NEVER leak to the body
     }
+
+    @GetMapping("/conflict")
+    void conflict() {
+      // an optimistic-lock conflict (e.g. a concurrent double-lock) must render 409, NOT a 500
+      throw new org.springframework.orm.ObjectOptimisticLockingFailureException(
+          "stale-version", new RuntimeException("entity-internal-detail"));
+    }
   }
 
   private MockMvc mockMvc() {
@@ -91,6 +98,25 @@ class ProblemDetailsExceptionHandlerTest {
             .getContentAsString();
     assertThat(body).doesNotContain("internal-secret-detail-xyz");
     assertThat(body).doesNotContain("IllegalStateException");
+    assertThat(body).doesNotContain("com.st6.wc"); // no stack frames
+  }
+
+  // --- advice: an optimistic-lock conflict → 409 (concurrent double-lock, §5), never 500/leak ----
+  @Test
+  void optimisticLockConflict_renders409WithoutLeak() throws Exception {
+    String body =
+        mockMvc()
+            .perform(
+                org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
+                    "/conflict"))
+            .andExpect(status().isConflict())
+            .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+            .andExpect(jsonPath("$.code").value("ILLEGAL_STATE_TRANSITION"))
+            .andExpect(jsonPath("$.traceId").isNotEmpty())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    assertThat(body).doesNotContain("entity-internal-detail");
     assertThat(body).doesNotContain("com.st6.wc"); // no stack frames
   }
 

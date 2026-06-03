@@ -6,6 +6,7 @@ import java.util.UUID;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -21,9 +22,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class PlanController {
 
   private final PlanService planService;
+  private final PlanLifecycleService planLifecycleService;
 
-  public PlanController(PlanService planService) {
+  public PlanController(PlanService planService, PlanLifecycleService planLifecycleService) {
     this.planService = planService;
+    this.planLifecycleService = planLifecycleService;
   }
 
   @GetMapping("/api/plans/current")
@@ -40,5 +43,17 @@ public class PlanController {
   public WeeklyPlanDto byId(
       @AuthenticationPrincipal UserPrincipal principal, @PathVariable("id") UUID id) {
     return planService.getPlanById(principal, id);
+  }
+
+  /**
+   * {@code POST /api/plans/{id}/lock} (E8, §5 / §3 — the strategy-enforcement lock). Thin: {@link
+   * PlanLifecycleService} authorizes IC-owner-only first (the chokepoint), validates the lock
+   * preconditions (rule #1), and runs the atomic {@code DRAFT → LOCKED} transition; no request
+   * body.
+   */
+  @PostMapping("/api/plans/{id}/lock")
+  public WeeklyPlanDto lock(
+      @AuthenticationPrincipal UserPrincipal principal, @PathVariable("id") UUID id) {
+    return planLifecycleService.lock(principal, id);
   }
 }

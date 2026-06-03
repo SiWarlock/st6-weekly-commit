@@ -20,4 +20,10 @@ public final class ErrorCodes {
 
   /** An edit of a frozen planned-baseline field after lock (409; RISK-002 / rule #2, task 3.4b). */
   public static final String LOCKED_BASELINE_EDIT = "LOCKED_BASELINE_EDIT";
+
+  /** A lock attempted on a plan with no planned commitments (409; rule #1, task 3.5). */
+  public static final String EMPTY_PLAN_LOCK = "EMPTY_PLAN_LOCK";
+
+  /** A lock attempted with an unlinked planned commitment (409; rule #1 / REQ-E-001, task 3.5). */
+  public static final String UNLINKED_PLANNED_COMMITMENT = "UNLINKED_PLANNED_COMMITMENT";
 }

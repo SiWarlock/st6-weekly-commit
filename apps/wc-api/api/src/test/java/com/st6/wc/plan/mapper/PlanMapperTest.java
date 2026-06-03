@@ -15,6 +15,8 @@ import com.st6.wc.plan.AllowedActionResolver;
 import com.st6.wc.plan.WeeklyPlan;
 import com.st6.wc.plan.dto.WeeklyPlanDto;
 import com.st6.wc.rcdo.RcdoReadService;
+import com.st6.wc.review.mapper.ReviewMapper;
+import com.st6.wc.review.repo.ManagerReviewRepository;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -31,8 +33,14 @@ import org.junit.jupiter.api.Test;
 class PlanMapperTest {
 
   private final RcdoReadService rcdoReadService = mock(RcdoReadService.class);
+  private final ManagerReviewRepository reviews = mock(ManagerReviewRepository.class);
+  private final ReviewMapper reviewMapper = mock(ReviewMapper.class);
   private final PlanMapper mapper =
-      new PlanMapper(new CommitmentMapper(rcdoReadService), new AllowedActionResolver());
+      new PlanMapper(
+          new CommitmentMapper(rcdoReadService),
+          new AllowedActionResolver(),
+          reviews,
+          reviewMapper);
 
   private static final UUID OWNER = UUID.randomUUID();
 
