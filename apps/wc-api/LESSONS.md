@@ -547,3 +547,40 @@ A server-authoritative `allowedActions` affordance (§24) is usually computed fr
 **Mechanism — a context-aware mapper overload (keeps existing callers empty):** `WeeklyCommitmentDto.allowedActions` is empty by default (since 3.3a). Add `AllowedActionResolver.commitmentActions(actorEmployeeId, plan, commitment) → List<AllowedAction>` (resolver-owned, not inlined — single-source + unit-testable; extensible as OPEN_DISPUTE/COMMENT land). The mapper grows a context-aware overload `toDto(commitment, plan, actor)` that fills `allowedActions` via the resolver; the **no-arg `toDto(commitment)` stays empty** (the E5/E6/E7/E11/E12 single-commitment write responses keep it — the UI re-reads the plan via RTK cache invalidation). Thread the overload only where the plan + actor are in scope AND the affordance is consumed: the **plan read** (`PlanMapper` for E3/E4) is the must-have. A successor in a fresh DRAFT plan never qualifies, so the E12 response needs no threading (it would be a no-op). (`commitment.mapper` → `plan` pkg is an intra-`:api` dep — no module-boundary issue; `PlanMapper` already bridges both, no cycle.)
 
 **Rule:** A per-commitment affordance may deliberately NARROW the enforcement predicate for UX (a subset, not literal identity like §24/`canLock`); the invariant to pin is the **subset direction** (`affordance-eligible ⟹ enforcement-accepts`, via an eligibility⟹preconditions sweep), and the service keeps its own broader gate (never reuse the narrowed predicate — it would break idempotency/other accepted paths). Realize it via a context-aware `toDto(commitment, plan, actor)` overload (no-arg stays empty) threaded through `PlanMapper` on the read path.
+
+---
+
+## <a id="32"></a>32. Authorship/mutation endpoints use `authorize…Mutation` (owner-only), NEVER `authorize…Access` (the read-authorizer admits managers) — a §6 hole
+
+**Date:** 2026-06-03.
+**Source slice:** the E5 authz fix (brief 055) — an escalated Finding (handoff 005), lead-greenlit, fixed at the Phase-4→5 boundary. **Ad-hoc security-reviewer: CLEAN PASS (0 findings).**
+
+The central authorizer (§17) exposes two families with **different scope**, and confusing them is a real §6 authorization hole:
+
+- **`authorize…Access(principal, id)`** — admits the **IC-owner OR an active manager-of-owner** (a manager may *read* a direct report's resource). Correct for READ endpoints (E4 `GET /plans/{id}`, E14 heatmap, etc.).
+- **`authorize…Mutation(principal, id)`** — access-check **first** (cross-team/missing → IDOR-safe `404`, identical to `…Access`), **then** an owner-check → a manager-of-owner who passed access gets **`403 …_OWNER_REQUIRED` + a denial audit**; only the owning IC (or SYSTEM) is authorized. Correct for every WRITE — authorship (create) + mutation (update/delete/lifecycle).
+
+**The bug:** 3.4a's E5 `POST /api/plans/{id}/commitments` (create) used `authorizePlanAccess` — so a manager-direct-report could **author** a PLANNED commitment on a report's DRAFT plan (violating §6 IC-only-authorship, rule-#3-adjacent). It shipped because **no test asserted the manager-create case** (the absence of a manager-403 test is exactly why the hole went unnoticed). Fix = the one-line swap `authorizePlanAccess` → `authorizePlanMutation` on the create path (E11/E6/E7/E8/E9/E10/E12 were already on a mutation authorizer; `PlanService` E4 *read* correctly keeps `…Access`).
+
+**The regression-pin recipe:** seed the manager with an **active relationship** to the owner (so they genuinely pass the access-check) → assert the write returns `403 …_OWNER_REQUIRED` (a capability denial), NOT `404` (an access denial). A no-relationship manager would get `404` and wouldn't prove the hole — the active relationship is load-bearing. Assert exactly one safe `AUTHORIZATION_DENIED` audit (rule #3). Reproduce RED first (the manager gets `201`/`200` on the buggy code), then swap → GREEN. Pairs with §17 (central authorizer) + §27 (the `authorize…Mutation` access-then-capability pattern).
+
+**Rule:** Authorship + mutation endpoints authorize with `authorize…Mutation` (owner-only → `403 …_OWNER_REQUIRED`+audit for a manager-of-owner; IDOR `404` for cross/missing), NEVER `authorize…Access` (which admits managers — a §6 authorship hole; correct only for reads). Every new write endpoint needs a manager-of-owner-403 test (seed an active relationship → 403-not-404) — its absence is how the E5 hole shipped. (Forbidden-pattern #7.)
+
+---
+
+## <a id="33"></a>33. Manager-capability mutation authz + the 404-vs-403 namespace-legitimacy decision tree
+
+**Date:** 2026-06-03.
+**Source slice:** 5.2 (mark-reviewed E16) — the first **manager-side** write. **Ad-hoc security-reviewer: CLEAN PASS (0 findings).** Drains the `MANAGER_ROLE_REQUIRED` Carry-forward (origin 2.6 — its first real consumer).
+
+`authorize…Mutation` (§32) is owner-only where "owner" = the IC. The **manager-side** inverse — `authorizeReviewMutation` (and, coming, dispute-resolve / managerAlignmentNote) — is **manager-of-owner-only**: the capability holder is the active direct manager, and the IC-owner is *denied* the mutation. Same shape (access-check first, then the capability check), capability inverted.
+
+**The 404-vs-403 decision for a genuine capability denial turns on _namespace-legitimacy_, not artifact-ownership:** when the denied principal passed the access-check (the resource exists + they can see it) but lacks the capability —
+- **`403` + a capability code** when the principal **legitimately uses the resource's API namespace** (so existence is not hidden from them): a manager-of-owner mutating a plan/commitment → `403 …_OWNER_REQUIRED` (they read it via E4); the **IC** resolving a dispute → `403 IC_CANNOT_RESOLVE` (the IC legitimately uses `/api/disputes/*` to *respond*, E18).
+- **`404` IDOR (codeless)** when the principal has **no legitimate endpoint in that namespace** (the whole namespace is existence-hidden from them): the **IC** calling `POST /api/manager/reviews/{id}/mark-reviewed` → `404` — the IC has no `/api/manager/*` endpoint and views their review via `/api/plans` (E3/E4), so `/api/manager` is existence-hidden from them. (Don't "fix" this asymmetry to match the dispute case — it's deliberate; document the rationale in the authorizer javadoc.)
+
+**Both flavors AUDIT** — a genuine capability denial writes one safe-metadata `AUTHORIZATION_DENIED` event whether it surfaces as `403` or `404` (the `404`-dressed denial is still genuine — use the *audited* deny path with a distinct reason, e.g. `not_direct_manager`, NOT a bare not-found throw). **Only a truly-missing resource is the no-audit `404`** (§25). Implement the `404`-with-reason via a `deny404(…, reason)` overload paralleling `deny403` (§18 build-and-throw).
+
+**`MANAGER_ROLE_REQUIRED` is for the COARSE gate only** — "you are not a manager at all" (the team-heatmap/command-center entry, `authorizeTeamHeatmap`). A *per-resource* manager-capability denial is NOT `MANAGER_ROLE_REQUIRED`; it's the namespace-legitimacy `404`/`403` above. (This is what closed the `MANAGER_ROLE_REQUIRED` Carry-forward correctly — via the coded+audited central authorizer, never a coarse `@PreAuthorize`, which would give a codeless 403 + no denial audit.)
+
+**Rule:** Manager-side mutations use a manager-capability `authorize…Mutation` (active-direct-manager-only; the IC-owner is denied). A genuine capability denial is `403`+code when the principal legitimately uses the resource's namespace, else `404` IDOR — but **both audit** (only truly-missing skips); reserve `MANAGER_ROLE_REQUIRED` for the coarse not-a-manager-at-all gate. Extends §27/§32 to the manager side.
