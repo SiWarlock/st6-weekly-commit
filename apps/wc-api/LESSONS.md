@@ -119,3 +119,109 @@ The generic `/preflight` skill's backend steps don't fit this project's Gradle s
 - **`build -x test` is NOT a valid gate here.** `jacocoTestCoverageVerification` is bound into `check` and cannot verify coverage without the tests having run, so skipping tests defeats the gate. (Also: a JaCoCo `classDirectories` reconfiguration must base on `output.classesDirs` + `dependsOn classes`, else `build -x test` fails on an undeclared class-producer dependency — fixed in `1a34f3b`.)
 
 **Rule:** The backend quality gate is `./gradlew check` run from `apps/wc-api/` (the §13 CI gate) — never the generic per-task `/preflight` list and never `build -x test`.
+
+---
+
+## <a id="7"></a>7. JPA entity mapping conventions — three base-class shapes, flat-`UUID` FKs (never `@ManyToOne`), and entities mirror type/nullability but NOT `varchar` length caps
+
+**Date:** 2026-06-02.
+**Source slice:** 1.5 (jpa-entities-appendix-a).
+
+The 14 Appendix-A entities established the project's entity-mapping idiom. The DDL has **three distinct row shapes**, so there is no single base class for everything — match the shape:
+
+- **(a) 5 mutable lifecycle entities** (`WeeklyPlan`, `WeeklyCommitment`, `ManagerReview`, `AlignmentDispute`, `OutlookCalendarSyncRecord`) — id + `@Version` + audit quartet → **`extends PersistableUuidEntity`** (the 0.3 base, which is `PersistableUuidEntity extends AbstractAuditingEntity`).
+- **(b) 6 audited-but-non-versioned** (`Employee`, `ManagerRelationship`, `RallyCry`, `DefiningObjective`, `SupportingOutcome`, `Comment`) — audit quartet, **no `version` column** → **`extends AbstractAuditingEntity` + declare an inline `@Id UUID id`**. They must NOT extend `PersistableUuidEntity` or Hibernate maps a `version` column that doesn't exist on their table → `ddl-auto=validate` failure.
+- **(c) 3 minimal** (`AuditEvent`, `ManagerPlanSummary`, `ManagerHeatmapCell`) — own single timestamp only (`created_at` for audit append-only; `updated_at` for the recomputed projections), **no audit quartet, no version** → **inline `@Id UUID id` + own timestamp field, no base class.**
+
+Do **not** refactor the landed 0.3 base classes to "DRY up" the inline `@Id` — the duplication is a 3-line idiom and the bases are a contract surface (Appendix C.2).
+
+- **Flat `UUID` foreign keys, never `@ManyToOne`/`@OneToMany`.** Every FK is a plain `UUID` field (`employeeId`, `weeklyPlanId`, `supportingOutcomeId`, the `carryForwardSourceCommitmentId` self-ref, …). Rationale: §8 services compose via repositories; entities never cross the API boundary (DTOs do, Appendix B / forbidden-pattern #3); flat entities avoid Hibernate lazy-init/N+1 footguns. DB-level FK integrity is already enforced by V1.
+- **Entities mirror the DDL column's *type and nullability*, but NOT its `varchar(N)` length cap.** Length caps are a request-DTO Jakarta-Bean-Validation concern (Appendix E Part 1), not an entity concern — an over-long string is rejected at the API boundary, not by the entity. So a `varchar(255)` column maps to a plain `String` field with no `@Size`/`@Column(length=…)` ceiling enforced here. Keeps the entity layer a pure structural mirror and the validation layer the single source of input bounds.
+
+**Rule:** Pick the entity base by row shape — `PersistableUuidEntity` (mutable+versioned) vs `AbstractAuditingEntity`+inline `@Id` (audited, no version) vs inline `@Id`+own-timestamp (minimal); map every FK as a flat `UUID` (never `@ManyToOne`); and let entities mirror DDL type/nullability while `varchar` length caps stay in DTO validation.
+
+---
+
+## <a id="8"></a>8. Hibernate-6 non-scalar column mappings — `text[]`→`List<enum>` via `@JdbcTypeCode(SqlTypes.ARRAY)`, `jsonb`→`String` via `@JdbcTypeCode(SqlTypes.JSON)`
+
+**Date:** 2026-06-02.
+**Source slice:** 1.5 (jpa-entities-appendix-a).
+
+Two PostgreSQL columns need non-scalar mappings that Spring Data alone can't provide — they require **`hibernate-core`** annotations (`org.hibernate.annotations.JdbcTypeCode` + `org.hibernate.type.SqlTypes`), which means the entity module (`:shared`) needs a Hibernate provider on its **compile** classpath, not just `jakarta.persistence-api`. Use `spring-boot-starter-data-jpa` (BOM-aligned `hibernate-core` + `spring-data-jpa`) rather than bare `spring-data-jpa` (which omits `hibernate-core`).
+
+- **`risk_badges text[]` → `List<RiskBadge>`:** `@JdbcTypeCode(SqlTypes.ARRAY) @Enumerated(EnumType.STRING) @Column(name = "risk_badges", columnDefinition = "text[]") private List<RiskBadge> riskBadges;`. The DB `<@` containment CHECK (V3) stays the vocabulary guard; the mapping is type-safety + round-trip.
+- **`metadata_json jsonb` → `String`:** `@JdbcTypeCode(SqlTypes.JSON) @Column(name = "metadata_json") private String metadataJson;`. Keep it an opaque `String` — the safe-only-content rule (safety rule #7) is enforced by `AuditService` at write time, not the entity.
+- **`@Enumerated(STRING)` over CHECK-less projection mirrors** (`manager_plan_summary.plan_state`/`review_status` are denormalized VARCHARs with no CHECK) is still correct + `validate`-clean — `ddl-auto=validate` checks column type, not the presence of a CHECK; the projection only ever holds values the source-of-truth column already constrained.
+- **Confirm the exact incantation against the live Hibernate 6.x docs** (Context7) when adding a new array/json mapping — the annotation package + `SqlTypes` constant names have moved across Hibernate 5→6.
+
+**Verification:** prove each non-scalar mapping with an explicit **round-trip** test (store a non-null value → flush+clear → reload → assert), not just `ddl-auto=validate` (which only proves column-type compatibility, not store/retrieve). For `jsonb`, assert with a **single-key payload or parse-and-compare** — jsonb does not preserve key order/whitespace, so raw multi-key string equality flakes.
+
+**Rule:** Map `text[]`→`List<enum>` with `@JdbcTypeCode(SqlTypes.ARRAY)`+`@Enumerated(STRING)`+`columnDefinition="text[]"` and `jsonb`→`String` with `@JdbcTypeCode(SqlTypes.JSON)` (needs `hibernate-core` on the entity module's compile path); prove each with a round-trip test, and compare jsonb structurally not by raw string.
+
+---
+
+## <a id="9"></a>9. `@DataJpaTest` entity↔DDL fidelity harness — singleton PG16 via `@DynamicPropertySource` + Flyway + `ddl-auto=validate`; sliced tests need explicit `@EntityScan`; a JPA starter on a shared lib activates DataSource autoconfig everywhere downstream
+
+**Date:** 2026-06-02.
+**Source slice:** 1.5 (jpa-entities-appendix-a).
+
+The reusable harness that proves JPA entities match the Flyway-migrated schema (reused by 1.6 + every later persistence slice):
+
+- **`@DataJpaTest` + `@AutoConfigureTestDatabase(replace = NONE)` + a singleton `PostgreSQLContainer` wired via `@DynamicPropertySource`** (not `@ServiceConnection` — avoids the extra `spring-boot-testcontainers` module and stays consistent with the landed 1.2–1.4 raw-Testcontainers migration tests). Run Flyway V1–V3, then set **`spring.jpa.hibernate.ddl-auto=validate`** so Hibernate's own schema validation is the strongest entity↔DDL fidelity proof (every entity's column existence + type is checked at context boot). The 1.21.4 Testcontainers BOM override (LESSONS §5) still governs.
+- **A *sliced* `@DataJpaTest` needs explicit `@EntityScan(...)` + `@EnableJpaRepositories("com.st6.wc")` on the base** when entities live in a *different module* (`:shared`) than the test (`:api`). A full `@SpringBootTest` inherits the scan root from the located `@SpringBootApplication` (here `WcApiApplication` at `com.st6.wc`), so the "no `@EntityScan` needed" property holds **only** for the full context — the test slice does not auto-discover cross-module entities without the explicit annotations.
+- **⚠ Adding `spring-boot-starter-data-jpa` to a shared library activates `DataSourceAutoConfiguration` in EVERY downstream module's full-context `@SpringBootTest`.** The `:shared` starter propagates transitively to `:api` AND `:worker`, so the **3** DB-less skeleton boot tests (`WcApiApplicationTest`, `WcApiDemoBootTest`, `WcSyncWorkerApplicationTest`) start failing context-load (no DataSource, H2 banned). Fix: a **test-local `spring.autoconfigure.exclude`** of `DataSourceAutoConfiguration` + `HibernateJpaAutoConfiguration` on exactly those probe/clock/profile tests (they test no persistence). Flyway/JpaRepositories/transaction-manager autoconfig are `@ConditionalOnBean(DataSource)`, so excluding the DataSource cascade-disables them. Keep the exclude **test-local** — never in any main `application*.yml`.
+
+**Rule:** Prove entity↔DDL fidelity with a `@DataJpaTest` + `@DynamicPropertySource` singleton PG16 + Flyway + `ddl-auto=validate` harness; add explicit `@EntityScan`/`@EnableJpaRepositories` for cross-module sliced tests; and when a JPA starter lands on a shared lib, `spring.autoconfigure.exclude` DataSource+JPA autoconfig on every downstream DB-less skeleton boot test.
+
+---
+
+## <a id="10"></a>10. SpotBugs EI_EXPOSE_REP/EI_EXPOSE_REP2 fires on Lombok `@Getter`/`@Setter` for mutable-collection entity fields — the `@lombok.Generated` skip does NOT cover EI/EI2
+
+**Date:** 2026-06-02.
+**Source slice:** 1.5 (jpa-entities-appendix-a).
+
+`config/spotbugs/exclude.xml` assumes Lombok-generated members are auto-skipped (they carry `@lombok.Generated`), but that skip does **not** apply to the `EI_EXPOSE_REP` / `EI_EXPOSE_REP2` detectors — SpotBugs (effort MAX) still flags a Lombok `@Getter` returning, or `@Setter` storing, a **mutable collection** field by reference (it sees the generated accessor as exposing internal representation). Hit on `ManagerHeatmapCell.riskBadges` (`List<RiskBadge>`).
+
+Fix applied in-slice: **hand-write defensive-copy accessors** for the mutable-collection fields (`return new ArrayList<>(riskBadges)` / `this.riskBadges = new ArrayList<>(value)`) instead of letting Lombok generate them. This is **safe for JPA** because Hibernate uses **field access** (not the property accessors) for persistence, so the defensive copies don't interfere with dirty-checking or load. Scalar/immutable fields keep their Lombok accessors. The `exclude.xml` comment claiming Lombok members are universally auto-skipped is now known-incomplete for mutable types — do not broaden the exclusion to silence EI/EI2; fix the accessor.
+
+**Rule:** For mutable-collection fields on Lombok entities, hand-write defensive-copy getters/setters (SpotBugs `EI_EXPOSE_REP`/`EI2` are not covered by the `@lombok.Generated` skip); field-access JPA makes the copies harmless to persistence.
+
+---
+
+## <a id="11"></a>11. Spring Data repository layer — derived-`Optional` finders for partial-unique lookups, and the `@DataJpaTest` constraint / `@Version` test patterns
+
+**Date:** 2026-06-02.
+**Source slice:** 1.6 (repo-finders-and-constraint-proofs).
+
+The repository layer over the 1.5 entities established two reusable patterns — the finder idiom and the repo-layer invariant-proof test recipe (which differs subtly but importantly from the raw-SQL migration tests of §5):
+
+- **Derived-name finders returning `Optional` for partial-unique-backed single lookups.** Where a partial unique guarantees ≤1 matching row, the finder returns `Optional<E>` and uses Spring Data's method-name DSL — no `@Query` needed: `ManagerRelationshipRepository.findByDirectReportEmployeeIdAndActiveTrue(UUID)` (single active manager, §6), `AlignmentDisputeRepository.findByCommitmentIdAndStatusIn(UUID, Collection<DisputeStatus>)` (callers pass `{OPEN, IC_RESPONDED}`), `OutlookCalendarSyncRecordRepository.findByOwnerEmployeeIdAndWeekStartDateAndEventKind(UUID, LocalDate, EventKind)`. The `Optional`-empty branch is real (e.g. `DomainAuthorizationService` denies when there is no active manager) — test it, not just the present path.
+
+- **`@DataJpaTest` repo-layer constraint + `@Version` proof recipe** (reuses the §9 `AbstractJpaIntegrationTest` harness; complements, does not replace, the §5 raw-SQL migration tests — this layer proves the constraint surfaces as the **Spring exception** Phase 2+ services catch):
+  - **Use `saveAndFlush`, never plain `save`.** Under the `@DataJpaTest` rollback-only transaction, a plain `save` defers the INSERT/UPDATE to a commit that never happens, so the DB constraint never fires. `saveAndFlush` forces the SQL now.
+  - **Assert coexistence FIRST, the violation LAST.** A `DataIntegrityViolationException` on `saveAndFlush` marks the transaction rollback-only, so **no further DB op can run in the same test method** (the next query/save throws a different exception). Persist the coexisting rows + assert `count()` first, then trigger the violating `saveAndFlush` as the final `assertThatThrownBy`.
+  - **Optimistic-lock conflict in a single transaction:** persist+flush (v0) → `em.clear()` → load `stale` + `em.detach(stale)` → load `fresh` → **mutate a field on `fresh`** (an unmodified managed flush is a no-op — no version bump) → `saveAndFlush(fresh)` bumps the DB to v1 → `saveAndFlush(stale)` (still v0) merges against v1 → conflict. **Assert the Spring translation `org.springframework.orm.ObjectOptimisticLockingFailureException`**, not Hibernate's `StaleObjectStateException` (services catch the Spring type → the §5/409 conflict). Proven deterministic in 1.6; a `TransactionTemplate` REQUIRES_NEW two-transaction variant is the fallback if a single-tx merge ever flakes (unique-UUID committed rows are harmless in the singleton container).
+  - **Prove a set-valued partial unique across the SET, not a same-value duplicate.** The unresolved-dispute index is `(commitment_id) WHERE status IN ('OPEN','IC_RESPONDED')` — safety rule #6. Test the firing case with **OPEN + IC_RESPONDED** (the two distinct unresolved statuses), not OPEN + OPEN: a same-status duplicate would still pass if someone accidentally narrowed the predicate to `status='OPEN'`, silently breaking the rule; the cross-status case pins the actual invariant (the predicate treats both statuses as one uniqueness bucket) and catches that regression.
+
+**Rule:** Back partial-unique lookups with derived-name finders returning `Optional` (test the empty branch); prove repo-layer invariants under `@DataJpaTest` with `saveAndFlush` (coexistence-first / violation-last), assert the Spring `ObjectOptimisticLockingFailureException` for `@Version` conflicts, and fire a set-valued partial unique across its status set (OPEN+IC_RESPONDED), not a same-value duplicate.
+
+---
+
+## <a id="12"></a>12. Spring Security 6 OAuth2 resource-server JWT decoder — recipe, EAGER-vs-lazy discovery, autoconfig-exclude ≠ component-scan suppression, and fail-secure mode gating
+
+**Date:** 2026-06-02.
+**Source slice:** 2.1 (auth0-jwt-decoder).
+
+The Auth0 resource-server JWT validation foundation (§6) established the reusable Spring Security 6 (Boot 3.3) decoder pattern + three non-obvious gotchas that Phase-2 (2.2/2.3/2.6) and any future resource-server work inherit:
+
+- **Decoder recipe.** `NimbusJwtDecoder.withIssuerLocation(issuer).jwsAlgorithm(SignatureAlgorithm.RS256).build()` then `decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(JwtValidators.createDefaultWithIssuer(issuer), new AudienceValidator(audience)))`. Pinning `jwsAlgorithm(RS256)` rejects `alg=none` + symmetric (HS*). A **custom `AudienceValidator implements OAuth2TokenValidator<Jwt>`** is mandatory because **Auth0 does not validate `aud` by default** — `aud` must `.contains()` the configured audience (not `.equals()`, since Auth0 tokens carry multiple audiences). Issuer **and** audience are required in real mode; validate with `Assert.hasText(...)` at bean construction so a blank config **fails fast at startup** with a clear message (no silent insecure default). `SignatureAlgorithm` is `org.springframework.security.oauth2.jose.jws.SignatureAlgorithm`.
+
+- **⚠ `withIssuerLocation` is EAGER, `withJwkSetUri` is LAZY.** `withIssuerLocation(issuer).build()` performs **eager OIDC discovery at bean-build** (fetches `{issuer}/.well-known/openid-configuration`), so bean creation couples to issuer reachability — a *desirable* fail-fast on issuer misconfig, and faithful to D.2's "defaults from issuer-uri discovery; override only if pinning." `withJwkSetUri(uri)` defers the JWKS fetch to first decode (lazy, decouples startup from the IdP) — the documented fallback if startup/IdP decoupling is ever needed. (Corrects an earlier mistaken "withIssuerLocation is lazy" assumption — only the JWKS leg under `withJwkSetUri` is lazy.)
+
+- **Deterministic test harness (no live Auth0/JWKS).** Test the `AudienceValidator` as a pure unit. Build the test decoder with `NimbusJwtDecoder.withPublicKey(testRsaPublicKey).signatureAlgorithm(RS256)` wired with the **same** production `JwtConfig.jwtValidator(issuer, audience)` factory — so the test exercises the real validation chain (issuer + audience + exp/nbf), swapping only the network key source. Sign tokens with Nimbus (`com.nimbusds`, transitive via oauth2-jose): RS256 valid, HS256/`alg=none` rejected. For the **eager** `withIssuerLocation` build happy-path, stub the OIDC discovery endpoint with **MockWebServer** (`testImplementation 'com.squareup.okhttp3:mockwebserver'`, BOM-managed) — the stubbed `issuer` field must exactly match the configured issuer. Fail-fast-on-missing-config via `ApplicationContextRunner` (LESSONS §4).
+
+- **autoconfig-exclude ≠ component-scan suppression (extends §9).** Adding `spring-boot-starter-oauth2-resource-server` (any Spring Security starter) activates the default security chain that secures *every* endpoint incl. actuator probes → breaks DB-less skeleton boot tests. `spring.autoconfigure.exclude` (`SecurityAutoConfiguration`, `OAuth2ResourceServerAutoConfiguration`, `UserDetailsServiceAutoConfiguration`, `ManagementWebSecurityAutoConfiguration`) kills the **autoconfig** — but a **component-scanned `@Configuration`** (like `JwtConfig`) is NOT an autoconfig and is **NOT** suppressed by the exclude; under a profile where its `@Conditional` is satisfied it stays active and its fail-fast still fires. The **complete** fix is dual: exclude the security autoconfig on the skeleton boots **and** gate the component-scanned config off (here via demo-mode). One mitigation alone is insufficient.
+
+- **Fail-secure mode gating + canonical property.** Gate the real decoder with `@ConditionalOnProperty(name = "demo-auth.enabled", havingValue = "false", matchIfMissing = true)` — the **real/secure** decoder stays ON when the demo flag is false, absent, or *misspelled* (fail-secure: you can't accidentally disable real auth via a typo'd demo flag). Bind the canonical env var with an **explicit `${DEMO_AUTH_ENABLED:false}` placeholder** in `application.yml` (resolves by exact env name) — relaxed binding alone would target the dotted `demo.auth.enabled`, missing the kebab `demo-auth.enabled` property. **`demo-auth.enabled` is the single mode source shared by 2.1/2.3/2.6**; base/prod default = `false` (real mode, secure-by-default, fails closed), `local`/`demo` profiles set `true`.
+
+**Rule:** SS6 resource-server JWT — `withIssuerLocation`(EAGER discovery)+`jwsAlgorithm(RS256)`+`DelegatingOAuth2TokenValidator`(default-with-issuer + a custom `.contains()`-audience validator), fail-fast on blank issuer/audience; test via a `withPublicKey` decoder wired to the *same* production validator + Nimbus tokens + a MockWebServer discovery stub; and remember a Security starter needs BOTH `autoconfigure.exclude` (autoconfig) AND a separate gate (component-scanned config), with fail-secure `@ConditionalOnProperty(havingValue=false, matchIfMissing=true)` on the canonical `demo-auth.enabled`.
