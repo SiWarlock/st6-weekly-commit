@@ -86,3 +86,50 @@ Two version- and behavior-specific gotchas pinned while wiring the Cadence skin 
 - **Bind `darkMode` to the `[data-theme]` attribute or Flowbite's components will theme off OS media.** flowbite-react components ship baked-in `dark:` classes. With Tailwind's **default `media` darkMode**, those activate on the OS `prefers-color-scheme: dark` **independently of our toggle** — so an OS-dark user who toggles the app to light gets light token vars but Flowbite's `dark:` slots still firing on any un-overridden primitive surface → broken rendering. Set `darkMode: ['selector', '[data-theme="dark"]']` (Tailwind 3.4 custom-selector strategy) so Flowbite's `dark:` variants fire **only** under our attribute — consistent with our tokens, never driven by OS media. Pinned by a test asserting `config.darkMode` deep-equals that tuple.
 
 **Rule:** On flowbite-react 0.10.2, skin via `createTheme` + `<Flowbite theme={{ theme }}>` (not `ThemeProvider`), and set `darkMode: ['selector','[data-theme="dark"]']` so Flowbite's built-in `dark:` binds to your theme attribute, not OS media.
+
+---
+
+## <a id="5"></a>5. Testing the RTK Query base — a `prepareHeaders` mode-XOR harness + the undici relative-`baseUrl` gotcha
+
+**Date:** 2026-06-02.
+**Source slice:** 9.1 (RTK Query base + auth header XOR).
+
+Two reusable test patterns surfaced standing up `app/baseApi.ts` + `app/store.ts` (`@reduxjs/toolkit@2.12`, `react-redux@9.3`) — both recur in every later RTK Query slice (9.5+), so bank them now.
+
+- **The `prepareHeaders` mode-XOR harness.** To prove the `VITE_AUTH_MODE` header XOR (`auth0` ⇒ `Authorization: Bearer` ONLY; `demo` ⇒ `X-Demo-Employee-Id` ONLY; never both — §7), drive `prepareHeaders` directly: `vi.stubEnv('VITE_AUTH_MODE', …)`, inject **both** accessor-seam providers (`setAccessTokenProvider` + `setDemoEmployeeIdProvider`), call `prepareHeaders(new Headers(), …)`, and assert exactly one header is present and the opposite is `null` — **including the adversarial case where the opposite provider is set but must be ignored**. Mirror it end-to-end through the store (fresh store per mode + a throwaway injected endpoint + mocked `fetch`). Also assert the **no-leak** property (safety rule #7): an `auth0` accessor failure normalizes to a generic `Error('Failed to acquire access token', { cause })` — the raw cause text must NOT appear in `.message` (kept in `.cause` for logs).
+
+- **The undici relative-`baseUrl` gotcha (load-bearing for store-level integration tests).** Under Node/undici (Vitest jsdom), `fetchBaseQuery` constructs a `new Request(url)` **before** it calls `fetchFn` — and a *relative* `baseUrl` (e.g. the production `?? '/'` fallback) makes `new Request()` **throw** ("Invalid URL"), so the mocked `fetch` is never reached and the failure is confusing. Two fixes, both applied: (1) set an **absolute** `VITE_API_BASE_URL` (e.g. `http://localhost/api`) in the Vitest `env` (`vite.config.ts` `test.env`); (2) **late-bind** `fetchFn: (input, init) => globalThis.fetch(input, init)` in `baseApi.ts` so the global mock (`vi.stubGlobal('fetch', …)`) is reliably used rather than a `fetch` captured at module-eval time. Any 9.5+ slice that integration-tests a real endpoint through the store needs both.
+
+**Rule:** Test the `prepareHeaders` XOR by injecting both accessor-seam providers and asserting exactly-one-header (+ the no-leak property); and for store-level integration tests give `fetchBaseQuery` an absolute `VITE_API_BASE_URL` + a late-bound `fetchFn` so undici's `new Request()` doesn't throw before the mocked `fetch`.
+
+---
+
+## <a id="6"></a>6. The REQ-I-008 boundary proof — a fail-OPEN static import-graph guard + a fail-CLOSED auth0 build-output grep (with a positive control)
+
+**Date:** 2026-06-02.
+**Source slice:** 9.3 (MFE boundary + tree-shaken demo/persona).
+
+REQ-I-008 (the frontend mirror of root-`CLAUDE.md` safety rule #5 — demo identity env-gated, no production backdoor) requires the **exposed Module-Federation remote build to contain no demo/persona code path** — no `PersonaSwitcher`, `DemoIdentityProvider`, `ThemeToggle`, or `X-Demo-Employee-Id`. Prove it with TWO complementary checks, because neither alone is sufficient:
+
+- **Static import-graph assertion (fast, in-suite, but fail-OPEN).** Walk the transitive relative-import closure from `src/remote/WeeklyCommitApp.tsx` (comments stripped — `test/util.ts` `importGraph`) and assert no `src/standalone/` module is reachable, no graph file references `BrowserRouter`, and a literal scan finds no `X-Demo-Employee-Id`/`demo-token`. Runs every unit test; catches the most likely regression (someone imports standalone chrome into a remote-reachable module). **Caveat — fail-OPEN:** a dropped/missed import edge means a leak slips through, and it scans SOURCE, so it cannot prove a *shared* module's unused demo exports (e.g. `authAccessor`'s demo getter) or a DCE'd demo branch are actually gone from the BUILT bundle.
+- **auth0 build-output grep (slow, fail-CLOSED, the backstop).** `VITE_AUTH_MODE=auth0 vite build`, then grep the **federation-exposed chunk + its transitive sub-graph** (NOT the standalone index bundle — that legitimately contains the chrome) for the demo/persona/ThemeToggle identifiers. Include a **positive control** (assert the standalone bundle DOES contain them) so a grep that finds nothing proves *detection works*, not that the pattern was wrong. This proves the real guarantee: Vite's `import.meta.env` replacement DCEs the demo branch and tree-shakes `authAccessor`'s unused demo exports out of the auth0 bundle.
+
+**Durability gotcha (drove the 9.4 demo-branch split):** keeping both auth0+demo branches in a *shared* `baseApi.prepareHeaders` is fine ONLY while baseApi is not remote-reachable. Once the store/route-tree wires baseApi into the remote graph, the source-level literal scan false-positives — so **split the demo-header attach into a standalone-only injected seam** (header name + attach in the standalone provider; `prepareHeaders` calls an injected seam) to keep baseApi source demo-literal-free. Promote the build-output grep to a CI-enforced guard (Phase 11) as the fail-closed backstop to the fail-open static walker.
+
+**Rule:** Prove REQ-I-008 with BOTH a fast fail-open static import-graph assertion AND a fail-closed auth0 build-output grep over the federation-exposed chunk (with a positive control); keep demo-header source out of shared/remote-reachable modules via a standalone-only injected seam.
+
+---
+
+## <a id="7"></a>7. One status-taxonomy map is the single source of visual truth — never re-map an enum to a tone/icon/label inline
+
+**Date:** 2026-06-02.
+**Source slice:** 9.2 (view-state primitives + themed status/risk atoms; ST.3 fold-in).
+
+Every status/risk/chess enum in WC (`PlanState`, `ReviewStatus`, `RiskBadge`, `ReconciliationOutcome`, `WorkType`, `AlignmentStatus`, `SyncStatus`, `Priority`) maps to a fixed `{ tone, icon, label, ring? }` per Cadence `UI_UX_SPEC §4.2/§4.3`. **Port those maps once** into `src/shared/lib/statusTaxonomy.ts` (verbatim from the Cadence `atoms.jsx` `PLAN_STATE`/`REVIEW`/`RISK`/… maps) and have every atom + every later view consume them — `StatusBadge`, `RiskBadge`, the chess atoms (9.7), the heatmap legend, etc. **Never re-derive a tone/icon/label inline at a call site** — that is exactly how a `MISALIGNED` renders red in one place and violet in another (the spec inconsistency Cadence resolved to red).
+
+- Make the maps `Record<string, {…}>` so an unknown/absent value returns `undefined` → the atom renders **nothing** (no throw) rather than a broken pill.
+- The taxonomy renders the **B.1 wire values verbatim** (render-only — no enum/Appendix-A change). Guard drift with a fidelity check against `atoms.jsx` (tones/icons/labels/ring flags all match).
+- `OVERDUE` is a **derived overlay** the badge renders when handed a `derivedOverdue` flag — never a stored taxonomy entry on its own (it only ever derives from `NOT_REVIEWED`: `isReviewOverdue = now > reviewDueAt AND status = NOT_REVIEWED`, §3).
+- Status/risk is **never color-only** — every badge carries glyph + text label + color (grayscale/colorblind legible, REQ-S-005); the token-driven `Badge` atom (a thin Tailwind-utility span — design-faithful to Cadence's own `.wc-badge`, still approach-A) bakes that in.
+
+**Rule:** Port the §4.2/§4.3 enum→`{tone,icon,label,ring}` maps once into `statusTaxonomy.ts` and consume them everywhere; never re-map a status inline; unknown value → render nothing; `OVERDUE` is a derived overlay, not a stored entry; every badge is glyph + text + color.
