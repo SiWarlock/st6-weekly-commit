@@ -7,6 +7,14 @@ import { createTheme, type CustomFlowbiteTheme } from 'flowbite-react';
  * bespoke `.wc-*` CSS. Applied app-wide via `<Flowbite theme={{ theme }}>`.
  */
 export const flowbiteTheme: CustomFlowbiteTheme = createTheme({
+  alert: {
+    color: {
+      failure:
+        'bg-tone-failure-bg text-tone-failure-fg border border-tone-failure-border',
+      warning:
+        'bg-tone-warning-bg text-tone-warning-fg border border-tone-warning-border',
+    },
+  },
   badge: {
     root: {
       color: {
