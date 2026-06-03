@@ -101,7 +101,7 @@ export function CommandCenter() {
   return (
     <section
       data-cy="command-center"
-      className="mx-auto max-w-6xl space-y-4 p-6"
+      className="mx-auto max-w-content-max space-y-4 p-6"
     >
       <header>
         <h1 className="text-h2 font-semibold text-ink-primary">
@@ -126,7 +126,7 @@ export function CommandCenter() {
         />
       ) : (
         <table data-cy="cc-table" className="w-full text-left">
-          <thead>
+          <thead className="sticky top-0 z-10 bg-surface">
             <tr className="text-meta text-ink-secondary">
               <th className="py-2">Report</th>
               <th className="py-2">Plan</th>
@@ -143,7 +143,7 @@ export function CommandCenter() {
                 <Fragment key={r.employeeId}>
                   <tr
                     data-cy="cc-row"
-                    className="border-t border-border align-top"
+                    className="border-t border-border align-top hover:bg-surface-hover"
                   >
                     <td className="py-3 text-body text-ink-primary">
                       {r.employeeDisplayName}

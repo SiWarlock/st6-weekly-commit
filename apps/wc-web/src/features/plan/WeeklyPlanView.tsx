@@ -48,7 +48,10 @@ export function WeeklyPlanView() {
       ? null
       : (plan.commitments.find((c) => c.id === editingCommitmentId) ?? null);
   return (
-    <section data-cy="weekly-plan-view" className="mx-auto max-w-3xl p-6">
+    <section
+      data-cy="weekly-plan-view"
+      className="mx-auto max-w-reading-col p-6"
+    >
       <header className="mb-4 flex items-center justify-between gap-3">
         <div>
           <h1 className="text-h2 font-semibold text-ink-primary">

@@ -282,3 +282,52 @@ describe('CommitmentList → chess atom wiring (ST.3 reachability)', () => {
     expect(alignment).toHaveTextContent('Misaligned');
   });
 });
+
+// ST.4 surface skin: the commitment card carries the Cadence `.wc-card` skin
+// (hairline inset elevation) + an EARNED left-accent (unplanned → accent).
+describe('CommitmentList → card surface skin (ST.4)', () => {
+  const rowOf = (title: string) =>
+    screen
+      .getByText(title)
+      .closest('[data-cy="commitment-row"]') as HTMLElement;
+
+  it('commitment_card_has_cadence_surface_skin: a card carries shadow-hairline + rounded-lg + border-border + bg-surface (token-native)', () => {
+    render(
+      <CommitmentList
+        planState="LOCKED"
+        planId="plan-1"
+        commitments={[commitment({ id: 'c-1', title: 'Skinned card' })]}
+      />,
+    );
+    const card = rowOf('Skinned card');
+    expect(card.className).toContain('shadow-hairline');
+    expect(card.className).toContain('rounded-lg');
+    expect(card.className).toContain('border-border');
+    expect(card.className).toContain('bg-surface');
+  });
+
+  it('unplanned_commitment_earns_accent_left_border: an UNPLANNED card has border-l-2 border-l-tone-accent-solid; a PLANNED card has no left-accent (disputed→failure is deferred to the B.6 edit)', () => {
+    render(
+      <CommitmentList
+        planState="LOCKED"
+        planId="plan-1"
+        commitments={[
+          commitment({
+            id: 'c-1',
+            title: 'Unplanned work',
+            commitmentKind: 'UNPLANNED',
+            workType: 'UNPLANNED',
+          }),
+          commitment({ id: 'c-2', title: 'Planned work' }),
+        ]}
+      />,
+    );
+    const unplanned = rowOf('Unplanned work');
+    expect(unplanned.className).toContain('border-l-2');
+    expect(unplanned.className).toContain('border-l-tone-accent-solid');
+
+    // PLANNED rows earn no left-accent.
+    const planned = rowOf('Planned work');
+    expect(planned.className).not.toMatch(/border-l-/);
+  });
+});

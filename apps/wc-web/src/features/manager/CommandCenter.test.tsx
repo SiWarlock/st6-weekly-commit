@@ -239,3 +239,21 @@ describe('CommandCenter (E13 roll-up — rows, view-states, pagination, mark-rev
     expect(screen.queryByRole('button', { name: /mark reviewed/i })).toBeNull();
   });
 });
+
+// ST.4 table density: sticky header + hoverable rows (the deterministic pins;
+// exact 44px pixel rhythm is an ST.7 /design-review concern).
+describe('CommandCenter → table density skin (ST.4)', () => {
+  it('command_center_table_is_dense_and_sticky: thead is sticky (sticky top-0); data rows are hoverable (hover:bg-surface-hover)', () => {
+    mockQuery({ data: env([row()]) });
+    render(<CommandCenter />);
+
+    const thead = document.querySelector('[data-cy="cc-table"] thead');
+    expect(thead).not.toBeNull();
+    expect(thead!.className).toContain('sticky');
+    expect(thead!.className).toContain('top-0');
+
+    const dataRow = document.querySelector('[data-cy="cc-row"]');
+    expect(dataRow).not.toBeNull();
+    expect(dataRow!.className).toContain('hover:bg-surface-hover');
+  });
+});

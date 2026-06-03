@@ -114,6 +114,12 @@ export default {
         pop: 'var(--shadow-pop)',
         drawer: 'var(--shadow-drawer)',
         modal: 'var(--shadow-modal)',
+        hairline: 'var(--shadow-hairline)',
+      },
+      // Reading-column / content max-widths (Cadence surface widths, ST.4).
+      maxWidth: {
+        'reading-col': 'var(--reading-col)',
+        'content-max': 'var(--content-max)',
       },
       transitionDuration: {
         fast: 'var(--dur-fast)',

@@ -32,6 +32,21 @@ function alignmentRisk(c: WeeklyCommitmentDto): string | null {
 }
 
 /**
+ * The EARNED left-accent for a commitment card (Cadence `.wc-card--accent-*`,
+ * ST.4): unplanned → accent (violet). The disputed → failure accent is DEFERRED
+ * until `WeeklyCommitmentDto` carries a dispute signal (B.6 Option-A edit, which
+ * also unblocks 9.11a) — add the `disputed` branch returning
+ * `'border-l-2 border-l-tone-failure-solid'` then. NOT proxied via MISALIGNED
+ * (distinct concept; already a RiskBadge). Returns '' when no accent is earned.
+ */
+function cardAccent(c: WeeklyCommitmentDto): string {
+  if (c.commitmentKind === 'UNPLANNED') {
+    return 'border-l-2 border-l-tone-accent-solid';
+  }
+  return '';
+}
+
+/**
  * Renders the plan's commitments (REQ-UX-002): PLANNED vs UNPLANNED (kind badge)
  * vs carried-forward (`RiskBadge CARRY_FORWARD`) + alignment risk. During
  * `RECONCILING` each unresolved row surfaces the per-commitment reconciliation
@@ -63,7 +78,7 @@ export function CommitmentList({
           <li
             key={c.id}
             data-cy="commitment-row"
-            className="flex flex-col gap-2 rounded-lg border border-border bg-surface px-4 py-3"
+            className={`flex flex-col gap-2 rounded-lg border border-border bg-surface px-4 py-3 shadow-hairline ${cardAccent(c)}`}
           >
             <div className="flex items-center justify-between gap-3">
               <div className="flex min-w-0 flex-wrap items-center gap-2">

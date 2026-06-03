@@ -89,7 +89,10 @@ export function HeatmapGrid() {
   const { reports, objectives, cellAt } = pivot(data.cells);
 
   return (
-    <section data-cy="heatmap-grid" className="mx-auto max-w-6xl space-y-4 p-6">
+    <section
+      data-cy="heatmap-grid"
+      className="mx-auto max-w-content-max space-y-4 p-6"
+    >
       <header>
         <h1 className="text-h2 font-semibold text-ink-primary">
           Alignment heatmap
