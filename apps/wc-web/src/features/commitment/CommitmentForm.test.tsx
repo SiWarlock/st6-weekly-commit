@@ -5,7 +5,9 @@ import { CommitmentForm } from './CommitmentForm';
 import {
   useCreateCommitmentMutation,
   useAddUnplannedCommitmentMutation,
+  useUpdateCommitmentMutation,
 } from './commitmentsApi';
+import type { WeeklyCommitmentDto } from '../../shared/lib/dtos';
 
 vi.mock('./commitmentsApi');
 vi.mock('../rcdo/SupportingOutcomePicker', () => ({
@@ -28,12 +30,16 @@ function mockCreate(
     trigger,
     { isLoading: state.isLoading ?? false, error: state.error, reset: vi.fn() },
   ] as unknown as ReturnType<typeof useCreateCommitmentMutation>);
-  // CommitmentForm calls both mutation hooks unconditionally (the picked trigger
-  // depends on `kind`); give the unplanned hook a benign default unless overridden.
+  // CommitmentForm calls all three mutation hooks unconditionally (the picked
+  // trigger depends on `kind`/`commitment`); give the others a benign default.
   vi.mocked(useAddUnplannedCommitmentMutation).mockReturnValue([
     vi.fn(),
     { isLoading: false, reset: vi.fn() },
   ] as unknown as ReturnType<typeof useAddUnplannedCommitmentMutation>);
+  vi.mocked(useUpdateCommitmentMutation).mockReturnValue([
+    vi.fn(),
+    { isLoading: false, reset: vi.fn() },
+  ] as unknown as ReturnType<typeof useUpdateCommitmentMutation>);
 }
 
 function mockAddUnplanned(trigger: ReturnType<typeof vi.fn>) {
@@ -41,6 +47,34 @@ function mockAddUnplanned(trigger: ReturnType<typeof vi.fn>) {
     trigger,
     { isLoading: false, reset: vi.fn() },
   ] as unknown as ReturnType<typeof useAddUnplannedCommitmentMutation>);
+}
+
+function mockUpdate(trigger: ReturnType<typeof vi.fn>) {
+  vi.mocked(useUpdateCommitmentMutation).mockReturnValue([
+    trigger,
+    { isLoading: false, reset: vi.fn() },
+  ] as unknown as ReturnType<typeof useUpdateCommitmentMutation>);
+}
+
+function editable(
+  overrides: Partial<WeeklyCommitmentDto> = {},
+): WeeklyCommitmentDto {
+  return {
+    id: 'c-1',
+    weeklyPlanId: 'plan-1',
+    commitmentKind: 'PLANNED',
+    title: 'Ship onboarding',
+    description: 'the onboarding flow',
+    supportingOutcomeId: 'so-1',
+    priority: 'P0',
+    workType: 'STRATEGIC',
+    confidence: 'HIGH',
+    alignmentStatus: 'NEEDS_REVIEW',
+    hasUnresolvedDispute: false,
+    allowedActions: [],
+    version: 0,
+    ...overrides,
+  };
 }
 
 afterEach(() => {
@@ -144,5 +178,93 @@ describe('CommitmentForm (controlled create form → createCommitment E5)', () =
       { body: Record<string, unknown> },
     ];
     expect(firstCallArgs[0].body).not.toHaveProperty('workType');
+  });
+});
+
+describe('CommitmentForm (edit mode → updateCommitment E6, 9.7b)', () => {
+  it('edit_mode_prefills_and_patches_via_updateCommitment: given a DRAFT commitment, fields pre-fill; submit dispatches updateCommitment({id, planId, patch}) (E6), NOT createCommitment', async () => {
+    const user = userEvent.setup();
+    const updateTrigger = vi.fn(() => ({
+      unwrap: () => Promise.resolve({ id: 'c-1' }),
+    }));
+    const createTrigger = vi.fn();
+    mockCreate(createTrigger);
+    mockUpdate(updateTrigger);
+
+    render(
+      <CommitmentForm
+        planId="plan-1"
+        planState="DRAFT"
+        commitment={editable()}
+      />,
+    );
+
+    // Pre-filled from the existing commitment baseline.
+    expect(screen.getByLabelText(/title/i)).toHaveValue('Ship onboarding');
+    expect(screen.getByLabelText(/priority/i)).toHaveValue('P0');
+
+    await user.clear(screen.getByLabelText(/title/i));
+    await user.type(screen.getByLabelText(/title/i), 'Ship onboarding v2');
+    await user.click(screen.getByRole('button', { name: /save changes/i }));
+
+    expect(updateTrigger).toHaveBeenCalledTimes(1);
+    expect(updateTrigger).toHaveBeenCalledWith({
+      id: 'c-1',
+      planId: 'plan-1',
+      patch: expect.objectContaining({
+        title: 'Ship onboarding v2',
+        supportingOutcomeId: 'so-1',
+        priority: 'P0',
+      }),
+    });
+    expect(createTrigger).not.toHaveBeenCalled();
+  });
+
+  it('create_mode_unchanged_when_no_target: absent edit target → createCommitment (E5); updateCommitment NOT called (regression guard)', async () => {
+    const user = userEvent.setup();
+    const createTrigger = vi.fn(() => ({
+      unwrap: () => Promise.resolve({ id: 'c-new' }),
+    }));
+    const updateTrigger = vi.fn();
+    mockCreate(createTrigger);
+    mockUpdate(updateTrigger);
+
+    render(<CommitmentForm planId="plan-1" planState="DRAFT" />);
+    await user.type(screen.getByLabelText(/title/i), 'A fresh commitment');
+    await user.click(
+      screen.getByRole('button', { name: /create commitment/i }),
+    );
+
+    expect(createTrigger).toHaveBeenCalledTimes(1);
+    expect(updateTrigger).not.toHaveBeenCalled();
+  });
+
+  it('edit_post_lock_renders_LOCKED_BASELINE_EDIT_verbatim: a 409 LOCKED_BASELINE_EDIT from an edit submit renders the server safeMessage verbatim (server-authoritative, rule #2, LESSONS §11)', async () => {
+    const user = userEvent.setup();
+    const updateTrigger = vi.fn(() => ({
+      unwrap: () =>
+        Promise.reject({
+          safeMessage: 'This field is locked after the week is committed.',
+          code: 'LOCKED_BASELINE_EDIT',
+          fieldErrors: [],
+        }),
+    }));
+    mockCreate(vi.fn());
+    mockUpdate(updateTrigger);
+
+    render(
+      <CommitmentForm
+        planId="plan-1"
+        planState="DRAFT"
+        commitment={editable()}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: /save changes/i }));
+
+    expect(
+      await screen.findByText(
+        'This field is locked after the week is committed.',
+      ),
+    ).toBeInTheDocument();
   });
 });

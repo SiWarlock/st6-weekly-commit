@@ -18,6 +18,9 @@ export function WeeklyPlanView() {
   const { data, isLoading, isError, error } = useGetCurrentPlanQuery();
   const [showForm, setShowForm] = useState(false);
   const [showUnplannedForm, setShowUnplannedForm] = useState(false);
+  const [editingCommitmentId, setEditingCommitmentId] = useState<string | null>(
+    null,
+  );
 
   if (isError) {
     const message =
@@ -30,6 +33,10 @@ export function WeeklyPlanView() {
   }
 
   const plan = data;
+  const editingCommitment =
+    editingCommitmentId === null
+      ? null
+      : (plan.commitments.find((c) => c.id === editingCommitmentId) ?? null);
   return (
     <section data-cy="weekly-plan-view" className="mx-auto max-w-3xl p-6">
       <header className="mb-4 flex items-center justify-between gap-3">
@@ -59,8 +66,23 @@ export function WeeklyPlanView() {
           commitments={plan.commitments}
           planState={plan.state}
           planId={plan.id}
+          onEdit={(c) => setEditingCommitmentId(c.id)}
         />
       )}
+
+      {/* Edit an existing DRAFT commitment (9.7b, E6 PATCH). Keyed on the target
+          so switching rows re-initialises the pre-filled form. */}
+      {editingCommitment ? (
+        <div className="mt-4">
+          <CommitmentForm
+            key={editingCommitment.id}
+            planId={plan.id}
+            planState={plan.state}
+            commitment={editingCommitment}
+            onDone={() => setEditingCommitmentId(null)}
+          />
+        </div>
+      ) : null}
 
       {/* ADD_UNPLANNED (E11) — opened from the lifecycle bar's server-gated toggle.
           The unplanned form forces UNPLANNED kind server-side; SO is optional at

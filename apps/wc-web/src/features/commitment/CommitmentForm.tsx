@@ -2,14 +2,17 @@ import { useState } from 'react';
 import {
   useCreateCommitmentMutation,
   useAddUnplannedCommitmentMutation,
+  useUpdateCommitmentMutation,
 } from './commitmentsApi';
 import { SupportingOutcomePicker } from '../rcdo/SupportingOutcomePicker';
 import { ChessLayerFields, type ChessValue } from './ChessLayerFields';
 import type {
   PlanState,
   CommitmentKind,
+  WeeklyCommitmentDto,
   CreateCommitmentRequest,
   CreateUnplannedCommitmentRequest,
+  PatchCommitmentRequest,
 } from '../../shared/lib/dtos';
 import type { ParsedProblem } from '../../shared/lib/problemDetails';
 
@@ -22,42 +25,86 @@ const DEFAULT_CHESS: ChessValue = {
 };
 
 /**
- * Controlled commitment form. In the default `PLANNED` mode it is the E5 create
- * form (title/description, the 9.5 SupportingOutcomePicker link, the chess layer)
- * → `createCommitment`. In `UNPLANNED` mode (E11, ADD_UNPLANNED during RECONCILING)
- * it hides the WorkType field and submits via `addUnplannedCommitment` — the server
- * forces `commitmentKind/workType=UNPLANNED`; `supportingOutcomeId` is optional at
- * create. Both paths invalidate→refetch — **no optimistic write**. Client-side
- * required checks are UX-only; the SERVER is authoritative, its `409` `safeMessage`
- * + per-field `fieldErrors[]` render verbatim. Title is React-escaped where shown.
+ * Controlled commitment form with three modes (driven by props):
+ * - **create** (default) — E5 `createCommitment` (title/description, the 9.5
+ *   SupportingOutcomePicker link, the chess layer).
+ * - **unplanned** (`kind='UNPLANNED'`, E11 ADD_UNPLANNED during RECONCILING) —
+ *   hides WorkType, submits via `addUnplannedCommitment` (server forces UNPLANNED).
+ * - **edit** (`commitment` given, 9.7b) — pre-fills from the existing DRAFT
+ *   baseline, submits via `updateCommitment` (E6 PATCH), then calls `onDone`.
+ * All paths invalidate→refetch — **no optimistic write**. Client-side required
+ * checks are UX-only; the SERVER is authoritative, its `409` `safeMessage` +
+ * per-field `fieldErrors[]` render verbatim (e.g. a post-lock edit →
+ * `409 LOCKED_BASELINE_EDIT`). Title is React-escaped where shown.
  */
 export function CommitmentForm({
   planId,
   planState,
   kind = 'PLANNED',
+  commitment,
+  onDone,
 }: {
   planId: string;
   planState: PlanState;
   kind?: CommitmentKind;
+  /** Edit target (9.7b) — present → edit mode (pre-fill + `updateCommitment`). */
+  commitment?: WeeklyCommitmentDto;
+  /** Called after a successful edit (e.g. to close the edit form). */
+  onDone?: () => void;
 }) {
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
+  const isEdit = Boolean(commitment);
+  const [title, setTitle] = useState(commitment?.title ?? '');
+  const [description, setDescription] = useState(commitment?.description ?? '');
   const [supportingOutcomeId, setSupportingOutcomeId] = useState<string | null>(
-    null,
+    commitment?.supportingOutcomeId ?? null,
   );
-  const [chess, setChess] = useState<ChessValue>(DEFAULT_CHESS);
+  const [chess, setChess] = useState<ChessValue>(() =>
+    commitment
+      ? {
+          priority: commitment.priority,
+          workType: commitment.workType,
+          confidence: commitment.confidence,
+          alignmentStatus: commitment.alignmentStatus,
+        }
+      : DEFAULT_CHESS,
+  );
   const [problem, setProblem] = useState<ParsedProblem | null>(null);
   const [create, { isLoading: creating }] = useCreateCommitmentMutation();
   const [addUnplanned, { isLoading: addingUnplanned }] =
     useAddUnplannedCommitmentMutation();
-  const isUnplanned = kind === 'UNPLANNED';
-  const isLoading = isUnplanned ? addingUnplanned : creating;
+  const [update, { isLoading: updating }] = useUpdateCommitmentMutation();
+  const isUnplanned = kind === 'UNPLANNED' && !isEdit;
+  const isLoading = isEdit
+    ? updating
+    : isUnplanned
+      ? addingUnplanned
+      : creating;
+
+  function resetFields() {
+    setTitle('');
+    setDescription('');
+    setSupportingOutcomeId(null);
+    setChess(DEFAULT_CHESS);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setProblem(null);
     try {
-      if (isUnplanned) {
+      if (isEdit && commitment) {
+        // E6 PATCH — the DRAFT baseline edit (server rejects post-lock with 409).
+        const patch: PatchCommitmentRequest = {
+          title,
+          ...(description ? { description } : {}),
+          ...(supportingOutcomeId ? { supportingOutcomeId } : {}),
+          priority: chess.priority,
+          workType: chess.workType,
+          confidence: chess.confidence,
+          alignmentStatus: chess.alignmentStatus,
+        };
+        await update({ id: commitment.id, planId, patch }).unwrap();
+        onDone?.();
+      } else if (isUnplanned) {
         // E11 — no `workType` (the server forces UNPLANNED); SO optional.
         const body: CreateUnplannedCommitmentRequest = {
           title,
@@ -68,6 +115,7 @@ export function CommitmentForm({
           alignmentStatus: chess.alignmentStatus,
         };
         await addUnplanned({ planId, body }).unwrap();
+        resetFields();
       } else {
         const body: CreateCommitmentRequest = {
           title,
@@ -79,11 +127,8 @@ export function CommitmentForm({
           alignmentStatus: chess.alignmentStatus,
         };
         await create({ planId, body }).unwrap();
+        resetFields();
       }
-      setTitle('');
-      setDescription('');
-      setSupportingOutcomeId(null);
-      setChess(DEFAULT_CHESS);
     } catch (err) {
       // The transformErrorResponse output (parsed RFC-7807). Surface verbatim.
       setProblem(err as ParsedProblem);
@@ -156,7 +201,11 @@ export function CommitmentForm({
         disabled={isLoading}
         className="rounded-md bg-brand-600 px-4 py-2 text-label font-semibold text-white hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-ring disabled:opacity-60"
       >
-        {isUnplanned ? 'Add unplanned commitment' : 'Create commitment'}
+        {isEdit
+          ? 'Save changes'
+          : isUnplanned
+            ? 'Add unplanned commitment'
+            : 'Create commitment'}
       </button>
     </form>
   );

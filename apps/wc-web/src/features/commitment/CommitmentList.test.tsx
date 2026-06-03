@@ -1,4 +1,5 @@
 import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { CommitmentList } from './CommitmentList';
 import type { WeeklyCommitmentDto, AllowedAction } from '../../shared/lib/dtos';
@@ -17,6 +18,13 @@ vi.mock('./ReconciliationOutcomeForm', () => ({
   }: {
     commitment: WeeklyCommitmentDto;
   }) => <div data-testid="outcome-stub" data-id={commitment.id} />,
+}));
+vi.mock('./DeleteCommitmentButton', () => ({
+  DeleteCommitmentButton: ({
+    commitment,
+  }: {
+    commitment: WeeklyCommitmentDto;
+  }) => <div data-testid="delete-stub" data-id={commitment.id} />,
 }));
 
 function commitment(
@@ -157,5 +165,49 @@ describe('CommitmentList (badges + reconciliation row controls, REQ-UX-002)', ()
     );
     expect(screen.queryByTestId('outcome-stub')).toBeNull();
     expect(screen.queryByTestId('cf-stub')).toBeNull();
+  });
+
+  it('edit_delete_controls_only_in_DRAFT: per-row Edit + Delete render only when planState===DRAFT; absent in LOCKED/RECONCILING/RECONCILED (server-authoritative state gate, §3, 9.7b)', () => {
+    const onEdit = vi.fn();
+    const rows = [commitment({ id: 'c-1', title: 'Editable' })];
+
+    const { rerender } = render(
+      <CommitmentList
+        planState="DRAFT"
+        planId="plan-1"
+        commitments={rows}
+        onEdit={onEdit}
+      />,
+    );
+    expect(screen.getByRole('button', { name: /edit/i })).toBeInTheDocument();
+    expect(screen.getByTestId('delete-stub')).toBeInTheDocument();
+
+    for (const state of ['LOCKED', 'RECONCILING', 'RECONCILED'] as const) {
+      rerender(
+        <CommitmentList
+          planState={state}
+          planId="plan-1"
+          commitments={rows}
+          onEdit={onEdit}
+        />,
+      );
+      expect(screen.queryByRole('button', { name: /edit/i })).toBeNull();
+      expect(screen.queryByTestId('delete-stub')).toBeNull();
+    }
+  });
+
+  it('edit_button_invokes_onEdit_with_the_commitment: clicking a DRAFT row Edit calls onEdit(commitment) (WeeklyPlanView owns the editing state)', async () => {
+    const user = userEvent.setup();
+    const onEdit = vi.fn();
+    render(
+      <CommitmentList
+        planState="DRAFT"
+        planId="plan-1"
+        commitments={[commitment({ id: 'c-1', title: 'Editable' })]}
+        onEdit={onEdit}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: /edit/i }));
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ id: 'c-1' }));
   });
 });

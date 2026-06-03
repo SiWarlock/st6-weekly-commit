@@ -4,6 +4,7 @@ import { RiskBadge } from '../../shared/components/RiskBadge';
 import { can } from '../../shared/lib/allowedActions';
 import { CarryForwardButton } from './CarryForwardButton';
 import { ReconciliationOutcomeForm } from './ReconciliationOutcomeForm';
+import { DeleteCommitmentButton } from './DeleteCommitmentButton';
 import type { PlanState, WeeklyCommitmentDto } from '../../shared/lib/dtos';
 
 export interface CommitmentListProps {
@@ -11,6 +12,11 @@ export interface CommitmentListProps {
   planState: PlanState;
   /** The owning plan id — threaded to the per-row reconciliation mutations. */
   planId: string;
+  /**
+   * Opens the edit form for a commitment (9.7b). Wired only in DRAFT; the owning
+   * view holds the "editing" state — this list stays presentational.
+   */
+  onEdit?: (commitment: WeeklyCommitmentDto) => void;
 }
 
 /** Risk badge a commitment surfaces from its alignment self-assessment, if any. */
@@ -35,8 +41,12 @@ export function CommitmentList({
   commitments,
   planState,
   planId,
+  onEdit,
 }: CommitmentListProps) {
   const reconciling = planState === 'RECONCILING';
+  // DRAFT baseline is editable/deletable (server-authoritative — a post-lock
+  // attempt is rejected 409; the affordance is hidden, not the only guard).
+  const draft = planState === 'DRAFT';
   return (
     <ul data-cy="commitment-list" className="space-y-2">
       {commitments.map((c) => {
@@ -70,6 +80,18 @@ export function CommitmentList({
               <div className="flex flex-none items-center gap-2">
                 {showCarry ? (
                   <CarryForwardButton commitment={c} planId={planId} />
+                ) : null}
+                {draft ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => onEdit?.(c)}
+                      className="rounded-md border border-border-strong bg-surface-raised px-3 py-1 text-label text-ink-primary hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-brand-ring"
+                    >
+                      Edit
+                    </button>
+                    <DeleteCommitmentButton commitment={c} planId={planId} />
+                  </>
                 ) : null}
               </div>
             </div>

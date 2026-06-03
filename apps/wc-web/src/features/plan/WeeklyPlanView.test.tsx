@@ -13,6 +13,7 @@ import {
   useUpdateCommitmentMutation,
   useCreateCommitmentMutation,
   useAddUnplannedCommitmentMutation,
+  useDeleteCommitmentMutation,
 } from '../commitment/commitmentsApi';
 import type { WeeklyPlanDto, WeeklyCommitmentDto } from '../../shared/lib/dtos';
 
@@ -38,6 +39,7 @@ beforeEach(() => {
   vi.mocked(useUpdateCommitmentMutation).mockReturnValue(tuple());
   vi.mocked(useCreateCommitmentMutation).mockReturnValue(tuple());
   vi.mocked(useAddUnplannedCommitmentMutation).mockReturnValue(tuple());
+  vi.mocked(useDeleteCommitmentMutation).mockReturnValue(tuple());
 });
 
 function commitment(
@@ -180,5 +182,31 @@ describe('WeeklyPlanView (IC workspace — getCurrentPlan view-states, §7)', ()
     expect(
       screen.getByRole('button', { name: /add unplanned commitment/i }),
     ).toBeInTheDocument();
+  });
+
+  it('edit_flow_reachable_from_WeeklyPlanView: a DRAFT row exposes Edit + Delete; clicking Edit opens CommitmentForm in edit mode (Save changes) pre-filled for that commitment (9.7b reach)', async () => {
+    const user = userEvent.setup();
+    mockQuery({
+      data: plan({
+        state: 'DRAFT',
+        commitments: [commitment({ id: 'c-1', title: 'Ship onboarding' })],
+      }),
+    });
+    render(<WeeklyPlanView />);
+
+    // Per-row Delete affordance (DeleteCommitmentButton) is reachable.
+    expect(
+      screen.getByRole('button', { name: /^delete$/i }),
+    ).toBeInTheDocument();
+    // No edit form until Edit is clicked.
+    expect(screen.queryByRole('button', { name: /save changes/i })).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: /edit/i }));
+
+    // The edit form opens (Save changes) pre-filled for that commitment.
+    expect(
+      screen.getByRole('button', { name: /save changes/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/title/i)).toHaveValue('Ship onboarding');
   });
 });
