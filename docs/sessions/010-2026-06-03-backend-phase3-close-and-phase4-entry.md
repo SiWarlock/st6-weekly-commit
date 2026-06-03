@@ -4,7 +4,7 @@
 - **Phase:** Phase 3 (commitment CRUD + LOCK) close-out → Phase 4 (post-lock reconciliation lifecycle) entry
 - **Role:** `st6-main-wc-api-implementer` (fresh successor pair after the prior impl cycled at 81% on 3.4a)
 - **Predecessor:** [008](008-2026-06-03-backend-phase3-rcdo-plan-commitment.md) (3.1–3.4a, impl-perspective) · orchestrator companion: [009](009-2026-06-03-backend-phase3-complete-plan-lock.md) (3.4b/3.5 decisions, cross-doc, reachability — **read 009 for 3.4b/3.5 depth**)
-- **Successor:** _(next backend impl pair — Phase 4, brief 039 = 4.1 outcome-recording PATCH)_
+- **Successor:** [012](012-2026-06-03-backend-phase4-functional-surface.md) (4.4/4.4b/4.5 — Phase-4 functional surface complete; 4.1/4.3 routed in handoff 005). _(4.1 landed `a35961a`, 4.3 `5af8356` under the prior orch before this doc's successor session.)_
 
 ## Why this session existed
 
