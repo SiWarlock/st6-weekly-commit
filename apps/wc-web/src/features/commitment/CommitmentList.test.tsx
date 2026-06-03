@@ -80,9 +80,11 @@ describe('CommitmentList (badges + reconciliation row controls, REQ-UX-002)', ()
     ).toBeNull();
 
     // UNPLANNED: a kind badge labelled Unplanned (generic Badge, accent tone).
+    // Scoped to the kind-badge specifically — the ST.3 WorkTypeTag also renders
+    // "Unplanned" for workType=UNPLANNED, so a bare getByText would be ambiguous.
     expect(
-      within(rowOf('Hotfix the build')).getByText(/unplanned/i),
-    ).toBeInTheDocument();
+      rowOf('Hotfix the build').querySelector('[data-cy="kind-badge"]'),
+    ).toHaveTextContent(/unplanned/i);
 
     // Carried-forward: the CARRY_FORWARD risk badge.
     expect(
@@ -242,5 +244,41 @@ describe('CommitmentList → CommentThread wiring (9.11b reachability)', () => {
         '[data-cy="comment-thread"][data-target-id="c-2"]',
       ),
     ).toBeNull();
+  });
+});
+
+// Step-7.5 reachability (ST.3): each commitment row renders the four chess atoms
+// (priority / workType / confidence / alignment) skinned per the commitment.
+describe('CommitmentList → chess atom wiring (ST.3 reachability)', () => {
+  it('commitment_list_renders_chess_atoms_per_row: a row renders PriorityTag + WorkTypeTag + ConfidenceMeter + AlignmentChip with the commitment values', () => {
+    render(
+      <CommitmentList
+        planState="DRAFT"
+        planId="plan-1"
+        commitments={[
+          commitment({
+            id: 'c-1',
+            title: 'Strategic bet',
+            priority: 'P0',
+            workType: 'BLOCKER',
+            confidence: 'LOW',
+            alignmentStatus: 'MISALIGNED',
+          }),
+        ]}
+      />,
+    );
+
+    const row = screen
+      .getByText('Strategic bet')
+      .closest('[data-cy="commitment-row"]') as HTMLElement;
+
+    const priority = row.querySelector('[data-cy="priority-tag"]');
+    expect(priority).toHaveTextContent('P0');
+    const workType = row.querySelector('[data-cy="worktype-tag"]');
+    expect(workType).toHaveTextContent('Blocker');
+    const confidence = row.querySelector('[data-cy="confidence-meter"]');
+    expect(confidence).toHaveTextContent('Low');
+    const alignment = row.querySelector('[data-cy="alignment-chip"]');
+    expect(alignment).toHaveTextContent('Misaligned');
   });
 });

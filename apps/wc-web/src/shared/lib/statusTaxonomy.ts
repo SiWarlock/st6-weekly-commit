@@ -14,6 +14,9 @@ import {
   HiArrowNarrowRight,
   HiRefresh,
   HiCloudUpload,
+  HiSparkles,
+  HiCog,
+  HiPlusCircle,
 } from 'react-icons/hi';
 
 /**
@@ -103,4 +106,58 @@ export const SYNC_STATUS_TAXONOMY: Record<string, TaxonomyEntry> = {
     icon: HiRefresh,
     label: 'Retry requested',
   },
+};
+
+// ── ST.3 chess-layer atom taxonomies (Cadence atoms.jsx maps) ────────────────
+
+/**
+ * The §4 WorkType taxonomy — icon+label+tone, ported from the Cadence WORKTYPE
+ * map. Consumed by `WorkTypeTag` (via the `Badge` primitive). Unknown → undefined
+ * (the tag renders nothing).
+ */
+export const WORKTYPE_TAXONOMY: Record<string, TaxonomyEntry> = {
+  STRATEGIC: { tone: 'info', icon: HiSparkles, label: 'Strategic' },
+  MAINTENANCE: { tone: 'neutral', icon: HiCog, label: 'Maintenance' },
+  BLOCKER: { tone: 'failure', icon: HiBan, label: 'Blocker' },
+  UNPLANNED: { tone: 'accent', icon: HiPlusCircle, label: 'Unplanned' },
+};
+
+/** Tone + label only (atoms whose indicator is a dot or the literal text, not an icon). */
+export interface ToneLabel {
+  tone: Tone;
+  label: string;
+}
+
+/**
+ * The §4 AlignmentStatus taxonomy — tone + label (rendered as a tone dot + label
+ * by `AlignmentChip`), ported from the Cadence ALIGNMENT map.
+ */
+export const ALIGNMENT_TAXONOMY: Record<string, ToneLabel> = {
+  ALIGNED: { tone: 'success', label: 'Aligned' },
+  NEEDS_REVIEW: { tone: 'warning', label: 'Needs review' },
+  MISALIGNED: { tone: 'failure', label: 'Misaligned' },
+};
+
+/**
+ * Priority taxonomy — descending urgency tone (P0 failure → P1 warning → P2
+ * neutral, per the Cadence `.wc-pri` skin). The literal `P0`/`P1`/`P2` is itself
+ * the color-independent signal (a text tag, no icon).
+ */
+export const PRIORITY_TAXONOMY: Record<string, ToneLabel> = {
+  P0: { tone: 'failure', label: 'P0' },
+  P1: { tone: 'warning', label: 'P1' },
+  P2: { tone: 'neutral', label: 'P2' },
+};
+
+/** Confidence taxonomy — tone + capitalized label + filled-segment count (of 3). */
+export interface ConfidenceEntry {
+  tone: Tone;
+  label: string;
+  segments: number;
+}
+
+export const CONFIDENCE_TAXONOMY: Record<string, ConfidenceEntry> = {
+  HIGH: { tone: 'success', label: 'High', segments: 3 },
+  MEDIUM: { tone: 'warning', label: 'Medium', segments: 2 },
+  LOW: { tone: 'neutral', label: 'Low', segments: 1 },
 };

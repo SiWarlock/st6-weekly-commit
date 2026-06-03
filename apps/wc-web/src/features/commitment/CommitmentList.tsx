@@ -6,6 +6,10 @@ import { CarryForwardButton } from './CarryForwardButton';
 import { ReconciliationOutcomeForm } from './ReconciliationOutcomeForm';
 import { DeleteCommitmentButton } from './DeleteCommitmentButton';
 import { CommentThread } from '../comment/CommentThread';
+import { PriorityTag } from './PriorityTag';
+import { WorkTypeTag } from './WorkTypeTag';
+import { ConfidenceMeter } from './ConfidenceMeter';
+import { AlignmentChip } from './AlignmentChip';
 import type { PlanState, WeeklyCommitmentDto } from '../../shared/lib/dtos';
 
 export interface CommitmentListProps {
@@ -95,6 +99,14 @@ export function CommitmentList({
                   </>
                 ) : null}
               </div>
+            </div>
+            {/* Chess-layer atoms (ST.3) — priority / workType / confidence /
+                alignment, skinned per the Cadence enum→tone maps. */}
+            <div className="flex flex-wrap items-center gap-2">
+              <PriorityTag value={c.priority} />
+              <WorkTypeTag value={c.workType} />
+              <ConfidenceMeter value={c.confidence} />
+              <AlignmentChip value={c.alignmentStatus} />
             </div>
             {showOutcomeForm ? (
               <ReconciliationOutcomeForm commitment={c} planId={planId} />
