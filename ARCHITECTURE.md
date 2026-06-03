@@ -913,8 +913,11 @@ infra/k8s/
   job-migration.yaml               # wc-api image, flyway-migrate profile — sole schema owner, pre-deploy
   job-perf-seed.yaml               # opt-in 2,000-record synthetic seed (REQ-D-008); never in normal deploy
   service-api.yaml                 # ClusterIP fronted by ALB
-  ingress-api.yaml                 # ALB; ACM cert; host api.wc.${ROOT_DOMAIN}
+  ingress-api.yaml                 # ALB; ACM cert; host api.wc.${ROOT_DOMAIN}; external-dns hostname annotation
+  external-dns.yaml                # external-dns Deployment + SA (Decision 2) — owns the api.wc.${ROOT_DOMAIN} -> ALB Route53 record
 ```
+
+> **external-dns (Decision 2, 2026-06-02 — see `docs/decisions/001`).** The `api.wc.${ROOT_DOMAIN}` → ALB alias record cannot be a pure-Terraform record (the ALB is created by the AWS Load Balancer Controller from `ingress-api.yaml` at deploy time, *after* `terraform apply`). It is owned by an **external-dns** Deployment that watches the Ingress's hostname annotation and upserts the Route53 record (`--policy=upsert-only`, txt-registry). external-dns runs under its own IRSA role scoped to **`route53:ChangeResourceRecordSets` + `ListHostedZones`/`ListResourceRecordSets` on the project hosted zone only** (least-privilege), and — per Decision 3 — that role carries the `ci_boundary` permissions boundary like every other Terraform-created role. (The CloudFront `wc.` alias + both ACM certs remain pure-Terraform in `route53_acm.tf`.)
 
 **Cross-doc invariants pinned by this layout:** `enums/` package values mirror Appendix A exactly (`PlanState`, `ReviewStatus`, `DisputeStatus`, `ReconciliationOutcome`, `EventKind`, `SyncStatus`, `RiskBadge`, `CommentTargetType {PLAN,COMMITMENT}`). The CronJob and migration Job reuse the **`wc-api` image** (profiles/args), not separate apps. `SnsLifecyclePublisher` is the **single publish path** for both initial publish and manual retry (§10). `DomainAuthorizationService` is the sole resource authorizer; controllers carry coarse gates only. `PersonaSwitcher`/`DemoIdentityProvider` live **only** under `src/standalone/` and are compiled out of the exposed remote build.
 

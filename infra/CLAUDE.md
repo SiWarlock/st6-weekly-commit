@@ -47,8 +47,15 @@ Don't paste these sections into the prompt. Grep the file:section, read only wha
 
 | Topic | File (relative to repo root) | Section |
 |---|---|---|
-| <subsystem A> | `ARCHITECTURE.md` | §X |
-| <subsystem B> | `ARCHITECTURE.md` | §Y |
+| AWS deployment topology (EKS/RDS/ECR/SNS-SQS/S3-CloudFront/Route53-ACM/Secrets/IRSA) | `ARCHITECTURE.md` | §12 |
+| CI/CD pipeline + Terraform remote state + local runtime | `ARCHITECTURE.md` | §13 |
+| `infra/terraform` file layout | `ARCHITECTURE.md` | Appendix C.6 |
+| `infra/k8s` manifest layout | `ARCHITECTURE.md` | Appendix C.7 |
+| Config & environment contract (env vars, secret sources) | `ARCHITECTURE.md` | Appendix D |
+| Terraform root module / providers + backend / root vars | `infra/terraform/` | `{versions,backend,main,variables,outputs}.tf` |
+| VPC / EKS / node-group / ALB controller | `infra/terraform/` | `{vpc,eks}.tf` |
+| RDS PostgreSQL (private, node-SG-only) | `infra/terraform/` | `rds.tf` |
+| ECR repos / SNS-SQS transport | `infra/terraform/` | `{ecr,sns_sqs}.tf` |
 | Lessons logged (full prose) | `infra/LESSONS.md` | by lesson # |
 
 <!-- Starts near-empty. Add a row whenever a topic is looked up twice. -->
@@ -153,7 +160,19 @@ Lessons start at §1.
 
 | # | Date | Topic | Rule (one-liner) |
 |--:|---|---|---|
-| | | | |
+| 1 | 2026-06-02 | [tflint forward-declarations](LESSONS.md#1) | Mute only `terraform_unused_declarations` for forward-declared vars/outputs/aliases with an inline reason + dated re-enable marker; never globally weaken the lint gate. |
+| 2 | 2026-06-02 | [Terraform verify recipe](LESSONS.md#2) | Agent-side gate = `fmt -check` + `init -backend=false` + `validate` + `tflint` rc=0; real `init`/`plan`/`apply` + plan-time assertions are HITL-deferred. |
+| 3 | 2026-06-02 | [outputs.tf append-only](LESSONS.md#3) | `outputs.tf` enumerates planned exports as comments; add a live `output` only in the slice that creates its backing resource — never reference a not-yet-created resource. |
+| 4 | 2026-06-02 | [module version = the pin](LESSONS.md#4) | Community modules have no lockfile; the `version = "~> N"` constraint IS the pin — verify the current major against the live registry at author time and pin the major. |
+| 5 | 2026-06-02 | [configure provider in first-using slice](LESSONS.md#5) | Declare providers up front; add the configured `provider {}` block only in the slice that first consumes it — declared-only is lint-clean (`unused_declarations` ignores `required_providers`). |
+| 6 | 2026-06-02 | [author vs current-major schema](LESSONS.md#6) | Verify a community module's current input/submodule schema against the registry/Context7 + spike before authoring — module majors rename inputs (eks v21 `cluster_*`→`name`/`kubernetes_version`) and submodules (iam v6 `…-eks` drop). |
+| 7 | 2026-06-02 | [DB password via random_password](LESSONS.md#7) | DB master password = `random_password` consumed by RDS + populated into the `db` secret by the secret slice; never an output/log (rule #7). Declare the `random` provider explicitly — not a transitive module dep, and `random_password` without it fails tflint. |
+| 8 | 2026-06-02 | [ECR repo posture](LESSONS.md#8) | ECR = IMMUTABLE + scan_on_push + untagged-expiry, via a fixed `for_each` of exactly api+worker repos — CronJob/migration reuse `wc-api`, never a third image. |
+| 9 | 2026-06-02 | [secret-value split](LESSONS.md#9) | TF populates derived secrets (db — value in encrypted state, never an output); real 3rd-party creds (auth0/graph/demo) = container + placeholder + `ignore_changes`, HITL-populated, never in state/vars (rule #7). |
+| 10 | 2026-06-02 | [CloudFront default-cert-then-attach](LESSONS.md#10) | CloudFront ships on the default cert + no aliases in its slice; the Route53/cert slice edits the distribution to attach the us-east-1 ACM cert + alias (a var can't reference the cert resource). |
+| 11 | 2026-06-02 | [ACM cert pattern](LESSONS.md#11) | CloudFront cert → us-east-1 aliased provider (RISK-010); ALB cert → regional; both DNS-validated; consumers reference `_validation.certificate_arn` (waits for validation); Route53 zone is a data source. |
+| 12 | 2026-06-02 | [per-workload IRSA least-privilege](LESSONS.md#12) | Each workload gets its own IRSA role with exactly its §12 actions on exact ARNs; no `GetSecretValue` on `*`; OIDC sub+aud trust on the cluster issuer; ns+SA-name is a pinned contract with the k8s slice; audit the policy JSON. |
+| 13 | 2026-06-02 | [hardened CI role / boundary-as-guardrail](LESSONS.md#13) | CI apply-role: service-LP in the identity policy, escalation-prevention in a permissions boundary (`Allow *` + Deny set) threaded onto EVERY TF-created role; self-ref the boundary via a constructed ARN (cycle); env-scoped OIDC + reviewer gate; no static keys. node-group boundary = per-node-group `iam_role_permissions_boundary`. |
 
 <!-- Starts empty. Each row links to its `LESSONS.md` anchor. -->
 
