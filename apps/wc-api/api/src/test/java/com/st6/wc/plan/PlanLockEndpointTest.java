@@ -154,7 +154,11 @@ class PlanLockEndpointTest extends AbstractAppBootTest {
         .andExpect(jsonPath("$.managerReview.status").value("NOT_REVIEWED"))
         .andExpect(jsonPath("$.managerReview.isOverdue").value(false))
         .andExpect(jsonPath("$.managerReview.reviewDueAt").exists())
-        .andExpect(jsonPath("$.allowedActions").isEmpty()); // LOCK affordance gone post-lock
+        // post-lock the LOCK affordance is gone; a LOCKED plan now offers START_RECONCILIATION
+        // (4.2)
+        .andExpect(
+            jsonPath("$.allowedActions")
+                .value(org.hamcrest.Matchers.contains("START_RECONCILIATION")));
 
     assertThat(plans.findById(plan.getId()).orElseThrow().getState()).isEqualTo(PlanState.LOCKED);
     // manager_review row (NOT_REVIEWED)

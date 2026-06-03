@@ -27,13 +27,31 @@ import org.springframework.stereotype.Component;
 @Component
 public class AllowedActionResolver {
 
-  /** Plan-level affordances for the actor (3.3a: {@code LOCK} only). */
+  /**
+   * Plan-level affordances for the actor — only the actions whose enforcement exists: {@code LOCK}
+   * for a lockable DRAFT plan (3.3a), {@code START_RECONCILIATION} for a LOCKED owning-IC plan
+   * (4.2). The RECONCILING actions ({@code ADD_UNPLANNED}/{@code CLOSE_RECONCILIATION}/{@code
+   * CARRY_FORWARD}) are emitted by their enforcing slices — "no affordance without enforcement"
+   * (§15).
+   */
   public List<AllowedAction> planActions(
       UUID actorEmployeeId, WeeklyPlan plan, List<WeeklyCommitment> commitments) {
     if (canLock(actorEmployeeId, plan, commitments)) {
       return List.of(AllowedAction.LOCK);
     }
+    if (canStartReconciliation(actorEmployeeId, plan)) {
+      return List.of(AllowedAction.START_RECONCILIATION);
+    }
     return List.of();
+  }
+
+  /**
+   * The {@code START_RECONCILIATION} precondition (task 4.2) — the owning IC may start
+   * reconciliation on a {@code LOCKED} plan; the same forward-only guard {@code
+   * PlanLifecycleService} enforces (§15).
+   */
+  public boolean canStartReconciliation(UUID actorEmployeeId, WeeklyPlan plan) {
+    return plan.getEmployeeId().equals(actorEmployeeId) && plan.getState() == PlanState.LOCKED;
   }
 
   /**

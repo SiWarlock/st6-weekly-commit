@@ -29,12 +29,26 @@ public class SyncRecordService {
   }
 
   public OutlookCalendarSyncRecord createIcPlanningRecord(WeeklyPlan plan, String traceId) {
+    return createWeeklyPlanRecord(plan, EventKind.IC_PLANNING, traceId);
+  }
+
+  /**
+   * The IC's {@code IC_RECONCILIATION} record (E9 start-reconciliation, task 4.2) — coexists with
+   * the lock's {@code IC_PLANNING} since the V1 sync unique {@code (owner, related_type,
+   * related_id, event_kind)} includes {@code event_kind}.
+   */
+  public OutlookCalendarSyncRecord createIcReconciliationRecord(WeeklyPlan plan, String traceId) {
+    return createWeeklyPlanRecord(plan, EventKind.IC_RECONCILIATION, traceId);
+  }
+
+  private OutlookCalendarSyncRecord createWeeklyPlanRecord(
+      WeeklyPlan plan, EventKind eventKind, String traceId) {
     OutlookCalendarSyncRecord record = new OutlookCalendarSyncRecord();
     record.setId(UUID.randomUUID());
     record.setOwnerEmployeeId(plan.getEmployeeId());
     record.setRelatedType(SyncRelatedType.WEEKLY_PLAN);
     record.setRelatedId(plan.getId());
-    record.setEventKind(EventKind.IC_PLANNING);
+    record.setEventKind(eventKind);
     record.setStatus(SyncStatus.PENDING_PUBLISH);
     record.setRetryCount(0);
     record.setWeekStartDate(plan.getWeekStartDate());

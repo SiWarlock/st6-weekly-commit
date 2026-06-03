@@ -178,6 +178,66 @@ public class PlanLifecycleService {
   }
 
   /**
+   * Owns the forward-only {@code LOCKED → RECONCILING} transition (task 4.2, E9, §3/§5/§6/§9/§10) —
+   * mirrors {@link #lock} (LESSONS §28). Authorizes IC-owner-only (the chokepoint), guards the
+   * source state ({@code LOCKED}-only, else {@code ILLEGAL_STATE_TRANSITION} —
+   * illegal/backward/self), then in ONE {@code @Version}-guarded transaction: sets {@code
+   * RECONCILING} + {@code reconciliation_started_at}; synchronously refreshes the manager
+   * projection's {@code plan_state} (§9, when the IC has a manager + review); writes the {@code
+   * RECONCILIATION_STARTED} audit; creates the {@code IC_RECONCILIATION} sync record. The pointer
+   * publish runs after commit, strictly non-blocking (rule #4). A concurrent double-start → {@code
+   * 409} via {@code @Version}.
+   */
+  @Transactional
+  public WeeklyPlanDto startReconciliation(UserPrincipal actor, UUID planId) {
+    authz.authorizePlanMutation(actor, planId); // chokepoint: IC-owner-only (404/403 + audit)
+    WeeklyPlan plan =
+        plans.findById(planId).orElseThrow(ResourceNotFoundOrUnauthorizedException::new);
+    if (plan.getState() != PlanState.LOCKED) {
+      throw new IllegalStateTransitionException(); // forward-only: only LOCKED → RECONCILING
+    }
+    List<WeeklyCommitment> planCommitments = commitments.findByWeeklyPlanIdOrderByIdAsc(planId);
+
+    plan.setState(PlanState.RECONCILING);
+    plan.setReconciliationStartedAt(clock.instant());
+    plans.save(
+        plan); // @Version-guarded: a concurrent double-start → ObjectOptimisticLockingFailure
+
+    String traceId = UUID.randomUUID().toString();
+    OutlookCalendarSyncRecord icReconciliation =
+        syncRecordService.createIcReconciliationRecord(plan, traceId); // §10 — IC start
+
+    UUID managerId =
+        relationships
+            .findByDirectReportEmployeeIdAndActiveTrue(actor.employeeId())
+            .map(ManagerRelationship::getManagerEmployeeId)
+            .orElse(null);
+    if (managerId != null) {
+      reviews
+          .findByWeeklyPlanId(planId)
+          .ifPresent(
+              review -> projectionService.recompute(plan, managerId, planCommitments, review));
+    }
+
+    auditService.record(
+        "RECONCILIATION_STARTED",
+        "WeeklyPlan",
+        planId,
+        actor.employeeId(),
+        "Reconciliation started",
+        "{}");
+
+    publishAfterCommit(List.of(icReconciliation.getId()));
+
+    String displayName =
+        employees
+            .findById(plan.getEmployeeId())
+            .orElseThrow(ResourceNotFoundOrUnauthorizedException::new)
+            .getDisplayName();
+    return planMapper.toWeeklyPlanDto(plan, displayName, planCommitments, actor.employeeId());
+  }
+
+  /**
    * Schedule the pointer publish to run <strong>after</strong> the lock commits (rule #4 — a
    * publish failure can never roll back the committed lock). When no transaction synchronization is
    * active (e.g. a unit test with no ambient transaction), publish immediately.

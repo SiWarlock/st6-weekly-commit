@@ -56,4 +56,15 @@ public class PlanController {
       @AuthenticationPrincipal UserPrincipal principal, @PathVariable("id") UUID id) {
     return planLifecycleService.lock(principal, id);
   }
+
+  /**
+   * {@code POST /api/plans/{id}/start-reconciliation} (E9, §3 — the forward-only {@code
+   * LOCKED→RECONCILING} entry). Thin: {@link PlanLifecycleService} authorizes IC-owner-only first
+   * (the chokepoint), guards the source state, and runs the atomic transition; no request body.
+   */
+  @PostMapping("/api/plans/{id}/start-reconciliation")
+  public WeeklyPlanDto startReconciliation(
+      @AuthenticationPrincipal UserPrincipal principal, @PathVariable("id") UUID id) {
+    return planLifecycleService.startReconciliation(principal, id);
+  }
 }
