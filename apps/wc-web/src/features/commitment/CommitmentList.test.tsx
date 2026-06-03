@@ -3,6 +3,22 @@ import { describe, it, expect, vi } from 'vitest';
 import { CommitmentList } from './CommitmentList';
 import type { WeeklyCommitmentDto, AllowedAction } from '../../shared/lib/dtos';
 
+// The per-row reconciliation controls are unit-tested in their own files; here we
+// stub them to assert CommitmentList mounts the right one per commitment (the
+// either/or gating), without pulling in the RTK Query hooks they own.
+vi.mock('./CarryForwardButton', () => ({
+  CarryForwardButton: ({ commitment }: { commitment: WeeklyCommitmentDto }) => (
+    <div data-testid="cf-stub" data-id={commitment.id} />
+  ),
+}));
+vi.mock('./ReconciliationOutcomeForm', () => ({
+  ReconciliationOutcomeForm: ({
+    commitment,
+  }: {
+    commitment: WeeklyCommitmentDto;
+  }) => <div data-testid="outcome-stub" data-id={commitment.id} />,
+}));
+
 function commitment(
   overrides: Partial<WeeklyCommitmentDto> & { id: string },
 ): WeeklyCommitmentDto {
@@ -21,11 +37,12 @@ function commitment(
   };
 }
 
-describe('CommitmentList (badges + allowedActions-driven row controls, REQ-UX-002)', () => {
+describe('CommitmentList (badges + reconciliation row controls, REQ-UX-002)', () => {
   it('commitment_list_badges_planned_vs_unplanned_vs_carryforward: an UNPLANNED row shows the kind badge; a carried-forward row shows the CARRY_FORWARD risk badge; a plain planned row shows neither', () => {
     render(
       <CommitmentList
         planState="DRAFT"
+        planId="plan-1"
         commitments={[
           commitment({ id: 'c-1', title: 'Plain planned' }),
           commitment({
@@ -70,6 +87,7 @@ describe('CommitmentList (badges + allowedActions-driven row controls, REQ-UX-00
     const { container } = render(
       <CommitmentList
         planState="DRAFT"
+        planId="plan-1"
         commitments={[commitment({ id: 'c-1', title: xss })]}
       />,
     );
@@ -78,31 +96,66 @@ describe('CommitmentList (badges + allowedActions-driven row controls, REQ-UX-00
     expect(screen.getByText(xss)).toBeInTheDocument();
   });
 
-  it('row_controls_follow_allowedActions: a row control renders ONLY when its action is in that commitment allowedActions[] AND a handler is provided (never re-derived)', () => {
-    const onCarryForward = vi.fn();
-    const withAction = (actions: AllowedAction[]) =>
-      commitment({ id: 'c-1', title: 'Gated row', allowedActions: actions });
+  it('reconciling_unresolved_row_mounts_both_outcome_form_and_carry_control: an unresolved RECONCILING commitment WITH CARRY_FORWARD mounts BOTH the outcome form and the carry control (the mutually-exclusive choice set: 4 PATCH outcomes + E12); one WITHOUT CARRY_FORWARD mounts the outcome form only; DRAFT mounts neither — gates are independent (no cross-condition)', () => {
+    const withActions = (id: string, actions: AllowedAction[]) =>
+      commitment({ id, title: `Row ${id}`, allowedActions: actions });
 
-    // CARRY_FORWARD present → the control renders.
     const { rerender } = render(
       <CommitmentList
         planState="RECONCILING"
-        commitments={[withAction(['CARRY_FORWARD'])]}
-        onCarryForward={onCarryForward}
+        planId="plan-1"
+        commitments={[
+          withActions('c-1', ['CARRY_FORWARD']),
+          withActions('c-2', []),
+        ]}
       />,
     );
+    const rowOf = (id: string) =>
+      screen
+        .getByText(`Row ${id}`)
+        .closest('[data-cy="commitment-row"]') as HTMLElement;
+
+    // Unresolved + CARRY_FORWARD → BOTH controls coexist (record OR carry forward;
+    // recording either resolves the commitment server-side → both vanish on refetch).
+    expect(within(rowOf('c-1')).getByTestId('cf-stub')).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: /carry forward/i }),
+      within(rowOf('c-1')).getByTestId('outcome-stub'),
     ).toBeInTheDocument();
 
-    // CARRY_FORWARD absent → the control is NOT rendered (adversarial).
+    // Unresolved, no CARRY_FORWARD → the outcome form only (carry control absent).
+    expect(
+      within(rowOf('c-2')).getByTestId('outcome-stub'),
+    ).toBeInTheDocument();
+    expect(within(rowOf('c-2')).queryByTestId('cf-stub')).toBeNull();
+
+    // DRAFT → no reconciliation controls at all.
     rerender(
       <CommitmentList
-        planState="RECONCILING"
-        commitments={[withAction(['COMMENT'])]}
-        onCarryForward={onCarryForward}
+        planState="DRAFT"
+        planId="plan-1"
+        commitments={[withActions('c-1', ['CARRY_FORWARD'])]}
       />,
     );
-    expect(screen.queryByRole('button', { name: /carry forward/i })).toBeNull();
+    expect(screen.queryByTestId('cf-stub')).toBeNull();
+    expect(screen.queryByTestId('outcome-stub')).toBeNull();
+  });
+
+  it('reconciling_row_with_recorded_outcome_mounts_neither: a commitment that already has a reconciliationOutcome shows no outcome form (and no carry control absent CARRY_FORWARD)', () => {
+    render(
+      <CommitmentList
+        planState="RECONCILING"
+        planId="plan-1"
+        commitments={[
+          commitment({
+            id: 'c-1',
+            title: 'Already done',
+            reconciliationOutcome: 'COMPLETED',
+            allowedActions: [],
+          }),
+        ]}
+      />,
+    );
+    expect(screen.queryByTestId('outcome-stub')).toBeNull();
+    expect(screen.queryByTestId('cf-stub')).toBeNull();
   });
 });

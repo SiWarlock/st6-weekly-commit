@@ -10,6 +10,8 @@ import { useCurrentUser } from '../features/me/useCurrentUser';
 import {
   useGetCurrentPlanQuery,
   useLockPlanMutation,
+  useStartReconciliationMutation,
+  useCloseReconciliationMutation,
 } from '../features/plan/plansApi';
 import type { WeeklyPlanDto } from '../shared/lib/dtos';
 
@@ -44,6 +46,15 @@ beforeEach(() => {
     vi.fn(),
     { isLoading: false, reset: vi.fn() },
   ] as unknown as ReturnType<typeof useLockPlanMutation>);
+  // PlanLifecycleBar (9.8) also reads the start/close-reconciliation hooks.
+  vi.mocked(useStartReconciliationMutation).mockReturnValue([
+    vi.fn(),
+    { isLoading: false, reset: vi.fn() },
+  ] as unknown as ReturnType<typeof useStartReconciliationMutation>);
+  vi.mocked(useCloseReconciliationMutation).mockReturnValue([
+    vi.fn(),
+    { isLoading: false, reset: vi.fn() },
+  ] as unknown as ReturnType<typeof useCloseReconciliationMutation>);
 });
 
 function mockCurrentUser(value: {

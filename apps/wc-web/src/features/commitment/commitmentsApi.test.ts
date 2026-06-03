@@ -300,3 +300,92 @@ describe('commitmentsApi (E5/E6/E7/E11 mutations + tag invalidation, the invalid
     expect(code).not.toMatch(/patchQueryData/);
   });
 });
+
+describe('carryForward (E12 commitment-level lifecycle mutation)', () => {
+  it('carryForward_posts_E12_no_body_and_invalidates_source_plan: POST /api/commitments/{id}/carry-forward (no body, arg {id, planId}) returns the successor WeeklyCommitmentDto; success invalidates planTags(planId) → refetch', async () => {
+    let currentCalls = 0;
+    let postRequest: Request | undefined;
+    const successor: WeeklyCommitmentDto = {
+      ...makeCommitment('c-1-next', 'plan-2'),
+      carryForwardSourceCommitmentId: 'c-1',
+    };
+    const fetchMock = vi.fn(async (input: Request) => {
+      const { url, method } = input;
+      if (url.includes('/api/plans/current')) {
+        currentCalls += 1;
+        return jsonResponse(makePlan('plan-1', 1));
+      }
+      if (method === 'POST' && /\/commitments\/c-1\/carry-forward$/.test(url)) {
+        postRequest = input;
+        return jsonResponse(successor, 201);
+      }
+      throw new Error(`unexpected ${method} ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const store = makeStore();
+
+    const sub = store.dispatch(plansApi.endpoints.getCurrentPlan.initiate());
+    await sub;
+    expect(currentCalls).toBe(1);
+
+    const res = await store.dispatch(
+      commitmentsApi.endpoints.carryForward.initiate({
+        id: 'c-1',
+        planId: 'plan-1',
+      }),
+    );
+
+    // E12 is a no-body POST; it returns the next-week successor commitment.
+    expect(postRequest?.method).toBe('POST');
+    expect(postRequest?.body).toBeNull();
+    expect(
+      (res as { data?: WeeklyCommitmentDto }).data
+        ?.carryForwardSourceCommitmentId,
+    ).toBe('c-1');
+    // Success invalidated the SOURCE plan tag → current-plan refetched.
+    await waitFor(() => expect(currentCalls).toBe(2));
+    sub.unsubscribe();
+  });
+
+  it('carryForward_error_does_not_invalidate: a failed carryForward parses safeMessage and triggers no refetch (invalidate-on-success-only, LESSONS §10)', async () => {
+    let currentCalls = 0;
+    const fetchMock = vi.fn(async (input: Request) => {
+      const { url, method } = input;
+      if (url.includes('/api/plans/current')) {
+        currentCalls += 1;
+        return jsonResponse(makePlan('plan-1', 1));
+      }
+      if (method === 'POST' && url.includes('/carry-forward')) {
+        return jsonResponse(
+          {
+            safeMessage: 'Only reconciling commitments can be carried forward.',
+            code: 'ILLEGAL_STATE_TRANSITION',
+          },
+          409,
+          'application/problem+json',
+        );
+      }
+      throw new Error(`unexpected ${method} ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const store = makeStore();
+
+    const sub = store.dispatch(plansApi.endpoints.getCurrentPlan.initiate());
+    await sub;
+    expect(currentCalls).toBe(1);
+
+    const result = await store.dispatch(
+      commitmentsApi.endpoints.carryForward.initiate({
+        id: 'c-1',
+        planId: 'plan-1',
+      }),
+    );
+    expect(
+      (result as { error?: { safeMessage?: string } }).error?.safeMessage,
+    ).toBe('Only reconciling commitments can be carried forward.');
+
+    await new Promise((r) => setTimeout(r, 20));
+    expect(currentCalls).toBe(1);
+    sub.unsubscribe();
+  });
+});

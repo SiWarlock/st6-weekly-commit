@@ -2,7 +2,10 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { CommitmentForm } from './CommitmentForm';
-import { useCreateCommitmentMutation } from './commitmentsApi';
+import {
+  useCreateCommitmentMutation,
+  useAddUnplannedCommitmentMutation,
+} from './commitmentsApi';
 
 vi.mock('./commitmentsApi');
 vi.mock('../rcdo/SupportingOutcomePicker', () => ({
@@ -25,6 +28,19 @@ function mockCreate(
     trigger,
     { isLoading: state.isLoading ?? false, error: state.error, reset: vi.fn() },
   ] as unknown as ReturnType<typeof useCreateCommitmentMutation>);
+  // CommitmentForm calls both mutation hooks unconditionally (the picked trigger
+  // depends on `kind`); give the unplanned hook a benign default unless overridden.
+  vi.mocked(useAddUnplannedCommitmentMutation).mockReturnValue([
+    vi.fn(),
+    { isLoading: false, reset: vi.fn() },
+  ] as unknown as ReturnType<typeof useAddUnplannedCommitmentMutation>);
+}
+
+function mockAddUnplanned(trigger: ReturnType<typeof vi.fn>) {
+  vi.mocked(useAddUnplannedCommitmentMutation).mockReturnValue([
+    trigger,
+    { isLoading: false, reset: vi.fn() },
+  ] as unknown as ReturnType<typeof useAddUnplannedCommitmentMutation>);
 }
 
 afterEach(() => {
@@ -88,5 +104,45 @@ describe('CommitmentForm (controlled create form → createCommitment E5)', () =
       await screen.findByText('Please fix the highlighted fields.'),
     ).toBeInTheDocument();
     expect(screen.getByText('Title is required.')).toBeInTheDocument();
+  });
+
+  it('unplanned_mode_submits_via_addUnplannedCommitment: kind="UNPLANNED" hides the WorkType field and submits via E11 with a CreateUnplannedCommitmentRequest (no workType); supportingOutcomeId optional', async () => {
+    const user = userEvent.setup();
+    const addTrigger = vi.fn(() => ({
+      unwrap: () => Promise.resolve({ id: 'u-1' }),
+    }));
+    mockCreate(vi.fn());
+    mockAddUnplanned(addTrigger);
+
+    render(
+      <CommitmentForm
+        planId="plan-1"
+        planState="RECONCILING"
+        kind="UNPLANNED"
+      />,
+    );
+
+    // Unplanned mode hides the work-type field (server forces workType=UNPLANNED).
+    expect(screen.queryByLabelText(/work type/i)).toBeNull();
+
+    await user.type(screen.getByLabelText(/title/i), 'Unplanned firefight');
+    await user.selectOptions(screen.getByLabelText(/priority/i), 'P0');
+    await user.selectOptions(screen.getByLabelText(/confidence/i), 'MEDIUM');
+    await user.click(screen.getByRole('button', { name: /add unplanned/i }));
+
+    expect(addTrigger).toHaveBeenCalledTimes(1);
+    expect(addTrigger).toHaveBeenCalledWith({
+      planId: 'plan-1',
+      body: expect.objectContaining({
+        title: 'Unplanned firefight',
+        priority: 'P0',
+        confidence: 'MEDIUM',
+      }),
+    });
+    // The E11 request body must NOT carry workType (the server forces UNPLANNED).
+    const firstCallArgs = addTrigger.mock.calls[0] as unknown as [
+      { body: Record<string, unknown> },
+    ];
+    expect(firstCallArgs[0].body).not.toHaveProperty('workType');
   });
 });

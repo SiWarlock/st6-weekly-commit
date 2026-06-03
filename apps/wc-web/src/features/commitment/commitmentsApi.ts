@@ -68,6 +68,26 @@ export const commitmentsApi = baseApi.injectEndpoints({
         error ? [] : planTags(planId),
       transformErrorResponse: (response) => parseProblemDetail(response.data),
     }),
+    /**
+     * E12 carry-forward (the ONLY path that sets `CARRIED_FORWARD`, §3 — a direct
+     * PATCH of that outcome is server-rejected). No body; arg `{id, planId}` where
+     * `planId` is the SOURCE plan (the invalidation key). Returns the next-week
+     * successor `WeeklyCommitmentDto`; success invalidates the source plan tag so
+     * the row reflects the carried-forward state on refetch. Idempotent server-side
+     * (a re-invoke returns the existing successor). No optimistic write.
+     */
+    carryForward: build.mutation<
+      WeeklyCommitmentDto,
+      { id: string; planId: string }
+    >({
+      query: ({ id }) => ({
+        url: `/api/commitments/${id}/carry-forward`,
+        method: 'POST',
+      }),
+      invalidatesTags: (_result, error, { planId }) =>
+        error ? [] : planTags(planId),
+      transformErrorResponse: (response) => parseProblemDetail(response.data),
+    }),
   }),
 });
 
@@ -76,4 +96,5 @@ export const {
   useAddUnplannedCommitmentMutation,
   useUpdateCommitmentMutation,
   useDeleteCommitmentMutation,
+  useCarryForwardMutation,
 } = commitmentsApi;

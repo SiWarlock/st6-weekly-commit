@@ -2,14 +2,15 @@ import { HiLightningBolt } from 'react-icons/hi';
 import { Badge } from '../../shared/components/Badge';
 import { RiskBadge } from '../../shared/components/RiskBadge';
 import { can } from '../../shared/lib/allowedActions';
+import { CarryForwardButton } from './CarryForwardButton';
+import { ReconciliationOutcomeForm } from './ReconciliationOutcomeForm';
 import type { PlanState, WeeklyCommitmentDto } from '../../shared/lib/dtos';
 
 export interface CommitmentListProps {
   commitments: WeeklyCommitmentDto[];
   planState: PlanState;
-  /** Optional carry-forward handler — the control renders only when provided AND
-   * the commitment's allowedActions[] permit it (wired in 9.8). */
-  onCarryForward?: (commitmentId: string) => void;
+  /** The owning plan id — threaded to the per-row reconciliation mutations. */
+  planId: string;
 }
 
 /** Risk badge a commitment surfaces from its alignment self-assessment, if any. */
@@ -21,52 +22,60 @@ function alignmentRisk(c: WeeklyCommitmentDto): string | null {
 
 /**
  * Renders the plan's commitments (REQ-UX-002): PLANNED vs UNPLANNED (kind badge)
- * vs carried-forward (`RiskBadge CARRY_FORWARD`) + alignment risk, with each
- * row's action controls driven ONLY by that commitment's server `allowedActions[]`
- * via `can()` — never re-derived client-side. Titles render React-escaped.
+ * vs carried-forward (`RiskBadge CARRY_FORWARD`) + alignment risk. During
+ * `RECONCILING` each unresolved row surfaces the per-commitment reconciliation
+ * choice set — the outcome form (`!reconciliationOutcome`) and, when the server
+ * permits it, the carry-forward control (`CARRY_FORWARD ∈ allowedActions[]`). The
+ * two gates are **independent** (both can coexist for one unresolved commitment;
+ * recording either resolves it server-side → both vanish on refetch). Every gate
+ * reads server `allowedActions[]`/`plan.state` — never re-derived client-side.
+ * Titles render React-escaped.
  */
 export function CommitmentList({
   commitments,
-  onCarryForward,
+  planState,
+  planId,
 }: CommitmentListProps) {
+  const reconciling = planState === 'RECONCILING';
   return (
     <ul data-cy="commitment-list" className="space-y-2">
       {commitments.map((c) => {
         const carriedForward = Boolean(c.carryForwardSourceCommitmentId);
         const risk = alignmentRisk(c);
+        const showCarry = reconciling && can('CARRY_FORWARD', c.allowedActions);
+        const showOutcomeForm = reconciling && !c.reconciliationOutcome;
         return (
           <li
             key={c.id}
             data-cy="commitment-row"
-            className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface px-4 py-3"
+            className="flex flex-col gap-2 rounded-lg border border-border bg-surface px-4 py-3"
           >
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <span className="truncate text-body text-ink-primary">
-                {c.title}
-              </span>
-              {c.commitmentKind === 'UNPLANNED' ? (
-                <Badge
-                  tone="accent"
-                  icon={HiLightningBolt}
-                  label="Unplanned"
-                  size="xs"
-                  dataCy="kind-badge"
-                />
-              ) : null}
-              {carriedForward ? <RiskBadge value="CARRY_FORWARD" /> : null}
-              {risk ? <RiskBadge value={risk} /> : null}
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <span className="truncate text-body text-ink-primary">
+                  {c.title}
+                </span>
+                {c.commitmentKind === 'UNPLANNED' ? (
+                  <Badge
+                    tone="accent"
+                    icon={HiLightningBolt}
+                    label="Unplanned"
+                    size="xs"
+                    dataCy="kind-badge"
+                  />
+                ) : null}
+                {carriedForward ? <RiskBadge value="CARRY_FORWARD" /> : null}
+                {risk ? <RiskBadge value={risk} /> : null}
+              </div>
+              <div className="flex flex-none items-center gap-2">
+                {showCarry ? (
+                  <CarryForwardButton commitment={c} planId={planId} />
+                ) : null}
+              </div>
             </div>
-            <div className="flex flex-none items-center gap-2">
-              {onCarryForward && can('CARRY_FORWARD', c.allowedActions) ? (
-                <button
-                  type="button"
-                  onClick={() => onCarryForward(c.id)}
-                  className="rounded-md border border-border-strong bg-surface-raised px-3 py-1 text-label text-ink-primary hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-brand-ring"
-                >
-                  Carry forward
-                </button>
-              ) : null}
-            </div>
+            {showOutcomeForm ? (
+              <ReconciliationOutcomeForm commitment={c} planId={planId} />
+            ) : null}
           </li>
         );
       })}

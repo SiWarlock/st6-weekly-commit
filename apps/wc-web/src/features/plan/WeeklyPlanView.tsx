@@ -17,6 +17,7 @@ import { PlanLifecycleBar } from './PlanLifecycleBar';
 export function WeeklyPlanView() {
   const { data, isLoading, isError, error } = useGetCurrentPlanQuery();
   const [showForm, setShowForm] = useState(false);
+  const [showUnplannedForm, setShowUnplannedForm] = useState(false);
 
   if (isError) {
     const message =
@@ -43,7 +44,10 @@ export function WeeklyPlanView() {
         <StatusBadge kind="plan" value={plan.state} />
       </header>
 
-      <PlanLifecycleBar plan={plan} />
+      <PlanLifecycleBar
+        plan={plan}
+        onAddUnplanned={() => setShowUnplannedForm(true)}
+      />
 
       {plan.commitments.length === 0 ? (
         <EmptyState
@@ -51,8 +55,25 @@ export function WeeklyPlanView() {
           message="Add your first weekly commitment to start planning your week."
         />
       ) : (
-        <CommitmentList commitments={plan.commitments} planState={plan.state} />
+        <CommitmentList
+          commitments={plan.commitments}
+          planState={plan.state}
+          planId={plan.id}
+        />
       )}
+
+      {/* ADD_UNPLANNED (E11) — opened from the lifecycle bar's server-gated toggle.
+          The unplanned form forces UNPLANNED kind server-side; SO is optional at
+          create (enforced at close). */}
+      {showUnplannedForm ? (
+        <div className="mt-4">
+          <CommitmentForm
+            planId={plan.id}
+            planState={plan.state}
+            kind="UNPLANNED"
+          />
+        </div>
+      ) : null}
 
       {/* Adding commitments is a DRAFT-stage affordance (the server enforces the
           baseline-immutability rule post-lock via 409). The form is collapsed by

@@ -41,6 +41,33 @@ export const plansApi = baseApi.injectEndpoints({
       invalidatesTags: (_result, error, id) => (error ? [] : planTags(id)),
       transformErrorResponse: (response) => parseProblemDetail(response.data),
     }),
+    /**
+     * E9 start-reconciliation (LOCKED→RECONCILING). No body, no `If-Match`
+     * (consistent with `lockPlan`; an optimistic-lock conflict surfaces as a
+     * server `409` rendered verbatim). Success invalidates the plan tag so the
+     * view refetches into `RECONCILING` — **no optimistic flip**.
+     */
+    startReconciliation: build.mutation<WeeklyPlanDto, string>({
+      query: (id) => ({
+        url: `/api/plans/${id}/start-reconciliation`,
+        method: 'POST',
+      }),
+      invalidatesTags: (_result, error, id) => (error ? [] : planTags(id)),
+      transformErrorResponse: (response) => parseProblemDetail(response.data),
+    }),
+    /**
+     * E10 close-reconciliation (RECONCILING→RECONCILED). No body. Success
+     * invalidates the plan tag → refetch into `RECONCILED`. A blocked close
+     * (`422 UNPLANNED_MISSING_LINK_AT_CLOSE`) surfaces the parsed `safeMessage`.
+     */
+    closeReconciliation: build.mutation<WeeklyPlanDto, string>({
+      query: (id) => ({
+        url: `/api/plans/${id}/close-reconciliation`,
+        method: 'POST',
+      }),
+      invalidatesTags: (_result, error, id) => (error ? [] : planTags(id)),
+      transformErrorResponse: (response) => parseProblemDetail(response.data),
+    }),
   }),
 });
 
@@ -48,4 +75,6 @@ export const {
   useGetCurrentPlanQuery,
   useGetPlanByIdQuery,
   useLockPlanMutation,
+  useStartReconciliationMutation,
+  useCloseReconciliationMutation,
 } = plansApi;

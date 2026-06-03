@@ -7,7 +7,7 @@ import {
   setDemoAuthHeaderApplier,
 } from '../../app/authAccessor';
 import { plansApi } from './plansApi';
-import type { WeeklyPlanDto } from '../../shared/lib/dtos';
+import type { WeeklyPlanDto, AllowedAction } from '../../shared/lib/dtos';
 
 const PLAN: WeeklyPlanDto = {
   id: 'plan-1',
@@ -165,6 +165,181 @@ describe('lockPlan (E8 lifecycle mutation → invalidate→refetch into LOCKED)'
     release();
     await waitFor(() => expect(select().data?.state).toBe('LOCKED'));
     expect(currentCalls).toBe(2);
+    sub.unsubscribe();
+  });
+});
+
+function problemResponse(body: unknown, status: number): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/problem+json' },
+  });
+}
+
+describe('startReconciliation / closeReconciliation (E9/E10 no-body lifecycle mutations)', () => {
+  it('startReconciliation_posts_E9_no_body_and_invalidates_plan: POST /api/plans/{id}/start-reconciliation with NO body; success invalidates planTags → getCurrentPlan refetches into RECONCILING', async () => {
+    vi.stubEnv('VITE_AUTH_MODE', 'demo');
+    setDemoAuthHeaderApplier((h) => h.set('X-Demo-Employee-Id', 'ic'));
+    let currentCalls = 0;
+    let postRequest: Request | undefined;
+    const locked = {
+      ...PLAN,
+      state: 'LOCKED' as const,
+      allowedActions: ['START_RECONCILIATION'] as AllowedAction[],
+    };
+    const reconciling = {
+      ...PLAN,
+      state: 'RECONCILING' as const,
+      allowedActions: ['CLOSE_RECONCILIATION'] as AllowedAction[],
+    };
+    const fetchMock = vi.fn(async (input: Request) => {
+      const { url, method } = input;
+      if (url.includes('/api/plans/current')) {
+        currentCalls += 1;
+        return jsonResponse(currentCalls === 1 ? locked : reconciling);
+      }
+      if (
+        method === 'POST' &&
+        /\/plans\/plan-1\/start-reconciliation$/.test(url)
+      ) {
+        postRequest = input;
+        return jsonResponse(reconciling);
+      }
+      throw new Error(`unexpected ${method} ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const store = makeStore();
+    const select = () =>
+      plansApi.endpoints.getCurrentPlan.select()(store.getState());
+
+    const sub = store.dispatch(plansApi.endpoints.getCurrentPlan.initiate());
+    await sub;
+    expect(select().data?.state).toBe('LOCKED');
+
+    await store.dispatch(
+      plansApi.endpoints.startReconciliation.initiate('plan-1'),
+    );
+
+    // E9 is a no-body POST (the lifecycle transition carries no payload).
+    expect(postRequest?.method).toBe('POST');
+    expect(postRequest?.body).toBeNull();
+    // Success invalidated the plan tag → the current-plan query refetched.
+    await waitFor(() => expect(select().data?.state).toBe('RECONCILING'));
+    expect(currentCalls).toBe(2);
+    sub.unsubscribe();
+  });
+
+  it('closeReconciliation_posts_E10_and_surfaces_unplanned_missing_link: success POSTs /close-reconciliation (no body) + invalidates; a 422 UNPLANNED_MISSING_LINK_AT_CLOSE parses to safeMessage with no detail/traceId leak', async () => {
+    vi.stubEnv('VITE_AUTH_MODE', 'demo');
+    setDemoAuthHeaderApplier((h) => h.set('X-Demo-Employee-Id', 'ic'));
+
+    // Success path: close → invalidate → refetch into RECONCILED.
+    let currentCalls = 0;
+    let postRequest: Request | undefined;
+    const reconciling = {
+      ...PLAN,
+      state: 'RECONCILING' as const,
+      allowedActions: ['CLOSE_RECONCILIATION'] as AllowedAction[],
+    };
+    const reconciled = {
+      ...PLAN,
+      state: 'RECONCILED' as const,
+      allowedActions: [] as AllowedAction[],
+    };
+    const okFetch = vi.fn(async (input: Request) => {
+      const { url, method } = input;
+      if (url.includes('/api/plans/current')) {
+        currentCalls += 1;
+        return jsonResponse(currentCalls === 1 ? reconciling : reconciled);
+      }
+      if (
+        method === 'POST' &&
+        /\/plans\/plan-1\/close-reconciliation$/.test(url)
+      ) {
+        postRequest = input;
+        return jsonResponse(reconciled);
+      }
+      throw new Error(`unexpected ${method} ${url}`);
+    });
+    vi.stubGlobal('fetch', okFetch);
+    const store = makeStore();
+    const select = () =>
+      plansApi.endpoints.getCurrentPlan.select()(store.getState());
+    const sub = store.dispatch(plansApi.endpoints.getCurrentPlan.initiate());
+    await sub;
+    await store.dispatch(
+      plansApi.endpoints.closeReconciliation.initiate('plan-1'),
+    );
+    expect(postRequest?.method).toBe('POST');
+    expect(postRequest?.body).toBeNull();
+    await waitFor(() => expect(select().data?.state).toBe('RECONCILED'));
+    sub.unsubscribe();
+
+    // Error path: a 422 UNPLANNED_MISSING_LINK_AT_CLOSE surfaces safeMessage only.
+    const errFetch = vi.fn(async () =>
+      problemResponse(
+        {
+          safeMessage: 'Link every unplanned commitment before closing.',
+          code: 'UNPLANNED_MISSING_LINK_AT_CLOSE',
+          detail: 'commitment u-1 missing SO on plan-1',
+          traceId: '00-close-01',
+        },
+        422,
+      ),
+    );
+    vi.stubGlobal('fetch', errFetch);
+    const store2 = makeStore();
+    const result = await store2.dispatch(
+      plansApi.endpoints.closeReconciliation.initiate('plan-1'),
+    );
+    const err = (result as { error?: { safeMessage?: string; code?: string } })
+      .error;
+    expect(err?.code).toBe('UNPLANNED_MISSING_LINK_AT_CLOSE');
+    expect(err?.safeMessage).toBe(
+      'Link every unplanned commitment before closing.',
+    );
+    expect(JSON.stringify(err)).not.toMatch(/missing SO|close-01/);
+  });
+
+  it('lifecycle_mutations_invalidate_nothing_on_error: a failed start AND a failed close invalidate nothing → no refetch (error ? [] : tags guard, LESSONS §10)', async () => {
+    vi.stubEnv('VITE_AUTH_MODE', 'demo');
+    setDemoAuthHeaderApplier((h) => h.set('X-Demo-Employee-Id', 'ic'));
+    let currentCalls = 0;
+    const locked = {
+      ...PLAN,
+      state: 'LOCKED' as const,
+      allowedActions: ['START_RECONCILIATION'] as AllowedAction[],
+    };
+    const fetchMock = vi.fn(async (input: Request) => {
+      const { url, method } = input;
+      if (url.includes('/api/plans/current')) {
+        currentCalls += 1;
+        return jsonResponse(locked);
+      }
+      if (method === 'POST') {
+        return problemResponse(
+          { safeMessage: 'Not allowed.', code: 'ILLEGAL_STATE_TRANSITION' },
+          409,
+        );
+      }
+      throw new Error(`unexpected ${method} ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const store = makeStore();
+    const sub = store.dispatch(plansApi.endpoints.getCurrentPlan.initiate());
+    await sub;
+    expect(currentCalls).toBe(1);
+
+    await store.dispatch(
+      plansApi.endpoints.startReconciliation.initiate('plan-1'),
+    );
+    await store.dispatch(
+      plansApi.endpoints.closeReconciliation.initiate('plan-1'),
+    );
+
+    // Neither failed mutation invalidated → the current-plan query never refetched.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(currentCalls).toBe(1);
     sub.unsubscribe();
   });
 });

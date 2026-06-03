@@ -1,18 +1,62 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { WeeklyPlanView } from './WeeklyPlanView';
-import { useGetCurrentPlanQuery, useLockPlanMutation } from './plansApi';
-import type { WeeklyPlanDto } from '../../shared/lib/dtos';
+import {
+  useGetCurrentPlanQuery,
+  useLockPlanMutation,
+  useStartReconciliationMutation,
+  useCloseReconciliationMutation,
+} from './plansApi';
+import {
+  useCarryForwardMutation,
+  useUpdateCommitmentMutation,
+  useCreateCommitmentMutation,
+  useAddUnplannedCommitmentMutation,
+} from '../commitment/commitmentsApi';
+import type { WeeklyPlanDto, WeeklyCommitmentDto } from '../../shared/lib/dtos';
 
 vi.mock('./plansApi');
+vi.mock('../commitment/commitmentsApi');
+// The unplanned CommitmentForm (ADD_UNPLANNED toggle) mounts the RCDO picker,
+// which owns its own query hook — stub it so the view test stays store-free.
+vi.mock('../rcdo/SupportingOutcomePicker', () => ({
+  SupportingOutcomePicker: () => <div data-testid="so-picker" />,
+}));
+
+function tuple() {
+  return [vi.fn(), { isLoading: false, reset: vi.fn() }] as unknown as never;
+}
 
 beforeEach(() => {
-  // WeeklyPlanView renders PlanLifecycleBar→LockButton (useLockPlanMutation).
-  vi.mocked(useLockPlanMutation).mockReturnValue([
-    vi.fn(),
-    { isLoading: false, reset: vi.fn() },
-  ] as unknown as ReturnType<typeof useLockPlanMutation>);
+  // WeeklyPlanView mounts PlanLifecycleBar (lock/start/close), CommitmentList's
+  // per-row CarryForwardButton/ReconciliationOutcomeForm, and CommitmentForm.
+  vi.mocked(useLockPlanMutation).mockReturnValue(tuple());
+  vi.mocked(useStartReconciliationMutation).mockReturnValue(tuple());
+  vi.mocked(useCloseReconciliationMutation).mockReturnValue(tuple());
+  vi.mocked(useCarryForwardMutation).mockReturnValue(tuple());
+  vi.mocked(useUpdateCommitmentMutation).mockReturnValue(tuple());
+  vi.mocked(useCreateCommitmentMutation).mockReturnValue(tuple());
+  vi.mocked(useAddUnplannedCommitmentMutation).mockReturnValue(tuple());
 });
+
+function commitment(
+  overrides: Partial<WeeklyCommitmentDto> & { id: string },
+): WeeklyCommitmentDto {
+  return {
+    weeklyPlanId: 'plan-1',
+    commitmentKind: 'PLANNED',
+    title: `Commitment ${overrides.id}`,
+    priority: 'P1',
+    workType: 'STRATEGIC',
+    confidence: 'HIGH',
+    alignmentStatus: 'ALIGNED',
+    hasUnresolvedDispute: false,
+    allowedActions: [],
+    version: 0,
+    ...overrides,
+  };
+}
 
 function plan(overrides: Partial<WeeklyPlanDto> = {}): WeeklyPlanDto {
   return {
@@ -24,21 +68,7 @@ function plan(overrides: Partial<WeeklyPlanDto> = {}): WeeklyPlanDto {
     state: 'DRAFT',
     plannedCount: 1,
     unplannedCount: 0,
-    commitments: [
-      {
-        id: 'c-1',
-        weeklyPlanId: 'plan-1',
-        commitmentKind: 'PLANNED',
-        title: 'Ship onboarding',
-        priority: 'P1',
-        workType: 'STRATEGIC',
-        confidence: 'HIGH',
-        alignmentStatus: 'ALIGNED',
-        hasUnresolvedDispute: false,
-        allowedActions: [],
-        version: 0,
-      },
-    ],
+    commitments: [commitment({ id: 'c-1', title: 'Ship onboarding' })],
     managerReview: null,
     allowedActions: ['LOCK'],
     version: 1,
@@ -90,5 +120,65 @@ describe('WeeklyPlanView (IC workspace — getCurrentPlan view-states, §7)', ()
     mockQuery({ data: plan() });
     rerender(<WeeklyPlanView />);
     expect(screen.getByText('Ship onboarding')).toBeInTheDocument();
+  });
+
+  it('reconciling_plan_surfaces_outcome_and_carryforward_affordances: in RECONCILING the view mounts BOTH the carry-forward control AND the outcome form for an unresolved CARRY_FORWARD commitment; in DRAFT it mounts neither', () => {
+    mockQuery({
+      data: plan({
+        state: 'RECONCILING',
+        allowedActions: [],
+        commitments: [
+          commitment({
+            id: 'c-1',
+            title: 'Carry me over',
+            allowedActions: ['CARRY_FORWARD'],
+          }),
+        ],
+      }),
+    });
+    const { rerender } = render(<WeeklyPlanView />);
+
+    // The carry-forward affordance (CarryForwardButton) is reachable.
+    expect(
+      screen.getByRole('button', { name: /carry forward/i }),
+    ).toBeInTheDocument();
+    // The outcome form (ReconciliationOutcomeForm's labelled select) is reachable.
+    expect(screen.getByLabelText(/outcome/i)).toBeInTheDocument();
+
+    // DRAFT → no reconciliation affordances.
+    mockQuery({ data: plan({ state: 'DRAFT' }) });
+    rerender(<WeeklyPlanView />);
+    expect(screen.queryByRole('button', { name: /carry forward/i })).toBeNull();
+    expect(screen.queryByLabelText(/outcome/i)).toBeNull();
+  });
+
+  it('add_unplanned_toggle_reveals_the_unplanned_commitment_form: when ADD_UNPLANNED is allowed, the lifecycle bar exposes the toggle and clicking it mounts the unplanned CommitmentForm (E11)', async () => {
+    const user = userEvent.setup();
+    mockQuery({
+      data: plan({
+        state: 'RECONCILING',
+        allowedActions: ['ADD_UNPLANNED'],
+        commitments: [
+          commitment({
+            id: 'c-1',
+            title: 'Already recorded',
+            reconciliationOutcome: 'COMPLETED',
+          }),
+        ],
+      }),
+    });
+    render(<WeeklyPlanView />);
+
+    // The unplanned form is not mounted until the toggle is clicked.
+    expect(
+      screen.queryByRole('button', { name: /add unplanned commitment/i }),
+    ).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: /^add unplanned$/i }));
+
+    // The unplanned CommitmentForm (its distinct submit) is now mounted.
+    expect(
+      screen.getByRole('button', { name: /add unplanned commitment/i }),
+    ).toBeInTheDocument();
   });
 });

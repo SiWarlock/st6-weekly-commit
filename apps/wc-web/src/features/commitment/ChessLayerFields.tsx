@@ -76,10 +76,16 @@ export function ChessLayerFields({
   value,
   onChange,
   planState,
+  hideWorkType = false,
 }: {
   value: ChessValue;
   onChange: (patch: Partial<ChessValue>) => void;
   planState: PlanState;
+  /**
+   * Unplanned mode (E11): omit the WorkType field — the server forces
+   * `workType=UNPLANNED`, so there is nothing to choose.
+   */
+  hideWorkType?: boolean;
 }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2">
@@ -90,13 +96,15 @@ export function ChessLayerFields({
         options={PRIORITIES}
         onChange={(v) => onChange({ priority: v as Priority })}
       />
-      <Select
-        id="commitment-work-type"
-        label="Work type"
-        value={value.workType}
-        options={PLANNED_WORK_TYPES}
-        onChange={(v) => onChange({ workType: v as WorkType })}
-      />
+      {hideWorkType ? null : (
+        <Select
+          id="commitment-work-type"
+          label="Work type"
+          value={value.workType}
+          options={PLANNED_WORK_TYPES}
+          onChange={(v) => onChange({ workType: v as WorkType })}
+        />
+      )}
       <Select
         id="commitment-confidence"
         label="Confidence"
