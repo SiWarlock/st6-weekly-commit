@@ -28,6 +28,8 @@ import org.springframework.web.bind.annotation.RestController;
  *       (owner-only, plan {@code LOCKED}/{@code RECONCILING}, server-forced kind/work-type);
  *   <li>{@code PATCH /api/commitments/{id}} (E6) → 200 updated DTO (owner-only, DRAFT-gated
  *       baseline + read-only {@code alignmentStatus} post-lock + RECONCILING outcome recording);
+ *   <li>{@code POST /api/commitments/{id}/carry-forward} (E12) → 201 next-week successor DTO
+ *       (owner-only, plan {@code RECONCILING}, no body, idempotent per source);
  *   <li>{@code DELETE /api/commitments/{id}} (E7) → 204 (owner-only, DRAFT-only).
  * </ul>
  */
@@ -35,9 +37,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class CommitmentController {
 
   private final CommitmentService commitmentService;
+  private final CarryForwardService carryForwardService;
 
-  public CommitmentController(CommitmentService commitmentService) {
+  public CommitmentController(
+      CommitmentService commitmentService, CarryForwardService carryForwardService) {
     this.commitmentService = commitmentService;
+    this.carryForwardService = carryForwardService;
   }
 
   @PostMapping("/api/plans/{id}/commitments")
@@ -56,6 +61,15 @@ public class CommitmentController {
       @PathVariable("id") UUID planId,
       @Valid @RequestBody CreateUnplannedCommitmentRequest request) {
     return commitmentService.createUnplanned(principal, planId, request);
+  }
+
+  @PostMapping("/api/commitments/{id}/carry-forward")
+  @ResponseStatus(HttpStatus.CREATED)
+  public WeeklyCommitmentDto carryForward(
+      @AuthenticationPrincipal UserPrincipal principal, @PathVariable("id") UUID commitmentId) {
+    // No body (B.6 E12) + idempotent per source; the service authorizes owner-only first, then
+    // sets the source CARRIED_FORWARD + creates/links the next-week successor.
+    return carryForwardService.carryForward(principal, commitmentId);
   }
 
   @PatchMapping("/api/commitments/{id}")
