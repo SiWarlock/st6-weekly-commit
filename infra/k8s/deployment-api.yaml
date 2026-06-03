@@ -1,0 +1,89 @@
+# deployment-api.yaml — wc-api Deployment (§12, Appendix D.2, REQ-NF-007).
+# Runs as the wc-api SA (IRSA: sns:Publish + GetSecretValue db/auth0/graph). Pod label
+# `app: wc-api` MUST match the 12.8 service-api selector (else the Service has no
+# endpoints — the 12.8↔12.9 carry-forward contract). Secret values are CSI files at
+# /mnt/secrets (the wc-api-secrets SPC), NEVER env; only non-secret config is plain env.
+# spring.flyway.enabled=false — the API never migrates (forbidden-pattern #3; migration
+# Job is the sole schema owner). Liveness/readiness actuator probes (impl in 13.3 —
+# inert until the image ships them). Image ref injected at deploy via ${ECR_API_IMAGE}
+# (= ecr_api_repo_url:IMAGE_TAG) + allowlisted CI envsubst (LESSONS §14).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wc-api
+  namespace: wc
+  labels:
+    app: wc-api
+    app.kubernetes.io/part-of: wc
+    app.kubernetes.io/component: api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: wc-api
+  template:
+    metadata:
+      labels:
+        app: wc-api
+        app.kubernetes.io/part-of: wc
+        app.kubernetes.io/component: api
+    spec:
+      serviceAccountName: wc-api
+      containers:
+        - name: wc-api
+          image: ${ECR_API_IMAGE}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "aws"
+            - name: SPRING_FLYWAY_ENABLED
+              value: "false"
+            - name: ROOT_DOMAIN
+              value: "${ROOT_DOMAIN}"
+            - name: AWS_REGION
+              value: "${AWS_REGION}"
+            - name: DEMO_AUTH_ENABLED
+              value: "false"
+            - name: ORG_TIMEZONE
+              value: "America/Chicago"
+            - name: GRAPH_MODE
+              value: "demo-success"
+            - name: SNS_TOPIC_ARN
+              value: "${SNS_TOPIC_ARN}"
+            - name: CORS_ALLOWED_ORIGINS
+              value: "https://wc.${ROOT_DOMAIN}"
+            - name: WC_FRONTEND_BASE_URL
+              value: "https://wc.${ROOT_DOMAIN}"
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: secrets-store
+              mountPath: /mnt/secrets
+              readOnly: true
+      volumes:
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: wc-api-secrets

@@ -1,0 +1,273 @@
+# deploy.yml — ST6 Weekly Commit deploy pipeline (ARCHITECTURE.md §13/§12, 12.11).
+#
+# OIDC-federated, NO long-lived AWS keys (REQ-S-010/RISK-016): the deploy job assumes
+# the hardened 12.7c CI deploy role (vars.AWS_DEPLOY_ROLE_ARN) via a short-lived OIDC
+# token. The role's trust is env-scoped to `repo:<owner/repo>:environment:production`
+# (Decision 1) — so EVERY AWS-touching step must run under the GitHub `production`
+# Environment. All AWS work is therefore consolidated into ONE `environment: production`
+# job (build+push, apply, kubectl, S3/CloudFront, smoke): one reviewer approval, one OIDC
+# assumption under the production subject. `gates` (no AWS) stays a separate job.
+#
+# Ordered chain (job `needs` + in-job step order make an out-of-order path unreachable):
+#   gates -> deploy[ build+push wc-api/wc-sync-worker (SHA-tagged) -> terraform apply
+#   (installs the 12.2b CSI driver/ASCP/external-dns add-ons BEFORE any kubectl — §17) ->
+#   update-kubeconfig -> envsubst the TF outputs into infra/k8s/* (15-token allowlist,
+#   LESSONS §14) -> apply ns/SAs/SPCs -> apply migration Job + `kubectl wait` (sole schema
+#   owner, §12) -> roll api/worker/cron + service/ingress -> build wc-web + s3 sync +
+#   CloudFront invalidation -> deployed smoke (REQ-E-006) ].
+#
+# CROSS-TEAM FORWARD-DEPS (st6-main): the gate/build/Dockerfile/Compose targets below are
+# the EXPECTED interface — this workflow orchestrates them; st6-main authors them. The
+# job-perf-seed Job is deliberately NOT applied (opt-in, off the deploy chain, F.6).
+# Author + actionlint only; the real run is HITL (AWS account + `production` Environment
+# + st6-main's built app + the deploy runbook prereqs).
+
+name: deploy
+
+on:
+  workflow_dispatch: {}
+  push:
+    tags:
+      - "release-*"
+
+# Least-privilege token: OIDC for AWS, read the repo. No write scopes.
+permissions:
+  id-token: write
+  contents: read
+
+# Never overlap a production deploy with itself.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  # 1) Gates — lint / type / unit / coverage / static-analysis / local E2E. No AWS creds,
+  #    no environment (runs on every trigger). Targets are forward-deps on st6-main's app
+  #    modules (root CLAUDE.md tech stack).
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # Backend gates (Gradle multi-module): format, unit tests, JaCoCo >=80%/module,
+      # SpotBugs. Testcontainers needs Docker (present on ubuntu-latest).
+      - name: Backend gates (Spotless / test / JaCoCo / SpotBugs)
+        working-directory: apps/wc-api
+        run: ./gradlew --no-daemon spotlessCheck test jacocoTestCoverageVerification spotbugsMain
+
+      - name: Frontend install
+        run: yarn install --frozen-lockfile
+
+      - name: Frontend gates (lint / prettier / unit)
+        run: |
+          yarn prettier --check .
+          yarn nx run-many -t lint test
+
+      # Local Cypress/Cucumber E2E against Docker Compose (NOT the deployed domains).
+      - name: E2E (Cypress/Cucumber vs Docker Compose)
+        run: yarn nx e2e wc-e2e
+
+  # 2) Deploy — ALL AWS-touching work in one `environment: production` job (the env-scoped
+  #    OIDC trust requires it). Reviewer-gated. build+push -> terraform apply -> kubectl,
+  #    in the §12 order.
+  deploy:
+    needs: gates
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      ROOT_DOMAIN: ${{ vars.ROOT_DOMAIN }}
+      IMAGE_TAG: ${{ github.sha }}
+      # Terraform input vars (no defaults — supplied here; never hardcoded in source).
+      TF_VAR_ROOT_DOMAIN: ${{ vars.ROOT_DOMAIN }}
+      TF_VAR_region: ${{ vars.AWS_REGION }}
+      TF_VAR_github_repo: ${{ github.repository }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # Build + push the two app images, tagged the commit SHA (§13). The CronJob +
+      # migration Job reuse the wc-api image (no third image). ECR repo names are the
+      # fixed for_each keys from infra/terraform/ecr.tf.
+      - name: Log in to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push images
+        env:
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+        run: |
+          set -euo pipefail
+          docker build -f apps/wc-api/Dockerfile -t "${REGISTRY}/wc-api:${IMAGE_TAG}" .
+          docker push "${REGISTRY}/wc-api:${IMAGE_TAG}"
+          docker build -f apps/wc-api/worker/Dockerfile -t "${REGISTRY}/wc-sync-worker:${IMAGE_TAG}" .
+          docker push "${REGISTRY}/wc-sync-worker:${IMAGE_TAG}"
+
+      # (a) Terraform init (S3 + DynamoDB remote state) -> plan -> apply. This installs the
+      #     12.2b cluster add-ons (CSI driver + ASCP + external-dns) BEFORE any kubectl, so
+      #     the SecretProviderClass CRD + driver exist when the pods mount (§17).
+      - name: Terraform apply
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          TF_STATE_LOCK_TABLE: ${{ vars.TF_STATE_LOCK_TABLE }}
+        run: |
+          set -euo pipefail
+          terraform -chdir=infra/terraform init \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=wc/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="dynamodb_table=${TF_STATE_LOCK_TABLE}" \
+            -backend-config="encrypt=true"
+          terraform -chdir=infra/terraform plan -out=tfplan
+          terraform -chdir=infra/terraform apply -auto-approve tfplan
+
+      # (b) Point kubectl at the cluster via the CI EKS access entry (12.7c).
+      - name: Update kubeconfig
+        run: |
+          set -euo pipefail
+          CLUSTER_NAME=$(terraform -chdir=infra/terraform output -raw cluster_name)
+          aws eks update-kubeconfig --name "${CLUSTER_NAME}" --region "${AWS_REGION}"
+
+      # (c) Render the manifests: substitute the TF outputs into infra/k8s/* via an
+      #     ALLOWLISTED envsubst (only these 15 tokens — LESSONS §14). job-perf-seed is
+      #     deliberately excluded (opt-in, off the deploy chain).
+      - name: Render manifests (envsubst, allowlisted)
+        run: |
+          set -euo pipefail
+          cd infra/terraform
+          ALB_CERT_ARN=$(terraform output -raw alb_cert_arn)
+          AUTH0_SECRET_ARN=$(terraform output -raw auth0_secret_arn)
+          DB_SECRET_ARN=$(terraform output -raw db_secret_arn)
+          GRAPH_SECRET_ARN=$(terraform output -raw graph_secret_arn)
+          IRSA_API_ROLE_ARN=$(terraform output -raw irsa_api_role_arn)
+          IRSA_WORKER_ROLE_ARN=$(terraform output -raw irsa_worker_role_arn)
+          IRSA_CRONJOB_ROLE_ARN=$(terraform output -raw irsa_cronjob_role_arn)
+          IRSA_MIGRATION_ROLE_ARN=$(terraform output -raw irsa_migration_role_arn)
+          SNS_TOPIC_ARN=$(terraform output -raw sns_topic_arn)
+          SQS_QUEUE_URL=$(terraform output -raw sqs_queue_url)
+          SQS_DLQ_URL=$(terraform output -raw sqs_dlq_url)
+          ECR_API_IMAGE="$(terraform output -raw ecr_api_repo_url):${IMAGE_TAG}"
+          ECR_WORKER_IMAGE="$(terraform output -raw ecr_worker_repo_url):${IMAGE_TAG}"
+          export ALB_CERT_ARN AUTH0_SECRET_ARN DB_SECRET_ARN GRAPH_SECRET_ARN \
+            IRSA_API_ROLE_ARN IRSA_WORKER_ROLE_ARN IRSA_CRONJOB_ROLE_ARN \
+            IRSA_MIGRATION_ROLE_ARN SNS_TOPIC_ARN SQS_QUEUE_URL SQS_DLQ_URL \
+            ECR_API_IMAGE ECR_WORKER_IMAGE ROOT_DOMAIN AWS_REGION
+          cd "${GITHUB_WORKSPACE}"
+          # The allowlist intentionally holds LITERAL $VAR tokens (un-expanded) — envsubst
+          # substitutes only these 15; literal-$ is the whole point here.
+          # shellcheck disable=SC2016
+          allow='$ALB_CERT_ARN $AUTH0_SECRET_ARN $AWS_REGION $DB_SECRET_ARN $ECR_API_IMAGE $ECR_WORKER_IMAGE $GRAPH_SECRET_ARN $IRSA_API_ROLE_ARN $IRSA_CRONJOB_ROLE_ARN $IRSA_MIGRATION_ROLE_ARN $IRSA_WORKER_ROLE_ARN $ROOT_DOMAIN $SNS_TOPIC_ARN $SQS_DLQ_URL $SQS_QUEUE_URL'
+          mkdir -p rendered
+          for f in namespace serviceaccount-api serviceaccount-worker serviceaccount-cronjob \
+                   serviceaccount-migration secretproviderclass service-api ingress-api \
+                   deployment-api deployment-worker cronjob-generation job-migration; do
+            envsubst "${allow}" < "infra/k8s/${f}.yaml" > "rendered/${f}.yaml"
+          done
+
+      # (d) Apply namespace + SAs + SPCs, then the migration Job, and WAIT for it to
+      #     complete BEFORE any Deployment/CronJob roll (§12 — sole schema owner first).
+      - name: Apply base + run migration Job (fail-fast wait)
+        run: |
+          set -euo pipefail
+          kubectl apply -f rendered/namespace.yaml
+          kubectl apply \
+            -f rendered/serviceaccount-api.yaml \
+            -f rendered/serviceaccount-worker.yaml \
+            -f rendered/serviceaccount-cronjob.yaml \
+            -f rendered/serviceaccount-migration.yaml \
+            -f rendered/secretproviderclass.yaml
+          # H1 (12-audit): delete any prior completed migration Job first — a Job's
+          # spec.template is immutable, so re-applying the fixed-name Job with a new image
+          # SHA on deploy #2+ fails "field is immutable". Delete-then-apply is clean.
+          kubectl delete job/wc-migration -n wc --ignore-not-found
+          kubectl apply -f rendered/job-migration.yaml
+          # L1 (12-audit): fail-fast — poll BOTH terminal conditions so a Failed migration
+          # aborts the deploy promptly (with logs) instead of blocking the full 600s
+          # --for=condition=complete timeout. Migrate-before-roll ordering is preserved:
+          # this step must exit 0 before step (e) rolls the Deployments.
+          deadline=$((SECONDS + 600))
+          while true; do
+            if kubectl get job/wc-migration -n wc \
+                 -o 'jsonpath={.status.conditions[?(@.type=="Complete")].status}' 2>/dev/null | grep -q True; then
+              echo "migration Job complete"
+              break
+            fi
+            if kubectl get job/wc-migration -n wc \
+                 -o 'jsonpath={.status.conditions[?(@.type=="Failed")].status}' 2>/dev/null | grep -q True; then
+              echo "migration Job FAILED"
+              kubectl logs -n wc job/wc-migration --tail=50 || true
+              exit 1
+            fi
+            if [ "${SECONDS}" -ge "${deadline}" ]; then
+              echo "migration Job timed out after 600s"
+              exit 1
+            fi
+            sleep 5
+          done
+
+      # (e) Roll api/worker/cron + service/ingress (only after the migration completed).
+      - name: Roll Deployments + CronJob + Service + Ingress
+        run: |
+          set -euo pipefail
+          kubectl apply \
+            -f rendered/service-api.yaml \
+            -f rendered/ingress-api.yaml \
+            -f rendered/deployment-api.yaml \
+            -f rendered/deployment-worker.yaml \
+            -f rendered/cronjob-generation.yaml
+          kubectl rollout status deployment/wc-api -n wc --timeout=300s
+          kubectl rollout status deployment/wc-worker -n wc --timeout=300s
+
+      # (f) Build the SPA (build-time Vite env, D.1) -> sync to S3 -> invalidate CloudFront.
+      - name: Build + publish wc-web
+        env:
+          VITE_AUTH_MODE: auth0
+          VITE_API_BASE_URL: https://api.wc.${{ vars.ROOT_DOMAIN }}
+        run: |
+          set -euo pipefail
+          yarn install --frozen-lockfile
+          yarn nx build wc-web
+          BUCKET=$(terraform -chdir=infra/terraform output -raw s3_assets_bucket_name)
+          DIST_ID=$(terraform -chdir=infra/terraform output -raw cloudfront_distribution_id)
+          aws s3 sync apps/wc-web/dist "s3://${BUCKET}/" --delete
+          aws cloudfront create-invalidation --distribution-id "${DIST_ID}" --paths "/*"
+
+      # (g) Deployed smoke (REQ-E-006): the SPA serves + the API readiness probe answers
+      #     200 over ACM TLS on the custom domains. Self-contained curl (no apps/** edit);
+      #     the richer Cypress smoke subset is st6-main's territory (cross-team carry-forward).
+      - name: Deployed smoke (REQ-E-006)
+        run: |
+          set -euo pipefail
+          echo "Smoke: API readiness over ACM TLS"
+          curl -fsS --retry 5 --retry-delay 15 --retry-all-errors \
+            "https://api.wc.${ROOT_DOMAIN}/actuator/health/readiness"
+          echo "Smoke: SPA root over ACM TLS"
+          curl -fsS --retry 5 --retry-delay 15 --retry-all-errors \
+            "https://wc.${ROOT_DOMAIN}" > /dev/null
+          echo "Deployed smoke passed."

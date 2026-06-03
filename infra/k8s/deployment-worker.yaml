@@ -1,0 +1,83 @@
+# deployment-worker.yaml — wc-sync-worker Deployment (§12, Appendix D.3, REQ-NF-007).
+# Runs as the wc-worker SA (IRSA: sqs Receive/Delete/GetQueueAttributes + GetSecretValue
+# GRAPH ONLY). Mounts the wc-worker-secrets SPC (graph secret only) at /mnt/secrets.
+# spring.flyway.enabled=false — the worker never migrates (forbidden-pattern #3).
+# NO Auth0 / SNS / CORS / timezone config — the worker carries no user request (SYSTEM
+# principal) and consumes only pointer payloads (§D.3 note). Actuator probes (13.3).
+# Image ref via ${ECR_WORKER_IMAGE} (= ecr_worker_repo_url:IMAGE_TAG) + CI envsubst.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wc-worker
+  namespace: wc
+  labels:
+    app: wc-worker
+    app.kubernetes.io/part-of: wc
+    app.kubernetes.io/component: worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wc-worker
+  template:
+    metadata:
+      labels:
+        app: wc-worker
+        app.kubernetes.io/part-of: wc
+        app.kubernetes.io/component: worker
+    spec:
+      serviceAccountName: wc-worker
+      containers:
+        - name: wc-sync-worker
+          image: ${ECR_WORKER_IMAGE}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "aws"
+            - name: SPRING_FLYWAY_ENABLED
+              value: "false"
+            - name: ROOT_DOMAIN
+              value: "${ROOT_DOMAIN}"
+            - name: AWS_REGION
+              value: "${AWS_REGION}"
+            - name: SQS_QUEUE_URL
+              value: "${SQS_QUEUE_URL}"
+            - name: SQS_DLQ_URL
+              value: "${SQS_DLQ_URL}"
+            - name: GRAPH_MODE
+              value: "demo-success"
+            - name: WC_FRONTEND_BASE_URL
+              value: "https://wc.${ROOT_DOMAIN}"
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: secrets-store
+              mountPath: /mnt/secrets
+              readOnly: true
+      volumes:
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: wc-worker-secrets

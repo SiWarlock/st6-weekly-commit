@@ -1,0 +1,20 @@
+# service-api.yaml — ClusterIP fronting wc-api; the ALB (ingress-api.yaml, target-type
+# ip) routes to it. Selector `app: wc-api` is the contract the 12.9 deployment-api pod
+# template MUST carry. wc-api listens on 8080 (Appendix D.2); the Service exposes :80.
+apiVersion: v1
+kind: Service
+metadata:
+  name: wc-api
+  namespace: wc
+  labels:
+    app.kubernetes.io/part-of: wc
+    app.kubernetes.io/component: api
+spec:
+  type: ClusterIP
+  selector:
+    app: wc-api
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 8080

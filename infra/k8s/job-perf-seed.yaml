@@ -1,0 +1,59 @@
+# job-perf-seed.yaml — OPT-IN synthetic perf seed (REQ-D-008, Appendix F.6).
+# ███ NOT PART OF THE NORMAL DEPLOY CHAIN ███ — the 12.11 pipeline excludes this Job;
+# it is applied manually/on-demand for perf testing only. Writes ~2,000 synthetic
+# records to an isolated perf+<n>@st6demo.com namespace; teardown is a scoped DELETE.
+# Reuses the wc-api IMAGE (no third image — forbidden-pattern #5) with arg
+# --app.job=generate-perf-seed. Distinct from the flyway-migrate migration Job:
+# spring.flyway.enabled=false (it seeds data, it does NOT migrate schema). Runs as the
+# wc-migration SA (db-only IRSA — already least-privilege for a one-shot DB writer;
+# reused rather than minting a new SA/IRSA, which would need a 12.7b/12.8 re-touch).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: wc-perf-seed
+  namespace: wc
+  labels:
+    app.kubernetes.io/part-of: wc
+    app.kubernetes.io/component: perf-seed
+  annotations:
+    wc.st6/opt-in: "true"
+    wc.st6/excluded-from-deploy: "true"
+spec:
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: wc
+        app.kubernetes.io/component: perf-seed
+    spec:
+      serviceAccountName: wc-migration
+      restartPolicy: Never
+      containers:
+        - name: wc-perf-seed
+          image: ${ECR_API_IMAGE}
+          args:
+            - "--app.job=generate-perf-seed"
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "aws,generation"
+            - name: SPRING_FLYWAY_ENABLED
+              value: "false"
+            - name: AWS_REGION
+              value: "${AWS_REGION}"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: secrets-store
+              mountPath: /mnt/secrets
+              readOnly: true
+      volumes:
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: wc-migration-secrets

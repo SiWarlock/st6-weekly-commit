@@ -1,0 +1,54 @@
+# job-migration.yaml — pre-deploy Flyway migration Job (§12, Appendix D.5).
+# THE SOLE SCHEMA OWNER: this is the ONLY workload with spring.flyway.enabled=true
+# (forbidden-pattern #3, §12 race resolution). Reuses the wc-api IMAGE (no third image —
+# forbidden-pattern #5) in the flyway-migrate profile. Runs as wc-migration SA (IRSA:
+# GetSecretValue DB ONLY); mounts wc-migration-secrets (db only) at /mnt/secrets.
+# NO Auth0 / Graph / SNS / SQS / CORS / timezone — schema + RCDO/demo seed only; app
+# services do not start in this profile. restartPolicy Never + finite backoffLimit.
+# §12 ORDERING (migrate-before-deploy) is enforced by the 12.11 pipeline wait-gate
+# (kubectl wait --for=condition=complete job/wc-migration), NOT by this manifest.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: wc-migration
+  namespace: wc
+  labels:
+    app.kubernetes.io/part-of: wc
+    app.kubernetes.io/component: migration
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: wc
+        app.kubernetes.io/component: migration
+    spec:
+      serviceAccountName: wc-migration
+      restartPolicy: Never
+      containers:
+        - name: wc-migration
+          image: ${ECR_API_IMAGE}
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "aws,flyway-migrate"
+            - name: SPRING_FLYWAY_ENABLED
+              value: "true"
+            - name: AWS_REGION
+              value: "${AWS_REGION}"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: secrets-store
+              mountPath: /mnt/secrets
+              readOnly: true
+      volumes:
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: wc-migration-secrets

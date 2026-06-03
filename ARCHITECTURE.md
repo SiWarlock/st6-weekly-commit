@@ -206,7 +206,7 @@ Terraform (default region `us-east-1`, overridable) provisions: EKS managed node
 
 ## §13 — CI/CD & local dev runtime
 
-**GitHub Actions** (auth to AWS via **OIDC federation** — `aws-actions/configure-aws-credentials` assuming one least-privilege CI deploy role; **no long-lived keys**, per REQ-S-010/RISK-016): lint/format (ESLint 9, Prettier 3.3, Spotless) → unit tests + coverage (Vitest; JaCoCo ≥80% **per Gradle module** across api/worker/shared) → SpotBugs → **local Cypress/Cucumber E2E** against Compose services → build+push api & worker images to ECR → **run the migration Job** → `terraform plan/apply` → deploy EKS workloads → sync Vite assets to S3 + CloudFront invalidation → **deployed smoke suite** against custom domains. Terraform remote state (S3 backend + DynamoDB lock); `aws eks update-kubeconfig`; CI role mapped via an EKS access entry.
+**GitHub Actions** (auth to AWS via **OIDC federation** — `aws-actions/configure-aws-credentials` assuming one least-privilege CI deploy role; **no long-lived keys**, per REQ-S-010/RISK-016): lint/format (ESLint 9, Prettier 3.3, Spotless) → unit tests + coverage (Vitest; JaCoCo ≥80% **per Gradle module** across api/worker/shared) → SpotBugs → **local Cypress/Cucumber E2E** against Compose services → build+push api & worker images to ECR → `terraform plan/apply` → `aws eks update-kubeconfig` → **run the migration Job (and wait for completion)** → deploy/roll EKS workloads → sync Vite assets to S3 + CloudFront invalidation → **deployed smoke suite** against custom domains. **Order note (Decision 1):** `terraform apply` runs BEFORE the migration Job — apply provisions the cluster + RDS + the cluster add-ons (§17) the Job runs on; the migration Job then completes (gated) before any Deployment/CronJob roll (§12). Terraform remote state (S3 backend + DynamoDB lock); CI role mapped via an EKS access entry.
 
 **Local/CI runtime.** Docker Compose for PostgreSQL + full stack. **Async transport** is profile-switched: the `local/demo` profile, after the API commits the sync-record outbox, invokes the worker consume logic in-process (the durable outbox + pointer payload make this faithful) so worker + Outlook E2E run locally and in CI without live SNS/SQS; deployed AWS uses real SNS/SQS. Backend integration tests use **Testcontainers PostgreSQL** (no H2). Docker-in-CI is required for Testcontainers; ECR image tags = commit SHA.
 
@@ -912,8 +912,9 @@ infra/terraform/
   s3_cloudfront.tf                 # private bucket + OAC + SPA fallback to index.html
   route53_acm.tf                   # wc./api.wc. records; CloudFront cert us-east-1; ALB cert regional
   secrets.tf                       # Secrets Manager: db, auth0, graph, demo
-  iam_irsa.tf                      # per-workload IRSA: api(sns:Publish+GetSecret) worker(sqs+graph) cron(db) migrate(db)
+  iam_irsa.tf                      # per-workload IRSA: api(sns:Publish+GetSecret) worker(sqs+graph) cron(db) migrate(db); external-dns role (kube-system trust)
   cloudwatch.tf
+  addons.tf                        # cluster add-ons via helm_release (kube-system): Secrets Store CSI Driver + ASCP + external-dns (12.2b)
 ```
 
 ### C.7 — `infra/k8s` (EKS manifests)
@@ -932,8 +933,12 @@ infra/k8s/
   job-migration.yaml               # wc-api image, flyway-migrate profile — sole schema owner, pre-deploy
   job-perf-seed.yaml               # opt-in 2,000-record synthetic seed (REQ-D-008); never in normal deploy
   service-api.yaml                 # ClusterIP fronted by ALB
-  ingress-api.yaml                 # ALB; ACM cert; host api.wc.${ROOT_DOMAIN}
+  ingress-api.yaml                 # ALB; ACM cert; host api.wc.${ROOT_DOMAIN}; external-dns hostname annotation (external-dns itself installs via addons.tf helm_release, not a manifest)
 ```
+
+> **Cluster add-ons install via Terraform `helm_release` (`addons.tf`), not manifests (12.2b).** The four cluster controllers — AWS Load Balancer Controller (`eks.tf`), Secrets Store CSI Driver + AWS provider/ASCP, and external-dns — all install as Terraform `helm_release`s in `kube-system` (version-pinned, applied during `terraform apply`, before the app `kubectl apply`). The `infra/k8s/` manifests above are **application workloads only** (namespace, SAs, SecretProviderClasses, Deployments, Jobs, Service, Ingress). Convention: platform controllers → `helm_release`; app workloads → kubectl manifests. (The Secrets Store CSI Driver provides the `SecretProviderClass` CRD + the `secrets-store.csi.k8s.io` driver the SAs/SPCs/pods depend on — a manifest that *uses* a driver does not *install* it.)
+
+> **external-dns (Decision 2, 2026-06-02 — see `docs/decisions/001`).** The `api.wc.${ROOT_DOMAIN}` → ALB alias record cannot be a pure-Terraform record (the ALB is created by the AWS Load Balancer Controller from `ingress-api.yaml` at deploy time, *after* `terraform apply`). It is owned by **external-dns**, installed as a Terraform `helm_release` in `addons.tf` (a cluster add-on in `kube-system`, peer to the ALB controller + the Secrets Store CSI Driver/ASCP — 12.2b), which watches the Ingress's hostname annotation and upserts the Route53 record (`--policy=upsert-only`, txt-registry, `txtOwnerId=wc`). external-dns runs under its own IRSA role (trust `sub system:serviceaccount:kube-system:external-dns`) scoped to **`route53:ChangeResourceRecordSets` + `ListHostedZones`/`ListResourceRecordSets` on the project hosted zone only** (least-privilege), and — per Decision 3 — that role carries the `ci_boundary` permissions boundary like every other Terraform-created role. (The CloudFront `wc.` alias + both ACM certs remain pure-Terraform in `route53_acm.tf`.)
 
 **Cross-doc invariants pinned by this layout:** `enums/` package values mirror Appendix A exactly (`PlanState`, `ReviewStatus`, `DisputeStatus`, `ReconciliationOutcome`, `EventKind`, `SyncStatus`, `RiskBadge`, `CommentTargetType {PLAN,COMMITMENT}`). The CronJob and migration Job reuse the **`wc-api` image** (profiles/args), not separate apps. `SnsLifecyclePublisher` is the **single publish path** for both initial publish and manual retry (§10). `DomainAuthorizationService` is the sole resource authorizer; controllers carry coarse gates only. `PersonaSwitcher`/`DemoIdentityProvider` live **only** under `src/standalone/` and are compiled out of the exposed remote build.
 
