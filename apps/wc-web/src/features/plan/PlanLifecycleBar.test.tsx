@@ -55,16 +55,20 @@ afterEach(() => {
 });
 
 describe('PlanLifecycleBar (state display + allowedActions-driven lifecycle affordances)', () => {
-  it('lifecycle_bar_shows_state_and_lock_affordance: renders the current plan-state badge and the LockButton (enabled while LOCK is allowed)', () => {
+  it('lifecycle_bar_shows_state_and_lock_affordance: conveys the current state via the stepper active node and renders the LockButton (enabled while LOCK is allowed)', () => {
     mockHooks();
 
-    render(<PlanLifecycleBar plan={plan()} />);
+    const { container } = render(<PlanLifecycleBar plan={plan()} />);
 
-    // The current state is shown via the §4.2 StatusBadge (Draft). Scoped to the
-    // badge — the ST.5a stepper also renders a "Draft" node label.
-    expect(
-      document.querySelector('[data-cy="status-badge"]'),
-    ).toHaveTextContent(/draft/i);
+    // ST.7c: state is conveyed by the stepper's ACTIVE node (DRAFT), not an
+    // in-bar StatusBadge — that redundant badge was dropped (the canonical text
+    // indicator lives in WeeklyPlanView's header). No status-badge inside the bar.
+    expect(container.querySelector('[data-cy="status-badge"]')).toBeNull();
+    const active = container.querySelector(
+      '[data-cy="stepper-node"][data-status="active"]',
+    );
+    expect(active).toHaveAttribute('data-state', 'DRAFT');
+    expect(active).toHaveTextContent(/draft/i);
     // The lock affordance is present + enabled (LOCK ∈ allowedActions).
     expect(screen.getByRole('button', { name: /lock/i })).toBeEnabled();
   });
@@ -152,11 +156,13 @@ describe('PlanLifecycleBar (state display + allowedActions-driven lifecycle affo
       screen.getByRole('button', { name: /start reconciliation/i }),
     );
     expect(start).toHaveBeenCalledWith('plan-1');
-    // No optimistic flip: the status badge still reads LOCKED (not RECONCILING).
-    // Scoped to the badge — the ST.5a stepper renders all four state labels.
-    const badge = document.querySelector('[data-cy="status-badge"]');
-    expect(badge).toHaveTextContent(/locked/i);
-    expect(badge).not.toHaveTextContent(/reconciling/i);
+    // No optimistic flip: the stepper's active node still reads LOCKED (not
+    // RECONCILING) until the refetched plan prop arrives. (ST.7c dropped the
+    // in-bar StatusBadge; the stepper active node is now the in-bar state signal.)
+    const active = document.querySelector(
+      '[data-cy="stepper-node"][data-status="active"]',
+    );
+    expect(active).toHaveAttribute('data-state', 'LOCKED');
 
     // CLOSE error surfaces verbatim.
     rerender(
@@ -219,5 +225,31 @@ describe('PlanLifecycleBar → lifecycle stepper (ST.5a)', () => {
     expect(statusOf('LOCKED')).toBe('done');
     expect(statusOf('RECONCILING')).toBe('active');
     expect(statusOf('RECONCILED')).toBe('pending');
+  });
+});
+
+// ST.7c — QA visual fixes: drop the redundant in-bar StatusBadge + constrain the
+// stepper width (the "Draft ×3" redundancy + sparse-bars findings).
+describe('PlanLifecycleBar → ST.7c QA visual fixes', () => {
+  it('lifecycle_bar_drops_inbar_status_badge: the bar renders NO in-bar StatusBadge — state is conveyed by the stepper active node; the canonical text badge lives in WeeklyPlanView header (Draft ×3 → ×2)', () => {
+    mockHooks();
+    const { container } = render(<PlanLifecycleBar plan={plan()} />);
+
+    // The in-bar StatusBadge is gone.
+    expect(container.querySelector('[data-cy="status-badge"]')).toBeNull();
+    // The stepper still conveys state via its active node.
+    const active = container.querySelector(
+      '[data-cy="stepper-node"][data-status="active"]',
+    );
+    expect(active).toHaveAttribute('data-state', 'DRAFT');
+  });
+
+  it('lifecycle_stepper_is_width_constrained: the stepper container carries a max-width class (a compact stepper, not full content-max width)', () => {
+    mockHooks();
+    const { container } = render(<PlanLifecycleBar plan={plan()} />);
+
+    const stepper = container.querySelector('[data-cy="lifecycle-stepper"]');
+    expect(stepper).not.toBeNull();
+    expect(stepper!.className).toMatch(/\bmax-w-/);
   });
 });

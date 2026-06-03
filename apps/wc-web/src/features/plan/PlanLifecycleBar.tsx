@@ -1,5 +1,4 @@
 import { Fragment, useState } from 'react';
-import { StatusBadge } from '../../shared/components/StatusBadge';
 import { LockButton } from './LockButton';
 import {
   useStartReconciliationMutation,
@@ -105,7 +104,7 @@ export function PlanLifecycleBar({
         data-cy="lifecycle-stepper"
         role="group"
         aria-label="Plan lifecycle progress"
-        className="flex items-center gap-1"
+        className="flex max-w-md items-center gap-1"
       >
         {stepperNodes(plan.state).map((n, i, arr) => (
           <Fragment key={n.state}>
@@ -134,8 +133,10 @@ export function PlanLifecycleBar({
         ))}
       </div>
 
-      <div className="flex items-center justify-between gap-3">
-        <StatusBadge kind="plan" value={plan.state} />
+      {/* State is conveyed by the stepper's active node (above) + the canonical
+          plan StatusBadge in the WeeklyPlanView header — the redundant in-bar
+          badge was dropped (ST.7c). This row holds only the server-gated actions. */}
+      <div className="flex items-center justify-end gap-3">
         <div className="flex flex-wrap items-center justify-end gap-2">
           <LockButton plan={plan} />
           {canStart ? (

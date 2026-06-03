@@ -42,7 +42,10 @@ export function ConfidenceMeter({ value }: { value: Confidence }) {
               key={i}
               data-cy="conf-seg"
               data-filled={filled ? 'true' : 'false'}
-              className={`h-3 w-1.5 rounded-sm ${filled ? FILL_CLASSES[entry.tone] : 'bg-surface-hover'}`}
+              // Empty segments carry a ring outline (ST.7c) so the 3-slot
+              // structure always reads "N of 3" — fixes the near-invisible LOW
+              // (1-filled) meter without changing the §7 tone (LOW stays neutral).
+              className={`h-3 w-1.5 rounded-sm ${filled ? FILL_CLASSES[entry.tone] : 'bg-surface-hover ring-1 ring-border'}`}
             />
           );
         })}

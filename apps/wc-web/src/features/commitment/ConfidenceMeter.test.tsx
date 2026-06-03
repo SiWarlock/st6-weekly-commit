@@ -31,4 +31,31 @@ describe('ConfidenceMeter (3-segment meter — fill scales with level)', () => {
     );
     expect(container).toBeEmptyDOMElement();
   });
+
+  // ST.7c — LOW legibility: the single filled LOW segment is near-invisible, so
+  // outline the EMPTY segments (ring) — the 3-slot structure always reads as
+  // "N of 3" without changing the §7 LOW tone (stays neutral).
+  it('confidence_meter_low_shows_all_three_slots: at LOW the 3 slots are structurally legible — the 2 empty segments carry a ring outline, 1 is filled, and the LOW tone stays neutral (§7 unchanged)', () => {
+    const { container } = render(<ConfidenceMeter value="LOW" />);
+
+    const segs = container.querySelectorAll('[data-cy="conf-seg"]');
+    expect(segs).toHaveLength(3);
+
+    const filled = container.querySelectorAll(
+      '[data-cy="conf-seg"][data-filled="true"]',
+    );
+    const empty = container.querySelectorAll(
+      '[data-cy="conf-seg"][data-filled="false"]',
+    );
+    expect(filled).toHaveLength(1);
+    expect(empty).toHaveLength(2);
+    // The empty segments carry the ring outline so the 3-slot structure reads.
+    for (const seg of empty) {
+      expect(seg.className).toMatch(/\bring-/);
+    }
+    // §7 LOW tone preserved (neutral) — the fix is structural, not a tone change.
+    expect(
+      container.querySelector('[data-cy="confidence-meter"]'),
+    ).toHaveAttribute('data-tone', 'neutral');
+  });
 });
