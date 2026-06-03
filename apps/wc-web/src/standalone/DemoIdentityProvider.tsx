@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useDispatch } from 'react-redux';
 import {
   setAccessTokenProvider,
   setDemoAuthHeaderApplier,
 } from '../app/authAccessor';
+import { baseApi } from '../app/baseApi';
 import {
   DEMO_PERSONAS,
   DEFAULT_PERSONA_ID,
@@ -19,11 +21,28 @@ interface DemoIdentityProviderProps {
  * exposed remote build (REQ-I-008) — never imported by `src/remote/`.
  */
 export function DemoIdentityProvider({ children }: DemoIdentityProviderProps) {
+  const dispatch = useDispatch();
   const [personaId, setPersonaId] = useState<string>(DEFAULT_PERSONA_ID);
   // A ref keeps the seam closures reading the CURRENT persona across switches
   // without re-registering the providers on every change.
   const personaRef = useRef(personaId);
   personaRef.current = personaId;
+
+  // Reset the RTK Query cache on persona change so identity-scoped queries
+  // refetch with the new X-Demo-Employee-Id (ST.7d correctness fix). `/api/me`,
+  // `/api/plans/current` + the manager reads are cached under argless keys, so a
+  // header change alone does NOT change the cache key → without this reset the
+  // previous persona's data would stay on screen (stale-data bug). Skip the
+  // initial mount (no needless wipe on first render). Standalone-only — the
+  // remote gets identity from the host, so REQ-I-008 is intact.
+  const isFirstRender = useRef(true);
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    dispatch(baseApi.util.resetApiState());
+  }, [personaId, dispatch]);
 
   // Standalone is the single owner of the global accessor seam, so cleanup
   // clears it on unmount (best-effort — fine for the app-lifetime provider).

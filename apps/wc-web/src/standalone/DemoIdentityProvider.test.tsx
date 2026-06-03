@@ -1,9 +1,13 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import type { ReactElement } from 'react';
+import { Provider } from 'react-redux';
 import { DemoIdentityProvider } from './DemoIdentityProvider';
 import { PersonaSwitcher } from './PersonaSwitcher';
 import { useDemoIdentity } from './demoIdentity';
+import { store } from '../app/store';
+import { baseApi } from '../app/baseApi';
 import {
   applyDemoAuthHeader,
   hasAccessTokenProvider,
@@ -14,6 +18,7 @@ import {
 afterEach(() => {
   setAccessTokenProvider(null);
   setDemoAuthHeaderApplier(null);
+  vi.restoreAllMocks();
 });
 
 /** Run the injected demo applier and read back the demo header it attaches. */
@@ -23,9 +28,18 @@ function demoHeaderValue(): string | null {
   return headers.get('X-Demo-Employee-Id');
 }
 
+/**
+ * Render within the Redux store — `DemoIdentityProvider` now `useDispatch`es to
+ * reset the RTK cache on persona change (ST.7d), so it requires a `<Provider>`
+ * (always present in production via `StandaloneShell`).
+ */
+function renderWithStore(ui: ReactElement) {
+  return render(<Provider store={store}>{ui}</Provider>);
+}
+
 describe('DemoIdentityProvider + PersonaSwitcher (standalone-only demo identity)', () => {
   it('demo_provider_wires_9_1_seam: mounting injects both 9.1 providers; persona id resolves', () => {
-    render(
+    renderWithStore(
       <DemoIdentityProvider>
         <div />
       </DemoIdentityProvider>,
@@ -37,7 +51,7 @@ describe('DemoIdentityProvider + PersonaSwitcher (standalone-only demo identity)
 
   it('persona_switch_changes_demo_header: switching persona changes the X-Demo-Employee-Id the seam yields', async () => {
     const user = userEvent.setup();
-    render(
+    renderWithStore(
       <DemoIdentityProvider>
         <PersonaSwitcher />
       </DemoIdentityProvider>,
@@ -69,7 +83,7 @@ describe('DemoIdentityProvider + PersonaSwitcher (standalone-only demo identity)
         </button>
       );
     }
-    render(
+    renderWithStore(
       <DemoIdentityProvider>
         <ClearPersona />
       </DemoIdentityProvider>,
@@ -82,5 +96,53 @@ describe('DemoIdentityProvider + PersonaSwitcher (standalone-only demo identity)
     // empty `X-Demo-Employee-Id:`), preserving the pre-split degrade behavior.
     await user.click(screen.getByRole('button', { name: /clear persona/i }));
     expect(demoHeaderValue()).toBeNull();
+  });
+
+  // ST.7d — PRIORITY correctness: identity-scoped queries (`/api/me`,
+  // `/api/plans/current`, the manager reads) are cached under argless keys, so a
+  // persona/header change alone does NOT change the cache key → no refetch → the
+  // previous persona's data would stay on screen. The provider must reset the RTK
+  // cache on persona change so every active query re-issues with the new identity.
+  it('persona_switch_resets_api_cache: switching persona dispatches baseApi.util.resetApiState() so identity-scoped queries refetch; the initial mount does NOT reset (stale-data correctness fix)', async () => {
+    const user = userEvent.setup();
+    const resetType = baseApi.util.resetApiState().type;
+    const dispatchSpy = vi.spyOn(store, 'dispatch');
+
+    function SwitchPersona() {
+      const { setPersonaId } = useDemoIdentity();
+      return (
+        <button
+          type="button"
+          onClick={() => setPersonaId('demo-employee-ic-2')}
+        >
+          switch persona
+        </button>
+      );
+    }
+
+    render(
+      <Provider store={store}>
+        <DemoIdentityProvider>
+          <SwitchPersona />
+        </DemoIdentityProvider>
+      </Provider>,
+    );
+
+    // Initial mount must NOT reset the cache (no needless wipe on first render).
+    expect(
+      dispatchSpy.mock.calls.some(
+        ([a]) => (a as { type?: string }).type === resetType,
+      ),
+    ).toBe(false);
+
+    await user.click(screen.getByRole('button', { name: /switch persona/i }));
+
+    // After a persona switch, the cache is reset → all queries refetch with the
+    // new X-Demo-Employee-Id.
+    expect(
+      dispatchSpy.mock.calls.some(
+        ([a]) => (a as { type?: string }).type === resetType,
+      ),
+    ).toBe(true);
   });
 });
