@@ -20,7 +20,7 @@ import org.springframework.security.core.AuthenticatedPrincipal;
  * #getName()} = the stable employee id (read by the §15 audit actor + logging).
  */
 public record UserPrincipal(UUID employeeId, RoleType role, boolean isManager)
-    implements AuthenticatedPrincipal {
+    implements AuthenticatedPrincipal, DomainPrincipal {
 
   @Override
   public String getName() {

@@ -8,7 +8,7 @@ package com.st6.wc.identity;
  * direct-report scoping checks the {@code DomainAuthorizationService} (2.5) applies to user
  * principals. Defined here as the declared boundary; its consumers land in later phases.
  */
-public final class SystemPrincipal {
+public final class SystemPrincipal implements DomainPrincipal {
 
   /** The canonical SYSTEM actor consumed by the cron/worker phases. */
   public static final SystemPrincipal INSTANCE = new SystemPrincipal();
