@@ -257,3 +257,57 @@ describe('CommandCenter → table density skin (ST.4)', () => {
     expect(dataRow!.className).toContain('hover:bg-surface-hover');
   });
 });
+
+// ST.6b — dense table: zebra rows + tone-colored alignment count pills.
+describe('CommandCenter → dense table (ST.6b)', () => {
+  it('command_center_rows_are_zebra_striped: consecutive data rows alternate parity (data-row-parity even/odd)', () => {
+    mockQuery({
+      data: env([
+        row({ employeeId: 'e1', employeeDisplayName: 'Ann' }),
+        row({ employeeId: 'e2', employeeDisplayName: 'Bo' }),
+        row({ employeeId: 'e3', employeeDisplayName: 'Cy' }),
+      ]),
+    });
+    render(<CommandCenter />);
+
+    const parities = Array.from(
+      document.querySelectorAll('[data-cy="cc-row"]'),
+    ).map((r) => r.getAttribute('data-row-parity'));
+    expect(parities).toEqual(['even', 'odd', 'even']);
+  });
+
+  it('alignment_counts_render_as_tone_pills: each count is a pill with the §7 tone + a glyph + an accessible label (title), not plain "label: N" text — never color-alone (REQ-S-005)', () => {
+    mockQuery({
+      data: env([
+        row({
+          misalignedCount: 2,
+          needsReviewCount: 1,
+          blockedCount: 0,
+          carryForwardCount: 4,
+          unresolvedDisputeCount: 3,
+        }),
+      ]),
+    });
+    render(<CommandCenter />);
+
+    const pill = (kind: string) =>
+      document.querySelector(`[data-cy="cc-${kind}"]`) as HTMLElement;
+
+    // Reuses the §7 RISK tones (verbatim): misaligned→failure, needsReview→
+    // warning, blocked→failure, carryForward→WARNING (the actual RISK value).
+    expect(pill('misaligned')).toHaveAttribute('data-tone', 'failure');
+    expect(pill('needsReview')).toHaveAttribute('data-tone', 'warning');
+    expect(pill('blocked')).toHaveAttribute('data-tone', 'failure');
+    expect(pill('carryForward')).toHaveAttribute('data-tone', 'warning');
+    // Dispute count has no RISK entry → pinned to failure (urgent; glyph + label
+    // disambiguate it from misaligned/blocked).
+    expect(pill('unresolvedDispute')).toHaveAttribute('data-tone', 'failure');
+
+    // Glyph + count + accessible label (not color-alone).
+    expect(pill('misaligned').querySelector('svg')).not.toBeNull();
+    expect(pill('misaligned')).toHaveTextContent('2');
+    expect(pill('misaligned')).toHaveAttribute('title', 'Misaligned: 2');
+    // Zero counts still show (muted) so the manager sees the full set.
+    expect(pill('blocked')).toHaveTextContent('0');
+  });
+});

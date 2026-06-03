@@ -1,4 +1,6 @@
 import { Fragment, useState } from 'react';
+import type { IconType } from 'react-icons';
+import { HiFlag } from 'react-icons/hi';
 import {
   useGetCommandCenterQuery,
   type CommandCenterParams,
@@ -11,7 +13,39 @@ import { ErrorState } from '../../shared/components/ErrorState';
 import { EmptyState } from '../../shared/components/EmptyState';
 import { StatusBadge } from '../../shared/components/StatusBadge';
 import { Pagination } from '../../shared/components/Pagination';
+import { RISK_TAXONOMY, type Tone } from '../../shared/lib/statusTaxonomy';
 import type { ManagerCommandCenterRowDto } from '../../shared/lib/dtos';
+
+/**
+ * Alignment-count pill metadata (ST.6b). The four risk counts reuse the §7 RISK
+ * taxonomy tones/icons VERBATIM (single-source; never re-mapped here). The dispute
+ * count has no RISK entry → pinned to failure + a distinct flag glyph
+ * (accent=UNPLANNED in this app, so failure not accent).
+ */
+type CountMeta = { tone: Tone; icon: IconType };
+const DISPUTE_META: CountMeta = { tone: 'failure', icon: HiFlag };
+const COUNT_RISK_KEY: Record<string, string> = {
+  misaligned: 'MISALIGNED',
+  needsReview: 'NEEDS_REVIEW',
+  blocked: 'BLOCKED',
+  carryForward: 'CARRY_FORWARD',
+};
+
+function countMeta(kind: string): CountMeta {
+  const riskKey = COUNT_RISK_KEY[kind];
+  const entry = riskKey ? RISK_TAXONOMY[riskKey] : undefined;
+  return entry ? { tone: entry.tone, icon: entry.icon } : DISPUTE_META;
+}
+
+// Full literal token-utility strings (Tailwind JIT).
+const TONE_PILL: Record<Tone, string> = {
+  neutral: 'border-tone-neutral-border bg-tone-neutral-bg text-tone-neutral-fg',
+  info: 'border-tone-info-border bg-tone-info-bg text-tone-info-fg',
+  success: 'border-tone-success-border bg-tone-success-bg text-tone-success-fg',
+  warning: 'border-tone-warning-border bg-tone-warning-bg text-tone-warning-fg',
+  failure: 'border-tone-failure-border bg-tone-failure-bg text-tone-failure-fg',
+  accent: 'border-tone-accent-border bg-tone-accent-bg text-tone-accent-fg',
+};
 
 /** ISO date (yyyy-mm-dd) of the current week's Monday — the default `weekStart`. */
 function currentWeekStartIso(): string {
@@ -136,14 +170,18 @@ export function CommandCenter() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => {
+            {rows.map((r, i) => {
               const expanded =
                 expandedPlanId !== null && expandedPlanId === r.weeklyPlanId;
+              // Zebra striping by data-row index (NOT CSS nth-child — the
+              // interleaved review-expand detail row would break parity).
+              const parity = i % 2 === 0 ? 'even' : 'odd';
               return (
                 <Fragment key={r.employeeId}>
                   <tr
                     data-cy="cc-row"
-                    className="border-t border-border align-top hover:bg-surface-hover"
+                    data-row-parity={parity}
+                    className={`border-t border-border align-top hover:bg-surface-hover ${parity === 'odd' ? 'bg-surface-raised' : ''}`}
                   >
                     <td className="py-3 text-body text-ink-primary">
                       {r.employeeDisplayName}
@@ -163,18 +201,25 @@ export function CommandCenter() {
                       )}
                     </td>
                     <td className="py-3">
-                      <div className="flex flex-wrap gap-2 text-meta text-ink-secondary">
-                        {COUNTS.map((c) => (
-                          <span key={c.kind}>
-                            {c.label}:{' '}
+                      <div className="flex flex-wrap gap-1.5">
+                        {COUNTS.map((c) => {
+                          const meta = countMeta(c.kind);
+                          const n = r[c.key] as number;
+                          const Icon = meta.icon;
+                          return (
                             <span
+                              key={c.kind}
                               data-cy={`cc-${c.kind}`}
-                              className="font-semibold text-ink-primary"
+                              data-tone={meta.tone}
+                              title={`${c.label}: ${n}`}
+                              aria-label={`${c.label}: ${n}`}
+                              className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono text-meta ${n === 0 ? 'border-border bg-transparent text-ink-muted' : TONE_PILL[meta.tone]}`}
                             >
-                              {r[c.key]}
+                              <Icon aria-hidden className="h-3 w-3" />
+                              {n}
                             </span>
-                          </span>
-                        ))}
+                          );
+                        })}
                       </div>
                     </td>
                     <td className="py-3">
