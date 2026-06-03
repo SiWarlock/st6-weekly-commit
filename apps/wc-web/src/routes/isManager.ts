@@ -1,16 +1,17 @@
-import { createContext, useContext } from 'react';
+import { useCurrentUser } from '../features/me/useCurrentUser';
 
 /**
- * Manager-gating seam (REQ-UX-005). Drives which routes the route tree registers
- * so an IC has no manager entry point in the UI. Default `false` (IC).
+ * Whether the current identity is a manager — gates the `/manager/*` routes
+ * (REQ-UX-005). Reads the real `MeDto.isManager` via `useCurrentUser` and is
+ * **fail-closed**: returns `false` while the `getMe` query is pending or errored,
+ * so a manager entry point never flashes to an unconfirmed/IC actor.
  *
- * 9.4 PLACEHOLDER: the value is provided via context (fixture-driven in tests).
- * 9.5 swaps `useIsManager` to read `MeDto.isManager` (B.3) from `meApi`; the
- * route tree consumes this hook either way, so the swap is internal.
+ * (9.4 used a default-false context placeholder; 9.5 wires the real role.)
  */
-export const IsManagerContext = createContext<boolean>(false);
-
-/** Whether the current identity is a manager (gates the /manager/* routes). */
 export function useIsManager(): boolean {
-  return useContext(IsManagerContext);
+  const { isManager, isLoading, isError } = useCurrentUser();
+  if (isLoading || isError) {
+    return false;
+  }
+  return isManager;
 }

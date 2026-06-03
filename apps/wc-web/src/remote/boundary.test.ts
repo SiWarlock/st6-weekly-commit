@@ -34,18 +34,26 @@ describe('REQ-I-008 — exposed remote excludes demo/persona/chrome (frontend mi
       ).toBe(false);
     }
 
-    // (c) POSITIVE CONTROL: the lazy route tree IS now reachable from the remote
-    // entry — guards against this boundary test silently passing if WeeklyCommitApp
-    // ever stops mounting <AppRoutes/>. importGraph follows dynamic import(), so
-    // the lazy route chunks are in this closure and are scanned below.
-    expect(files.some((f) => f.endsWith('/AppRoutes.tsx'))).toBe(true);
+    // (c) POSITIVE CONTROL: the route tree AND — as of 9.5 — the eager RTK Query
+    // gating chain (AppRoutes→useIsManager→useCurrentUser→meApi→baseApi/authAccessor)
+    // ARE reachable from the remote entry. Guards against this test silently passing
+    // if the mount/gating is removed, and confirms the demo-literal scan below
+    // actually covers baseApi now that it is in the remote build closure (REQ-I-008).
+    for (const required of [
+      '/AppRoutes.tsx',
+      '/app/baseApi.ts',
+      '/app/authAccessor.ts',
+      '/features/me/meApi.ts',
+    ]) {
+      expect(files.some((f) => f.endsWith(required))).toBe(true);
+    }
 
     // (d) the remote creates NO router of its own (consumes the host router), and
     // (e, fail-closed) carries NO demo-header / demo-token literal anywhere in the
     // enlarged closure. The 9.4 split moved the X-Demo-Employee-Id attach out of
     // the shared baseApi/authAccessor into a standalone-only applier seam, so even
-    // as the route tree pulls more shared modules one import away, the demo literal
-    // stays out of the remote graph (REQ-I-008, the safety pin of this slice).
+    // now that baseApi/meApi ARE eagerly in the remote graph (9.5 gating), the demo
+    // literal stays out of it (REQ-I-008, the safety pin of this slice).
     for (const f of files) {
       const code = stripComments(readFileSync(f, 'utf8'));
       expect(code).not.toMatch(/\bBrowserRouter\b/);
