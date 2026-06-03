@@ -5,11 +5,30 @@ spring:
   flyway:
     # API does NOT migrate — the Migration Job (flyway-migrate profile) is the sole schema owner (§12/D.2).
     enabled: false
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Auth0 JWT validation (task 2.1, §6 / Appendix D.2). Mandatory in real mode; supplied via
+          # Secrets Manager (CSI) in prod. Real mode uses eager issuer-discovery (withIssuerLocation);
+          # an explicit jwk-set-uri pin (D.2 fallback) is NOT wired in 2.1.
+          issuer-uri: ${AUTH0_ISSUER_URI:}
 
 app:
   org:
     # Blank passthrough: OrgTimeBindingConfig.resolveZone is the single fail-safe source of truth (D.6).
     timezone: ${ORG_TIMEZONE:}
+
+# Auth0 audience for the custom AudienceValidator (§6 — Auth0 does not validate aud by default).
+auth0:
+  audience: ${AUTH0_AUDIENCE:}
+
+# Canonical demo-mode gate (task 2.1, shared by 2.3/2.6). The explicit ${DEMO_AUTH_ENABLED:false}
+# placeholder binds the canonical env var by exact name (relaxed binding alone would target the
+# dotted demo.auth.enabled). Default false = real mode → secure-by-default (fails closed on missing
+# Auth0 config rather than opening a demo backdoor; safety rule #5).
+demo-auth:
+  enabled: ${DEMO_AUTH_ENABLED:false}
 
 management:
   endpoints:

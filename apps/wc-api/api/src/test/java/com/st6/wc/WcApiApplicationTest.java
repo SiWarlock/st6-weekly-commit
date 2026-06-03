@@ -18,13 +18,20 @@ import org.springframework.test.context.ActiveProfiles;
  */
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-    // task 1.5: spring-boot-starter-data-jpa is now on the :api classpath, which would activate
-    // DataSourceAutoConfiguration. This test asserts actuator probes + the shared Clock bean (no
-    // persistence) and intentionally boots DB-less, so JPA/DataSource autoconfig is excluded here.
+    // task 1.5: spring-boot-starter-data-jpa activates DataSourceAutoConfiguration; task 2.1:
+    // spring-boot-starter-oauth2-resource-server activates Spring Security's default chain (which
+    // would secure the actuator probes). This test asserts actuator probes + the shared Clock bean
+    // (no persistence, no auth) and intentionally boots DB-less + security-less, so both autoconfig
+    // families are excluded. The real SecurityFilterChain is task 2.6; the JwtDecoder is gated off
+    // here anyway because the local profile is demo mode (demo-auth.enabled=true).
     properties =
         "spring.autoconfigure.exclude="
             + "org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration,"
-            + "org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration")
+            + "org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration,"
+            + "org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration,"
+            + "org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration,"
+            + "org.springframework.boot.autoconfigure.security.oauth2.resource.servlet.OAuth2ResourceServerAutoConfiguration,"
+            + "org.springframework.boot.actuate.autoconfigure.security.servlet.ManagementWebSecurityAutoConfiguration")
 @ActiveProfiles("local")
 class WcApiApplicationTest {
 
