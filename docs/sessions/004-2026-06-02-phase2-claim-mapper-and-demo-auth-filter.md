@@ -4,7 +4,7 @@
 - **Phase:** 2 (Identity, authentication & central authorization)
 - **Role:** `st6-main-wc-api-implementer` (backend)
 - **Predecessor session:** [003 — Phase 1 JPA entities + repos & Phase 2 Auth0 JWT decoder](003-2026-06-02-phase1-entities-repos-and-phase2-jwt.md) _(same backend arc; the pair cycled at WARN ~73% after 2.3)_
-- **Successor session:** _(TBD — fresh full-budget backend pair resumes at 2.4 PrincipalResolver)_
+- **Successor session:** [005 — Phase 11.7 Cypress+Cucumber BDD acceptance suite](005-2026-06-02-phase11-cypress-cucumber-bdd-suite.md) _(chronological successor — different arc, the test track. The **backend** arc resumes separately at 2.4 PrincipalResolver with a fresh full-budget pair.)_
 - **Commits this session (2 backend slices):** `869eb69` (2.2 Auth0 claim mapper) · `3c7781e` (2.3 demo-auth filter + AuditService). _(Frontend-track commits `e9ee230`/`8fa030c` interleaved — not this arc.)_
 
 ## Why this session existed
