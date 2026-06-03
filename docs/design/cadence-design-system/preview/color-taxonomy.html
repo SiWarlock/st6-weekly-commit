@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css?v=3">
+<link rel="stylesheet" href="../components.css?v=3">
+<script src="../assets/icons.js?v=3"></script>
+<style>
+  html,body{margin:0}
+  body{background:var(--surface-app);padding:24px 26px}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .tone{border:1px solid var(--border);border-radius:var(--radius-lg);padding:13px 13px 14px;background:var(--surface)}
+  .tone .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .tone .nm{font-size:12px;font-weight:600;color:var(--ink-primary)}
+  .tone .mean{font-size:11px;color:var(--ink-muted);margin:0 0 10px;line-height:1.35}
+  .dotrow{display:flex;align-items:center;gap:8px}
+</style>
+</head>
+<body class="ds-scope">
+  <div class="grid">
+    <div class="tone"><div class="top"><span class="nm">Neutral</span><span class="wc-dot is-neutral"></span></div><p class="mean">inert · not-started · info</p><span class="wc-badge is-neutral"><span data-icon="HiMinusCircle"></span>Slate</span></div>
+    <div class="tone"><div class="top"><span class="nm">Info</span><span class="wc-dot is-info"></span></div><p class="mean">in-progress · active · system</p><span class="wc-badge is-info"><span data-icon="HiLockClosed"></span>Blue</span></div>
+    <div class="tone"><div class="top"><span class="nm">Positive</span><span class="wc-dot is-success"></span></div><p class="mean">done · healthy · satisfied</p><span class="wc-badge is-success"><span data-icon="HiCheckCircle"></span>Green</span></div>
+    <div class="tone"><div class="top"><span class="nm">Caution</span><span class="wc-dot is-warning"></span></div><p class="mean">needs attention · soft risk</p><span class="wc-badge is-warning"><span data-icon="HiExclamationCircle"></span>Amber</span></div>
+    <div class="tone"><div class="top"><span class="nm">Critical</span><span class="wc-dot is-failure"></span></div><p class="mean">blocking · misalign · overdue</p><span class="wc-badge is-failure"><span data-icon="HiExclamation"></span>Red</span></div>
+    <div class="tone"><div class="top"><span class="nm">Accent</span><span class="wc-dot is-accent"></span></div><p class="mean">unplanned · additive</p><span class="wc-badge is-accent"><span data-icon="HiPlusCircle"></span>Violet</span></div>
+  </div>
+  <script>document.querySelectorAll('[data-icon]').forEach(function(e){e.innerHTML=window.wcIcon(e.getAttribute('data-icon'),{size:14});});</script>
+</body>
+</html>

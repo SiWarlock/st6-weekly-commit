@@ -10,5 +10,22 @@ dependencies {
   implementation libs.jakarta.validation.api
   implementation 'org.springframework:spring-context' // ClockConfig @Configuration/@Bean
 
+  // JPA entity layer (task 1.5): the starter brings BOM-aligned hibernate-core (for the
+  // @JdbcTypeCode/SqlTypes mappings — risk_badges text[] -> List<RiskBadge>, metadata_json jsonb)
+  // + spring-data-jpa (JpaRepository) + jakarta.persistence, no manual version pinning. :shared owns
+  // the entities + repos + provider mappings; Hibernate is the locked provider so it lives here.
+  implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+
   testImplementation 'org.springframework.boot:spring-boot-starter-test' // ClockConfig context test
+
+  // Flyway migration + Testcontainers PG16 harness (task 1.2). :shared owns db/migration/.
+  // The :api FlywayMigrateRunner adds runtime flyway-core in a later phase; here it is test-scope.
+  // Testcontainers BOM is pinned NEWER than the spring-boot-dependencies default (1.19.x) so its
+  // bundled docker-java can talk to the local Docker Engine 29 API (older docker-java 400s on /info).
+  testImplementation platform('org.testcontainers:testcontainers-bom:1.21.4')
+  testImplementation 'org.flywaydb:flyway-core'
+  testImplementation 'org.flywaydb:flyway-database-postgresql'
+  testImplementation 'org.postgresql:postgresql'
+  testImplementation 'org.testcontainers:postgresql'
+  testImplementation 'org.testcontainers:junit-jupiter'
 }

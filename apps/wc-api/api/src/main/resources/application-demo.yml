@@ -1,0 +1,8 @@
+# demo: env-gated demo identity (task 2.1). No real SNS/SQS/Graph. flyway off.
+# Demo mode: X-Demo-Employee-Id is the principal (2.3) and the real JwtDecoder is gated off (§6/F.1).
+demo-auth:
+  enabled: true
+
+logging:
+  level:
+    com.st6.wc: DEBUG

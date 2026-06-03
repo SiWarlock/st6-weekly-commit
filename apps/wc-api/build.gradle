@@ -48,8 +48,15 @@ subprojects { sp ->
     toolVersion = libs.versions.jacoco.get()
   }
 
+  // Exclude Spring Boot bootstrap classes (their static main() is not unit-tested) so the
+  // >=80%/module gate stays honest about real logic (task 0.4/0.5, Q4).
+  def coverageExcludes = ['**/*Application.class']
+
   tasks.named('jacocoTestReport') {
     dependsOn tasks.named('test')
+    dependsOn tasks.named('classes') // explicit class-producer dep (robust under any task graph)
+    classDirectories.setFrom(
+        files(sourceSets.main.output.classesDirs.collect { fileTree(dir: it, exclude: coverageExcludes) }))
     reports {
       xml.required = true
       html.required = true
@@ -59,6 +66,9 @@ subprojects { sp ->
   // JaCoCo >=80% per module (line + branch). Bound into `check` below.
   tasks.named('jacocoTestCoverageVerification') {
     dependsOn tasks.named('test')
+    dependsOn tasks.named('classes') // explicit class-producer dep (robust under any task graph)
+    classDirectories.setFrom(
+        files(sourceSets.main.output.classesDirs.collect { fileTree(dir: it, exclude: coverageExcludes) }))
     violationRules {
       rule {
         limit {

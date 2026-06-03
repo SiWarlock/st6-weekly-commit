@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css?v=3">
+<style>
+  html,body{margin:0}
+  body{background:var(--surface-app);padding:26px}
+  .lock{display:flex;align-items:center;gap:12px}
+  .mark{width:34px;height:34px;border-radius:8px;background:var(--brand-600);display:flex;align-items:center;justify-content:center;flex:none}
+  .mark svg{display:block}
+  .wm{display:flex;flex-direction:column;line-height:1.1}
+  .wm .b{font-size:18px;font-weight:600;letter-spacing:-0.02em;color:var(--ink-primary)}
+  .wm .s{font-size:12px;color:var(--ink-secondary);letter-spacing:.02em}
+  .demo{display:flex;align-items:center;gap:10px;margin-top:24px;padding-top:18px;border-top:1px solid var(--border)}
+  .demo .pill{font-size:11px;font-family:var(--font-mono);color:var(--ink-muted)}
+  .barword{font-size:13px;color:var(--ink-secondary)}
+  .note{font-size:11px;color:var(--ink-muted);margin-top:16px;max-width:60ch;line-height:1.45}
+</style>
+</head>
+<body class="ds-scope">
+  <div class="lock">
+    <span class="mark">
+      <!-- abstract "commit" glyph: a checkmark forming an upward ladder node -->
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+    </span>
+    <div class="wm">
+      <span class="b">ST6 Weekly Commit</span>
+      <span class="s">Strategy-enforced weekly alignment</span>
+    </div>
+  </div>
+  <div class="demo">
+    <span class="pill">demo top bar</span>
+    <span class="barword">ST6 Weekly Commit — Demo · Viewing as Dana Okafor · Week of Jun 1–7</span>
+  </div>
+  <p class="note">Text-based wordmark in Inter (no provided logo). The mark reuses the brand indigo + the lifecycle check glyph; the product never sets the org/host logo — that is owned by the PA host shell.</p>
+</body>
+</html>

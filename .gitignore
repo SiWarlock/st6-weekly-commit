@@ -13,3 +13,6 @@ yarn-error.log
 # Gradle (build outputs + local caches). The committed wrapper (gradlew, gradle/wrapper/*) is NOT ignored.
 .gradle/
 build/
+
+# Code-intelligence index (CodeGraph MCP) — local SQLite knowledge-graph cache, never committed.
+.codegraph/

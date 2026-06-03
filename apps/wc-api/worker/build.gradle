@@ -1,8 +1,20 @@
-// :worker — depends on :shared (shared<-worker). NO dependency on :api (REQ-O-016).
-// Sync-worker app wiring (WcSyncWorkerApplication, SQS listener) lands in 0.5.
+plugins {
+  alias(libs.plugins.spring.boot)
+}
+
+// :worker — separate Spring Boot 3.3 deployable (WcSyncWorkerApplication + actuator probes).
+// Depends on :shared (shared<-worker); NO dependency on :api (REQ-O-016). web+actuator only —
+// the servlet server exists solely for the k8s probes (D.3, no user request). No SQS/Graph yet.
 dependencies {
+  implementation platform("org.springframework.boot:spring-boot-dependencies:${libs.versions.springBoot.get()}")
+
   implementation project(':shared')
+
+  implementation 'org.springframework.boot:spring-boot-starter-web'
+  implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
   compileOnly libs.lombok
   annotationProcessor libs.lombok
+
+  testImplementation 'org.springframework.boot:spring-boot-starter-test'
 }

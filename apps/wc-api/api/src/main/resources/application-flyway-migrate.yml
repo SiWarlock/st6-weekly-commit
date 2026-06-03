@@ -1,0 +1,7 @@
+# Migration Job profile (D.5): the ONLY workload where flyway runs. No web server (one-shot Job, no probes).
+# No migrations exist yet (Phase 1 adds V1..); this profile only flips the property.
+spring:
+  flyway:
+    enabled: true
+  main:
+    web-application-type: none

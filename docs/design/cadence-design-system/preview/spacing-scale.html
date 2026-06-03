@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css?v=3">
+<style>
+  html,body{margin:0}
+  body{background:var(--surface-app);padding:24px 26px}
+  .row{display:flex;align-items:center;gap:14px;margin-bottom:9px}
+  .bar{height:18px;background:var(--brand-soft);border:1px solid var(--tone-accent-border);border-radius:3px}
+  .tok{width:74px;font-family:var(--font-mono);font-size:11px;color:var(--ink-muted)}
+  .px{font-size:11px;color:var(--ink-secondary);font-family:var(--font-mono)}
+  .use{font-size:11px;color:var(--ink-muted);margin-left:8px}
+</style>
+</head>
+<body class="ds-scope">
+  <div class="row"><span class="tok">space-1</span><span class="bar" style="width:4px"></span><span class="px">4px</span><span class="use">chip gaps</span></div>
+  <div class="row"><span class="tok">space-2</span><span class="bar" style="width:8px"></span><span class="px">8px</span><span class="use">inline gap</span></div>
+  <div class="row"><span class="tok">space-3</span><span class="bar" style="width:12px"></span><span class="px">12px</span><span class="use">stack gap · between cards/rows</span></div>
+  <div class="row"><span class="tok">space-4</span><span class="bar" style="width:16px"></span><span class="px">16px</span><span class="use">card padding</span></div>
+  <div class="row"><span class="tok">space-6</span><span class="bar" style="width:24px"></span><span class="px">24px</span><span class="use">section gap · page gutter</span></div>
+  <div class="row"><span class="tok">space-8</span><span class="bar" style="width:32px"></span><span class="px">32px</span></div>
+  <div class="row"><span class="tok">row</span><span class="bar" style="width:44px;background:var(--surface-hover);border-color:var(--border)"></span><span class="px">44px</span><span class="use">compact table row</span></div>
+  <div class="row"><span class="tok">cell</span><span class="bar" style="width:88px;background:var(--surface-hover);border-color:var(--border)"></span><span class="px">88px</span><span class="use">heatmap cell min</span></div>
+</body>
+</html>

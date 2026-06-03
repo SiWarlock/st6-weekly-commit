@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css?v=3">
+<style>
+  html,body{margin:0}
+  body{background:var(--surface-app);padding:24px 26px}
+  .lab{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-muted);margin:0 0 12px}
+  .cells{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  .cell{height:78px;border-radius:var(--radius-md);display:flex;flex-direction:column;justify-content:space-between;padding:9px 10px;border:1px solid var(--border)}
+  .cell .n{font-family:var(--font-mono);font-size:18px;font-weight:600;color:var(--ink-primary)}
+  .cell .k{font-size:10px;color:var(--ink-muted)}
+  .gap{background:var(--vol-gap);border:1px dashed var(--vol-gap-border)}
+  .light{background:var(--vol-light)}
+  .normal{background:var(--vol-normal)}
+  .heavy{background:var(--vol-heavy);border:1px solid var(--vol-heavy-border)}
+  .note{font-size:11px;color:var(--ink-muted);margin:14px 0 0;line-height:1.45}
+</style>
+</head>
+<body class="ds-scope">
+  <p class="lab">Heatmap volume fill — commitmentCount (load, NOT danger)</p>
+  <div class="cells">
+    <div class="cell gap"><span class="n" style="color:var(--ink-muted)">0</span><span class="k">no coverage · gap</span></div>
+    <div class="cell light"><span class="n">1</span><span class="k">light</span></div>
+    <div class="cell normal"><span class="n">2–3</span><span class="k">normal</span></div>
+    <div class="cell heavy"><span class="n">4+</span><span class="k">high · ⚠ investigate</span></div>
+  </div>
+  <p class="note">Monochrome white-alpha on purpose — it conveys <i>load</i>, not danger. Coverage gaps are first-class (dashed). Risk lives in separate explicit badges; volume and risk are never folded into one “health score.”</p>
+</body>
+</html>

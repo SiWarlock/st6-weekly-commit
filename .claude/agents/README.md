@@ -8,8 +8,8 @@ This directory holds **subagents** — specialized roles delegated mid-session f
 
 | Subagent | Included | When it runs |
 |---|---|---|
-| `code-quality-reviewer` | ✅ | `/tdd` Step 7→8, parallel with security-reviewer; findings feed Step-9. |
-| `security-reviewer` | ✅ | `/tdd` Step 7→8; **mandatory on invariant-touching slices** (lock enforcement, authorization/IDOR, baseline immutability, demo-auth, secrets, non-blocking sync). |
+| `code-quality-reviewer` | ⛔ **DISABLED** | **Per-slice auto-dispatch OFF** (user directive 2026-06-03 — too costly in time/tokens). Definition kept on disk; do **not** run it. |
+| `security-reviewer` | ⛔ **DISABLED (auto)** | **Per-slice auto-dispatch OFF** (user directive 2026-06-03). NOT run every slice. May be invoked **ad hoc by the orchestrator** on a genuinely safety-invariant-touching slice (lock enforcement, authorization/IDOR, baseline immutability, demo-auth, secrets, non-blocking sync) if it judges a security pass warranted — but **never automatically**. |
 | `reachability-auditor` | ✅ | Phase-exit gate; confirms features are wired to a production entry point. |
 | `brief-drafter` | ❌ not generated | (Definition deferred; adopt only after a 2–3 brief quality trial.) |
 
@@ -22,12 +22,11 @@ Each subagent file (`<name>.md`) carries its own scope, forbidden patterns, mand
 ```
 /tdd cycle (implementer)
   Step 7: full suite green
-  Step 7 → 8 boundary: parallel fan-out
-    ├── code-quality-reviewer (always)
-    └── security-reviewer (always; mandatory if invariant_touching)
+  Step 7 → 8 boundary: per-slice reviewer fan-out DISABLED (user directive 2026-06-03 — time/token cost)
+    └── (security-reviewer available AD HOC on a true safety-invariant slice, orch's discretion; never automatic)
   Step 7.5: reachability check (per-slice; `/wired <symbol>` for specific traces)
   Step 8: lint + typecheck
-  Step 9: implementer aggregates reviewer findings into categorized list, sends to orchestrator
+  Step 9: implementer sends categorized list to orchestrator (no reviewer findings to aggregate unless one was run ad hoc)
   Step 10: commit
 
 phase-exit gate (orchestrator)
@@ -35,7 +34,7 @@ phase-exit gate (orchestrator)
   phase-exit acceptance gated on clean audit
 ```
 
-The parallel fan-out pattern (Step 7→8) launches multiple `Agent` calls in a single message so reviewers run concurrently; the implementer waits for both, aggregates findings, and surfaces them in Step 9.
+**Per-slice reviewer fan-out is DISABLED** (user directive 2026-06-03 — too costly in time/tokens). The implementer does **not** dispatch `code-quality-reviewer` / `security-reviewer` at Step 7→8. If a slice genuinely touches a safety invariant and the orchestrator judges a security pass warranted, it may invoke `security-reviewer` **ad hoc** — but this is the exception, never the every-slice default.
 
 ## How to invoke a subagent
 

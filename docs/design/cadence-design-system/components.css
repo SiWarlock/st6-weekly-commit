@@ -1,0 +1,180 @@
+/* =========================================================================
+   ST6 Weekly Commit — Component atoms (token-driven)
+   Reused by preview/ specimen cards AND the ui_kits/ product build.
+   Requires colors_and_type.css. Flowbite-flavored, Linear-dark skin.
+   ========================================================================= */
+
+/* ---------- Badge / StatusPill (universal soft status, §5.1) ---------- */
+.wc-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
+  line-height: 1.4;
+  white-space: nowrap;
+  border: 1px solid var(--tone-neutral-border);
+  background: var(--tone-neutral-bg);
+  color: var(--tone-neutral-fg);
+}
+/* icons injected into preview cards arrive wrapped in [data-icon] spans —
+   keep them centered with the label instead of sitting on the baseline */
+[data-icon] { display: inline-flex; align-items: center; }
+[data-icon] svg, .wc-badge svg, .wc-worktype svg { display: block; }
+.wc-badge svg { width: 14px; height: 14px; flex: none; }
+.wc-badge.is-neutral { background: var(--tone-neutral-bg); color: var(--tone-neutral-fg); border-color: var(--tone-neutral-border); }
+.wc-badge.is-info    { background: var(--tone-info-bg);    color: var(--tone-info-fg);    border-color: var(--tone-info-border); }
+.wc-badge.is-success { background: var(--tone-success-bg); color: var(--tone-success-fg); border-color: var(--tone-success-border); }
+.wc-badge.is-warning { background: var(--tone-warning-bg); color: var(--tone-warning-fg); border-color: var(--tone-warning-border); }
+.wc-badge.is-failure { background: var(--tone-failure-bg); color: var(--tone-failure-fg); border-color: var(--tone-failure-border); }
+.wc-badge.is-accent  { background: var(--tone-accent-bg);  color: var(--tone-accent-fg);  border-color: var(--tone-accent-border); }
+
+/* outline/ring variant — distinguishes the 2nd of a same-color risk pair */
+.wc-badge--ring { background: transparent; }
+.wc-badge--ring.is-failure { box-shadow: inset 0 0 0 1px var(--tone-failure-border); }
+.wc-badge--ring.is-warning { box-shadow: inset 0 0 0 1px var(--tone-warning-border); }
+
+.wc-badge--xs { padding: 1px 6px; font-size: 11px; }
+.wc-badge--xs svg { width: 12px; height: 12px; }
+
+/* count pill (mono numeral + glyph), e.g. "3P", "1U" */
+.wc-count {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 1px 7px; border-radius: var(--radius-md);
+  font-family: var(--font-mono); font-size: 11px; font-variant-numeric: tabular-nums;
+  background: var(--tone-neutral-bg); color: var(--tone-neutral-fg);
+  border: 1px solid var(--tone-neutral-border);
+}
+
+/* filled status dot (lifecycle / dispute) */
+.wc-dot { width: 8px; height: 8px; border-radius: var(--radius-full); flex: none; display: inline-block; }
+.wc-dot.is-neutral { background: var(--tone-neutral-solid); }
+.wc-dot.is-info    { background: var(--tone-info-solid); }
+.wc-dot.is-success { background: var(--tone-success-solid); }
+.wc-dot.is-warning { background: var(--tone-warning-solid); }
+.wc-dot.is-failure { background: var(--tone-failure-solid); }
+.wc-dot.is-accent  { background: var(--tone-accent-solid); }
+.wc-dot.is-dispute { background: var(--dot-dispute); }
+
+/* ---------- PriorityTag — solid square mono chip (§4.3) ---------- */
+.wc-pri {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 28px; padding: 4px 6px 2px; /* asymmetric: optically centers cap-height glyph */
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600; line-height: 1;
+  border-radius: var(--radius-sm); border: 1px solid transparent;
+}
+.wc-pri.p0 { background: var(--tone-failure-bg); color: var(--tone-failure-fg); border-color: var(--tone-failure-border); }
+.wc-pri.p1 { background: var(--tone-warning-bg); color: var(--tone-warning-fg); border-color: var(--tone-warning-border); }
+.wc-pri.p2 { background: var(--tone-neutral-bg); color: var(--tone-neutral-fg); border-color: var(--tone-neutral-border); }
+
+/* ---------- WorkTypeTag — outline pill + icon (§4.3) ---------- */
+.wc-worktype {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 9px; border-radius: var(--radius-full);
+  font-size: var(--text-label); font-weight: var(--weight-medium);
+  background: transparent; border: 1px solid var(--tone-neutral-border);
+  color: var(--tone-neutral-fg);
+}
+.wc-worktype svg { width: 13px; height: 13px; }
+.wc-worktype.is-info    { color: var(--tone-info-fg);    border-color: var(--tone-info-border); }
+.wc-worktype.is-neutral { color: var(--tone-neutral-fg); border-color: var(--tone-neutral-border); }
+.wc-worktype.is-failure { color: var(--tone-failure-fg); border-color: var(--tone-failure-border); }
+.wc-worktype.is-accent  { color: var(--tone-accent-fg);  border-color: var(--tone-accent-border); }
+
+/* ---------- ConfidenceMeter — 3-segment signal bar (§4.3) ---------- */
+.wc-conf { display: inline-flex; align-items: center; gap: 5px; }
+.wc-conf-bars { display: inline-flex; gap: 2px; }
+.wc-conf-seg { width: 5px; height: 12px; border-radius: 1.5px; background: var(--n-300); }
+.wc-conf.high .wc-conf-seg { background: var(--tone-success-solid); }
+.wc-conf.medium .wc-conf-seg:nth-child(-n+2) { background: var(--tone-warning-solid); }
+.wc-conf.low .wc-conf-seg:nth-child(1) { background: var(--tone-neutral-solid); }
+.wc-conf-label { font-size: 11px; color: var(--ink-secondary); }
+
+/* ---------- AlignmentChip — dot + label (§4.3) ---------- */
+.wc-align { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-label); font-weight: var(--weight-medium); }
+.wc-align.aligned     { color: var(--tone-success-fg); }
+.wc-align.needsreview { color: var(--tone-warning-fg); }
+.wc-align.misaligned  { color: var(--tone-failure-fg); }
+
+/* ---------- Buttons (Flowbite shapes, Linear skin) ---------- */
+.wc-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 34px; padding: 0 14px; border-radius: var(--radius-lg);
+  font-size: var(--text-body); font-weight: var(--weight-medium);
+  border: 1px solid transparent; cursor: pointer; white-space: nowrap;
+  transition: background var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease), color var(--dur-base) var(--ease);
+  user-select: none;
+}
+.wc-btn svg { width: 16px; height: 16px; }
+.wc-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+.wc-btn--primary { background: var(--brand-600); color: var(--brand-ink); }
+.wc-btn--primary:hover { background: var(--brand-500); }
+.wc-btn--primary:active { background: var(--brand-700, #4f59bd); }
+
+.wc-btn--secondary { background: var(--surface-raised); color: var(--ink-primary); border-color: var(--border-strong); }
+.wc-btn--secondary:hover { background: var(--surface-hover); }
+
+.wc-btn--ghost { background: transparent; color: var(--ink-secondary); }
+.wc-btn--ghost:hover { background: var(--surface-hover); color: var(--ink-primary); }
+
+.wc-btn--success { background: var(--tone-success-solid); color: #04140d; }
+.wc-btn--success:hover { filter: brightness(1.08); }
+.wc-btn--warning { background: var(--tone-warning-solid); color: #1c1505; }
+.wc-btn--warning:hover { filter: brightness(1.08); }
+.wc-btn--danger  { background: var(--tone-failure-solid); color: #fff; }
+.wc-btn--danger:hover { filter: brightness(1.08); }
+
+.wc-btn--sm { height: 28px; padding: 0 10px; font-size: var(--text-label); }
+.wc-btn--sm svg { width: 14px; height: 14px; }
+
+.wc-btn[disabled], .wc-btn.is-disabled {
+  background: var(--surface-sunken); color: var(--ink-muted);
+  border-color: var(--border); cursor: not-allowed; filter: none;
+}
+
+/* ---------- Card ---------- */
+.wc-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: inset 0 1px 0 var(--hairline-top);
+}
+.wc-card--accent-unplanned { border-left: 2px solid var(--tone-accent-solid); }
+.wc-card--accent-dispute   { border-left: 2px solid var(--tone-failure-solid); }
+
+/* ---------- Avatar (initials disc) ---------- */
+.wc-avatar {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: var(--radius-full);
+  font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
+  border: 1px solid var(--border-strong); flex: none;
+}
+
+/* ---------- Inputs ---------- */
+.wc-input {
+  width: 100%; height: 34px; padding: 0 10px;
+  background: var(--surface-sunken); color: var(--ink-primary);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-md);
+  font-size: var(--text-body); font-family: inherit;
+}
+.wc-input::placeholder { color: var(--ink-muted); }
+.wc-input:focus { outline: none; border-color: var(--brand-600); box-shadow: var(--focus-ring); }
+
+/* ---------- RcdoBreadcrumb (read-only RC › DO › SO) ---------- */
+.wc-rcdo {
+  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+  font-size: var(--text-meta); color: var(--ink-secondary);
+  background: var(--surface-sunken); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 7px 10px;
+}
+.wc-rcdo .wc-rcdo-sep { color: var(--ink-muted); flex: none; }
+.wc-rcdo-so { color: var(--ink-primary); }
+.wc-rcdo-so b { font-family: var(--font-mono); font-weight: 600; }
+.wc-rcdo-change { margin-left: auto; background: none; border: 0; cursor: pointer;
+  color: var(--brand-400); font-size: var(--text-meta); white-space: nowrap; font-family: inherit; }
+.wc-rcdo--missing { color: var(--tone-warning-fg); background: var(--tone-warning-bg);
+  border-color: var(--tone-warning-border); }
+.wc-rcdo--missing svg { flex: none; }

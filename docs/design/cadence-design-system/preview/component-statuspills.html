@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css?v=3">
+<link rel="stylesheet" href="../components.css?v=3">
+<script src="../assets/icons.js?v=3"></script>
+<style>
+  html,body{margin:0}
+  body{background:var(--surface-app);padding:24px 26px}
+  .grp{margin-bottom:18px}
+  .grp:last-child{margin-bottom:0}
+  .lab{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-muted);margin:0 0 9px}
+  .rowx{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+</style>
+</head>
+<body class="ds-scope">
+  <div class="grp">
+    <p class="lab">Plan lifecycle — PlanState</p>
+    <div class="rowx">
+      <span class="wc-badge is-neutral"><span data-icon="HiPencilAlt"></span>Draft</span>
+      <span class="wc-badge is-info"><span data-icon="HiLockClosed"></span>Locked</span>
+      <span class="wc-badge is-warning"><span data-icon="HiClipboardCheck"></span>Reconciling</span>
+      <span class="wc-badge is-success"><span data-icon="HiCheckCircle"></span>Reconciled</span>
+      <span class="wc-badge is-neutral"><span data-icon="HiMinusCircle"></span>Not started</span>
+    </div>
+  </div>
+  <div class="grp">
+    <p class="lab">Manager review — ReviewStatus + derived Overdue</p>
+    <div class="rowx">
+      <span class="wc-badge is-neutral"><span data-icon="HiOutlineEye"></span>Not reviewed</span>
+      <span class="wc-badge is-warning"><span data-icon="HiExclamationCircle"></span>Reviewed · disputes</span>
+      <span class="wc-badge is-success"><span data-icon="HiCheckCircle"></span>Reviewed</span>
+      <span class="wc-badge is-failure"><span data-icon="HiClock"></span>Overdue</span>
+    </div>
+  </div>
+  <div class="grp">
+    <p class="lab">Reconciliation outcome — single-select</p>
+    <div class="rowx">
+      <span class="wc-badge is-success"><span data-icon="HiCheckCircle"></span>Completed</span>
+      <span class="wc-badge is-warning"><span data-icon="HiAdjustments"></span>Partial</span>
+      <span class="wc-badge is-failure"><span data-icon="HiBan"></span>Blocked</span>
+      <span class="wc-badge is-neutral"><span data-icon="HiXCircle"></span>Canceled</span>
+      <span class="wc-badge is-info"><span data-icon="HiArrowNarrowRight"></span>Carried forward</span>
+    </div>
+  </div>
+  <script>document.querySelectorAll('[data-icon]').forEach(function(e){e.innerHTML=window.wcIcon(e.getAttribute('data-icon'),{size:14});});</script>
+</body>
+</html>

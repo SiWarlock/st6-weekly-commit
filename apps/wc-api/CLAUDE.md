@@ -68,23 +68,26 @@ Don't paste these sections into the prompt. Grep the file:section, read only wha
 
 ## Standard commands
 
-```bash
-# Install deps (run once; re-run when the manifest changes)
-./gradlew build -x test
+> **Run backend Gradle commands from `apps/wc-api/`** (or via the repo-root composite). The repo-root build only exposes the **aggregate** `check`/`build`; per-task targets (`compileJava`/`spotbugsMain`/`spotlessCheck`/`test`) live in the `apps/wc-api` build. See LESSONS §6.
 
+```bash
+# (from apps/wc-api/)
 # Run the dev server (if applicable)
 ./gradlew :api:bootRun
 
 # Tests
 ./gradlew test
 
-# Quality
+# Quality (per-task)
 ./gradlew spotbugsMain
 ./gradlew spotlessCheck
 ./gradlew compileJava
 
-# Preflight (use before saying "done" with a feature)
-./gradlew spotbugsMain && ./gradlew compileJava && ./gradlew test
+# Preflight / the real gate (use before saying "done" — this is also the §13 CI gate):
+# runs Spotless + SpotBugs + JaCoCo ≥80%/module verification + forbidLombokData
+# + checkModuleBoundaries + all tests, per module. NOT `build -x test` (jacoco
+# verification is bound to check and needs tests to run).
+./gradlew check
 ```
 
 ## TDD protocol
@@ -116,7 +119,12 @@ Several typed models in this codebase are **contracts** mirrored in `ARCHITECTUR
 
 | Model | `ARCHITECTURE.md` section | Notes |
 |---|---|---|
+| Enum vocabulary (16 enums in `shared/enums/`) | Appendix A / Appendix B.1 | Constant sets mirror Appendix B.1 **exactly** (REQ-D-010 — the executable mirror of the `VARCHAR`+`CHECK` columns). Pinned by `EnumVocabularyTest` (parameterized value-set + the 3 drift-trap negatives: no `ReviewStatus.OVERDUE`, `CommentTargetType={PLAN,COMMITMENT}`, `SyncRelatedType=MANAGER_REVIEW_WEEK`). `RoleType` is in `enums/`; `AllowedAction` is computed DTO vocab (Phase 3), not an `enums/` member. Adding/removing/renaming a constant requires a paired B.1 edit. (origin: 0.3) |
+| Core schema (`V1__core_schema.sql`, 12 tables) | §4 / Appendix A | Physical encoding of the 12 Appendix-A core models. `VARCHAR`+`CHECK` status columns mirror the enum vocabulary exactly — pinned by the `enum↔CHECK` test (`V1CoreSchemaMigrationTest`, parses `pg_get_constraintdef` over all 15 status columns). Carries the 4 deltas (manager_alignment_note present, progress_status absent, comment flat `{PLAN,COMMITMENT}`, sync week_start_date + MANAGER_REVIEW_WEEK), `version bigint` `@Version` on the 5 mutable tables, `unique(employee_id,week_start_date)`. **Binding source = §4/Appendix A; `docs/planning/DATA_MODEL.md` is superseded (stale).** A column/constraint change pairs a §4 + Appendix A edit. (origin: 1.2) |
+| Partial unique indexes (`V2__partial_unique_indexes.sql`) | §4 / §6 / §3 / §10 / Appendix A | The 3 partial uniques backing the single-row invariants (safety-relevant): `uq_active_manager_per_report` (single active manager, §6), `uq_one_unresolved_dispute_per_commitment` (one unresolved dispute, safety rule #6), `uq_one_review_block_per_manager_week` (one review-block/manager/week, §10). Each tested firing (23505) + non-firing/partial-scope on PG16. Distinct from the V1 full sync unique. **Repo-layer proof (1.6):** each fires through `saveAndFlush` as a Spring `DataIntegrityViolationException`; the unresolved-dispute index is proven across **OPEN + IC_RESPONDED** (the rule-#6 cross-status uniqueness bucket), not a same-status duplicate. A constraint-clause change pairs a §4 + Appendix A edit. (origin: 1.3) |
+| Manager projections (`V3__projection_tables.sql`) | §9 / Appendix A | The 2 synchronous read-model tables — `manager_plan_summary` (unique(manager,employee,week)) + `manager_heatmap_cell` (unique(manager,employee,week,DO)), each with the 7 count columns + `updated_at` (read models: **no audit quartet, no `@Version`** — recomputed wholesale by the ProjectionService). `manager_heatmap_cell.risk_badges text[]` is constrained to the 6-badge `RiskBadge` vocabulary via a `<@` containment CHECK, pinned to `RiskBadge.values()`. `is_review_overdue` is the §9 projection column (NOT safety rule #6). A field change pairs a §9 + Appendix A edit. (origin: 1.4) |
 | WeeklyPlan | §3 / Appendix A | Lifecycle state + locked baseline; mirror field changes into Appendix A. |
+| JPA entities (14, `shared/<domain>/*.java`) | Appendix A (all 14 models) / §3 / §4 / §9 | The Spring Data JPA entities are the **executable mirror of all 14 Appendix-A models** — field names, nullability, enum bindings (`@Enumerated(STRING)`), the 4 deltas (`managerAlignmentNote` present, no `progressStatus`, `weekStartDate` present, comment `{PLAN,COMMITMENT}`), `@Version` on the 5 mutable lifecycle entities — mapped onto the V1–V3 columns. Three base-class shapes + flat-`UUID` FKs (LESSONS §7); `risk_badges text[]`/`metadata_json jsonb` via Hibernate-6 `@JdbcTypeCode` (§8). A field add/rename/remove pairs an Appendix A + `§`-section edit. **No drift at 1.5** (entities == V1–V3 DDL == Appendix A; both reviewers confirmed). `@Version` optimistic locking proven behaviorally at the repo layer (increment 0→1 + `ObjectOptimisticLockingFailureException` on stale update) in 1.6. (origin: 1.5) |
 
 <!-- Starts empty (or with the first model if one exists). Populated as contract models land. -->
 
@@ -164,7 +172,20 @@ Lessons start at §1.
 
 | # | Date | Topic | Rule (one-liner) |
 |--:|---|---|---|
-| | | | |
+| 1 | 2026-06-02 | [Gradle gate-wiring recipe](LESSONS.md#1) | Bind Spotless+SpotBugs+JaCoCo (≥80% line+branch) into `check` per module, assert the aggregation, prove the module boundary with a task, resolve the JDK 21 toolchain via foojay+`JAVA_HOME` (never a committed machine path). |
+| 2 | 2026-06-02 | [SpotBugs `Confidence` in Groovy](LESSONS.md#2) | For Kotlin enums with per-constant bodies referenced from Groovy (e.g. SpotBugs `Confidence`), use `Type.valueOf('NAME')`, not `Type.NAME`. |
+| 3 | 2026-06-02 | [Enum ↔ contract pinning](LESSONS.md#3) | Pin enum-to-contract with a parameterized value-set test over all enums + `valueOf` drift-trap negatives; Phase 1 extends it to the DB `CHECK` list. |
+| 4 | 2026-06-02 | [Spring Boot app-skeleton pattern](LESSONS.md#4) | Enable probe groups in base config; cover via `@SpringBootTest` + exclude `*Application` from JaCoCo (keep bundle non-empty with a real `@Configuration`); static/reusable env fail-safes; per-profile property tests via `ApplicationContextRunner` + `ConfigDataApplicationContextInitializer` (`o.s.boot.test.context`). |
+| 5 | 2026-06-02 | [Flyway + Testcontainers PG16 harness](LESSONS.md#5) | Pin `testcontainers-bom:1.21.4` over the SB 3.3.5 BOM (Docker Engine 29 compat); migrate via the Flyway API on a shared TC PG16 container; pin enum↔CHECK by parsing `pg_get_constraintdef` vs `enum.values()`; assert violations by SQLSTATE. |
+| 6 | 2026-06-02 | [Backend gate = `./gradlew check` from `apps/wc-api/`](LESSONS.md#6) | The §13 gate is `./gradlew check` run from `apps/wc-api/` (composite root exposes only aggregate check/build) — not the generic per-task `/preflight` list, not `build -x test` (jacoco verification needs tests). |
+| 7 | 2026-06-02 | [JPA entity mapping conventions](LESSONS.md#7) | Pick the entity base by row shape (`PersistableUuidEntity` mutable+versioned / `AbstractAuditingEntity`+inline `@Id` audited / inline `@Id`+own-timestamp minimal); map every FK as a flat `UUID` (never `@ManyToOne`); entities mirror DDL type/nullability while `varchar` length caps stay in DTO validation. |
+| 8 | 2026-06-02 | [Hibernate-6 non-scalar mappings](LESSONS.md#8) | `text[]`→`List<enum>` via `@JdbcTypeCode(SqlTypes.ARRAY)`+`@Enumerated(STRING)`+`columnDefinition="text[]"`; `jsonb`→`String` via `@JdbcTypeCode(SqlTypes.JSON)` (needs `hibernate-core` on the entity module's compile path — use `starter-data-jpa`, not bare `spring-data-jpa`); prove each with a round-trip test, compare jsonb structurally. |
+| 9 | 2026-06-02 | [`@DataJpaTest` fidelity harness](LESSONS.md#9) | Prove entity↔DDL fidelity with `@DataJpaTest`+`@DynamicPropertySource` singleton PG16+Flyway+`ddl-auto=validate`; add explicit `@EntityScan`/`@EnableJpaRepositories` for cross-module sliced tests; a JPA starter on a shared lib activates DataSource autoconfig in every downstream module → `spring.autoconfigure.exclude` it on DB-less skeleton boots. |
+| 10 | 2026-06-02 | [SpotBugs EI/EI2 on Lombok mutable collections](LESSONS.md#10) | For mutable-collection fields on Lombok entities, hand-write defensive-copy getters/setters — `EI_EXPOSE_REP`/`EI2` are NOT covered by the `@lombok.Generated` skip; field-access JPA makes the copies harmless to persistence. |
+| 11 | 2026-06-02 | [Spring Data repo-layer finders + `@DataJpaTest` proofs](LESSONS.md#11) | Back partial-unique lookups with derived-name finders returning `Optional` (test the empty branch); prove repo-layer invariants under `@DataJpaTest` with `saveAndFlush` (coexistence-first/violation-last), assert Spring `ObjectOptimisticLockingFailureException` for `@Version` conflicts, and fire a set-valued partial unique across its status set (OPEN+IC_RESPONDED), not a same-value duplicate. |
+| 12 | 2026-06-02 | [SS6 OAuth2 resource-server JWT decoder](LESSONS.md#12) | `withIssuerLocation`(EAGER OIDC discovery)+`jwsAlgorithm(RS256)`+`DelegatingOAuth2TokenValidator`(default-with-issuer + custom `.contains()`-audience validator), fail-fast on blank config; test via `withPublicKey` decoder wired to the SAME production validator + Nimbus tokens + MockWebServer discovery stub; a Security starter needs BOTH `autoconfigure.exclude` AND a separate gate for component-scanned `@Configuration`; fail-secure `@ConditionalOnProperty(demo-auth.enabled, havingValue=false, matchIfMissing=true)`. |
+| 13 | 2026-06-02 | [Config-driven claim mapper + all-profile-binding gotcha](LESSONS.md#13) | Bind claim *names* via `@ConfigurationProperties` (nothing hardcoded) + `sub` fallback + validate-when-present/tolerate-absent-or-blank role parsing (reject non-blank-invalid as a generic `OAuth2AuthenticationException`→401, null on absent/blank — no silent default, no value leak); an always-present `@Component` injecting a `@ConfigurationProperties` bean forces all-profile binding, so every `${...}` default in base yaml needs a resolvable fallback (`${ROOT_DOMAIN:localhost}`) or skeleton boots break. |
+| 14 | 2026-06-02 | [Backdoor-control filter (rule #5) + AuditService + DB-backed boots](LESSONS.md#14) | An env-gated backdoor filter runs in ALL modes to *reject* the disabled header (never gated out), rejects the untrusted value WITHOUT a DB query (`verifyNoInteractions`); disabled+header → 403+one-safe-audit, enabled+unknown → convergent IDOR-safe 401 (no audit); register it as a plain-class `@Bean` not `@Component` (double-registration); central `AuditService` is safe-metadata-only (SENTINEL-pinned, never echo untrusted input; denial audits need `REQUIRES_NEW`); once an always-scanned DB-dependent `@Service` lands, migrate the DB-less boots to a shared Testcontainers PG (Option A), don't accrete mocks. |
 
 <!-- Starts empty. Each row links to its `LESSONS.md` anchor. -->
 

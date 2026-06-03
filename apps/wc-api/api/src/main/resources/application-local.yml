@@ -1,0 +1,9 @@
+# local: dev profile — worker consume logic runs in-process (§13). No real SNS/SQS/Graph. flyway stays off.
+# Demo mode (task 2.1): no real Auth0 tenant locally, so the demo identity path is used and the real
+# JwtDecoder is gated off (demo-auth.enabled=true). Real mode is the base/prod default (secure-by-default).
+demo-auth:
+  enabled: true
+
+logging:
+  level:
+    com.st6.wc: DEBUG

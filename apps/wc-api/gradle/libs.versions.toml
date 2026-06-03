@@ -22,5 +22,6 @@ jakarta-persistence-api = { module = "jakarta.persistence:jakarta.persistence-ap
 jakarta-validation-api = { module = "jakarta.validation:jakarta.validation-api", version.ref = "jakartaValidation" }
 
 [plugins]
+spring-boot = { id = "org.springframework.boot", version.ref = "springBoot" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
 spotbugs = { id = "com.github.spotbugs", version.ref = "spotbugs" }

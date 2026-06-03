@@ -1,0 +1,51 @@
+# wc-api base config (task 0.4). Domain/auth/CORS/SNS/datasource land in later phases.
+spring:
+  application:
+    name: wc-api
+  flyway:
+    # API does NOT migrate — the Migration Job (flyway-migrate profile) is the sole schema owner (§12/D.2).
+    enabled: false
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Auth0 JWT validation (task 2.1, §6 / Appendix D.2). Mandatory in real mode; supplied via
+          # Secrets Manager (CSI) in prod. Real mode uses eager issuer-discovery (withIssuerLocation);
+          # an explicit jwk-set-uri pin (D.2 fallback) is NOT wired in 2.1.
+          issuer-uri: ${AUTH0_ISSUER_URI:}
+
+app:
+  org:
+    # Blank passthrough: OrgTimeBindingConfig.resolveZone is the single fail-safe source of truth (D.6).
+    timezone: ${ORG_TIMEZONE:}
+
+# Auth0 audience for the custom AudienceValidator (§6 — Auth0 does not validate aud by default).
+auth0:
+  audience: ${AUTH0_AUDIENCE:}
+  # Configurable claim NAMES the Auth0ClaimMapper reads (task 2.2 / Appendix F.1; REQ-S-009).
+  # ${ROOT_DOMAIN:localhost} keeps the namespaced defaults resolvable in every profile — Auth0Properties
+  # binds in all profiles (via JwtConfig's @EnableConfigurationProperties), so an unresolvable
+  # placeholder would break the demo/local context boots at binding. Prod's ROOT_DOMAIN env overrides;
+  # these names are only used to map a real JWT (real mode).
+  claims:
+    employee-id: https://wc.${ROOT_DOMAIN:localhost}/employee_id
+    role: https://wc.${ROOT_DOMAIN:localhost}/role
+    email: email
+
+# Canonical demo-mode gate (task 2.1, shared by 2.3/2.6). The explicit ${DEMO_AUTH_ENABLED:false}
+# placeholder binds the canonical env var by exact name (relaxed binding alone would target the
+# dotted demo.auth.enabled). Default false = real mode → secure-by-default (fails closed on missing
+# Auth0 config rather than opening a demo backdoor; safety rule #5).
+demo-auth:
+  enabled: ${DEMO_AUTH_ENABLED:false}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true # exposes /actuator/health/{liveness,readiness} for k8s probes (E24/§15)
+      show-details: never

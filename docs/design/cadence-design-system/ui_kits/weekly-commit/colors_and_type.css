@@ -1,0 +1,198 @@
+/* =========================================================================
+   ST6 Weekly Commit — Design Tokens
+   LINEAR.APP DARK AESTHETIC × dense enterprise execution-SaaS.
+   Near-black layered surfaces, near-white ink, indigo (#5E6AD2) as the ONLY
+   interactive brand accent. Color is reserved for STATUS MEANING; status
+   never rides on the indigo brand.
+   Stack contract (from spec): Flowbite-on-Tailwind, Heroicons, Inter.
+   ========================================================================= */
+
+:root {
+  /* ---- Neutral ramp (Linear dark — cool, near-black) ---- */
+  --n-0:   #08090A;   /* app background — deepest */
+  --n-50:  #0C0D0F;
+  --n-100: #0F1011;   /* card / panel surface */
+  --n-150: #141517;
+  --n-200: #18191B;   /* raised surface — popover, drawer, dropdown */
+  --n-250: #1F2023;   /* hover fill */
+  --n-300: #26282C;   /* strong border, control bg */
+  --n-400: #3A3D44;
+  --n-500: #62666D;   /* muted ink, disabled, placeholders */
+  --n-600: #8A8F98;   /* secondary ink — labels, metadata */
+  --n-700: #B4B8BD;
+  --n-800: #D7D9DD;
+  --n-900: #F7F8F8;   /* primary ink — titles, data */
+
+  /* ---- Surfaces ---- */
+  --surface-app:    var(--n-0);    /* page background */
+  --surface:        var(--n-100);  /* cards, table, panels */
+  --surface-raised: var(--n-200);  /* drawer, modal, dropdown, popover */
+  --surface-sunken: var(--n-50);   /* sunken wells, inputs */
+  --surface-hover:  var(--n-250);
+
+  /* ---- Ink ---- */
+  --ink-primary:   var(--n-900);
+  --ink-secondary: var(--n-600);
+  --ink-muted:     var(--n-500);
+
+  /* ---- Borders (Linear uses low-alpha white hairlines) ---- */
+  --border:        rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.13);
+  --border-solid:  #1E1F22;   /* opaque equivalent for nested layering */
+  --hairline-top:  rgba(255, 255, 255, 0.05);  /* inset top highlight on cards */
+
+  /* ---- Brand accent — INTERACTIVE ONLY (primary buttons, active nav,
+          links, focus ring). Linear indigo. Never used for status. ---- */
+  --brand-soft:  rgba(94, 106, 210, 0.15);
+  --brand-600:   #5E6AD2;   /* the brand indigo */
+  --brand-500:   #6E79DE;   /* hover */
+  --brand-400:   #828FFF;   /* links, active text, bright accent on dark */
+  --brand-ink:   #FFFFFF;   /* text on a filled brand button */
+  --brand-ring:  rgba(94, 106, 210, 0.55);
+
+  /* =====================================================================
+     STATUS / RISK TAXONOMY — six tones, Linear's semantic hues, adapted to
+     dark: translucent colored fill + bright fg + low-alpha colored border.
+     red = broken/blocking · amber = needs-attention · green = good/done
+     blue = in-progress/system · slate = inert · violet = unplanned/additive
+     ===================================================================== */
+
+  /* Neutral — inert, not-started, informational */
+  --tone-neutral-fg:     #B4B8BD;
+  --tone-neutral-bg:     rgba(255, 255, 255, 0.06);
+  --tone-neutral-border: rgba(255, 255, 255, 0.12);
+  --tone-neutral-solid:  #8A8F98;
+
+  /* Info — in-progress, active, system state (blue, DISTINCT from indigo brand) */
+  --tone-info-fg:     #6FB6FF;
+  --tone-info-bg:     rgba(78, 167, 252, 0.14);
+  --tone-info-border: rgba(78, 167, 252, 0.30);
+  --tone-info-solid:  #4EA7FC;
+
+  /* Positive — done, healthy, satisfied */
+  --tone-success-fg:     #5FD49B;
+  --tone-success-bg:     rgba(76, 183, 130, 0.15);
+  --tone-success-border: rgba(76, 183, 130, 0.32);
+  --tone-success-solid:  #4CB782;
+
+  /* Caution — needs attention, soft risk */
+  --tone-warning-fg:     #F2C94C;
+  --tone-warning-bg:     rgba(242, 201, 76, 0.14);
+  --tone-warning-border: rgba(242, 201, 76, 0.30);
+  --tone-warning-solid:  #E2B23C;
+
+  /* Critical — blocking risk, misalignment, overdue */
+  --tone-failure-fg:     #F4827F;
+  --tone-failure-bg:     rgba(235, 87, 87, 0.15);
+  --tone-failure-border: rgba(235, 87, 87, 0.34);
+  --tone-failure-solid:  #EB5757;
+
+  /* Accent — unplanned / additive (violet/magenta; non-judgmental, distinct
+     from the indigo brand) */
+  --tone-accent-fg:     #C9A6FF;
+  --tone-accent-bg:     rgba(167, 124, 255, 0.16);
+  --tone-accent-border: rgba(167, 124, 255, 0.32);
+  --tone-accent-solid:  #A77CFF;
+
+  /* Dispute "open" filled dot (rose — distinct from failure badges) */
+  --dot-dispute: #F2555A;
+
+  /* ---- Heatmap volume fill — NEUTRAL elevation via white-alpha (load, NOT
+          danger). Monochrome on purpose. ---- */
+  --vol-gap:    transparent;                  /* 0 — dashed border below */
+  --vol-light:  rgba(255, 255, 255, 0.03);    /* 1 */
+  --vol-normal: rgba(255, 255, 255, 0.06);    /* 2–3 */
+  --vol-heavy:  rgba(255, 255, 255, 0.10);    /* 4+ + amber hairline */
+  --vol-gap-border:   rgba(255, 255, 255, 0.14);
+  --vol-heavy-border: rgba(242, 201, 76, 0.40);
+
+  /* =====================================================================
+     TYPOGRAPHY
+     ===================================================================== */
+  --font-sans: "Inter", "Inter Variable", ui-sans-serif, system-ui,
+               -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", "JetBrains Mono",
+               "Roboto Mono", Menlo, Consolas, monospace;
+
+  /* Type scale — text-sm (14px) is the workhorse body */
+  --text-display:   1.5rem;    /* 24px / 600 — route/page title */
+  --text-h2:        1.25rem;   /* 20px / 600 — section header, plan title */
+  --text-h3:        1rem;      /* 16px / 600 — card/commitment title */
+  --text-body:      0.875rem;  /* 14px / 400 — primary content, table cells */
+  --text-label:     0.75rem;   /* 12px / 500 uppercase tracking-wide */
+  --text-meta:      0.75rem;   /* 12px / 400 — timestamps, breadcrumbs */
+  --text-mono:      0.75rem;   /* 12px font-mono — IDs, counts, P0/P1/P2 */
+
+  --leading-tight:  1.25;
+  --leading-normal: 1.5;
+  --tracking-label: 0.05em;
+  --tracking-tight: -0.014em;  /* Inter at display sizes — Linear sets tight */
+
+  --weight-regular:  400;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+
+  /* =====================================================================
+     SPACING — 8px soft grid, compact-first (density unit 4px)
+     ===================================================================== */
+  --space-1: 4px;    /* chip gaps */
+  --space-2: 8px;    /* inline gap (gap-2) */
+  --space-3: 12px;   /* stack gap — between cards/form rows */
+  --space-4: 16px;   /* card padding (p-4) */
+  --space-5: 20px;
+  --space-6: 24px;   /* section gap, page gutter */
+  --space-8: 32px;
+
+  --row-height:    44px;   /* compact table row (py-2.5) */
+  --cell-min:      88px;   /* heatmap cell min square */
+  --reading-col:   1040px; /* IC plan editor max width */
+  --content-max:   1440px; /* manager surfaces cap */
+
+  /* =====================================================================
+     RADII — Flowbite scale
+     ===================================================================== */
+  --radius-sm:   4px;
+  --radius-md:   6px;    /* badges, inputs */
+  --radius-lg:   8px;    /* cards, buttons */
+  --radius-xl:   12px;   /* modals */
+  --radius-full: 9999px; /* pills, avatars, dots */
+
+  /* =====================================================================
+     ELEVATION — flat & trustworthy. Cards are border-only (+ faint top
+     highlight). Black-based shadow reserved for floating layers.
+     ===================================================================== */
+  --shadow-none:   none;
+  --shadow-card:   0 1px 2px rgba(0, 0, 0, 0.30);
+  --shadow-pop:    0 8px 24px rgba(0, 0, 0, 0.50), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --shadow-drawer: -16px 0 40px rgba(0, 0, 0, 0.50);
+  --shadow-modal:  0 24px 60px rgba(0, 0, 0, 0.62);
+  --focus-ring:    0 0 0 3px var(--brand-ring);
+
+  /* ---- Motion (minimal — no bounce, no spring, no celebration) ---- */
+  --dur-fast:  120ms;
+  --dur-base:  150ms;
+  --dur-panel: 200ms;
+  --ease:      cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* =========================================================================
+   SEMANTIC ELEMENT DEFAULTS — apply var-driven type so preview cards & docs
+   inherit the system. Scope sets the dark canvas.
+   ========================================================================= */
+.ds-scope {
+  font-family: var(--font-sans);
+  background: var(--surface-app);
+  color: var(--ink-primary);
+  font-size: var(--text-body);
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.ds-display { font-size: var(--text-display); font-weight: var(--weight-semibold); letter-spacing: var(--tracking-tight); line-height: var(--leading-tight); }
+.ds-h2      { font-size: var(--text-h2); font-weight: var(--weight-semibold); letter-spacing: var(--tracking-tight); line-height: var(--leading-tight); }
+.ds-h3      { font-size: var(--text-h3); font-weight: var(--weight-semibold); line-height: var(--leading-tight); }
+.ds-body    { font-size: var(--text-body); font-weight: var(--weight-regular); line-height: var(--leading-normal); }
+.ds-label   { font-size: var(--text-label); font-weight: var(--weight-medium); text-transform: uppercase; letter-spacing: var(--tracking-label); color: var(--ink-secondary); }
+.ds-meta    { font-size: var(--text-meta); font-weight: var(--weight-regular); color: var(--ink-secondary); }
+.ds-mono    { font-size: var(--text-mono); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }

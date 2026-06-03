@@ -103,7 +103,7 @@ Do not:
 
 1. **Write a component/slice without a failing Vitest test first** (deterministic logic; visual-only is exempt).
 2. **Use Redux Saga or Thunk** — RTK Query only; mutations invalidate cache tags.
-3. **Use CSS Modules or styled-components** — Tailwind utility classes + Flowbite React only.
+3. **Use CSS Modules or styled-components** — Tailwind utility classes + Flowbite React only. **One narrow exception (ST.1/ST.2, brief 006; see LESSONS #3):** a single CSS custom-property **token** stylesheet — `src/styles/theme.css` (token vars + `@tailwind` directives + a var-driven `body{}` base rule + the `@media (prefers-reduced-motion: reduce)` rule; read by `tailwind.config` + the Flowbite theme for the `[data-theme]` dark/light flip) — is permitted. **`.wc-*` component CSS, CSS Modules, styled-components, and any second stylesheet remain forbidden.**
 4. **Use `dangerouslySetInnerHTML`** — render user text via React default escaping (stored-XSS surface).
 5. **Apply optimistic updates** — mutations refetch/invalidate; render explicit loading/empty/error/success states; surface the API `safeMessage` as Cypress-assertable error text.
 6. **Leak demo/persona logic into the exposed remote** — `PersonaSwitcher` + demo-header branch live only in `src/standalone/` and are tree-shaken out of the Module Federation build.
@@ -168,7 +168,13 @@ Lessons start at §1.
 
 | # | Date | Topic | Rule (one-liner) |
 |--:|---|---|---|
-| | | | |
+| 1 | 2026-06-02 | [JS monorepo-root toolchain pin](LESSONS.md#1) | Pin Yarn via Corepack `packageManager`, node-modules linker, commit `yarn.lock`, `yarn install --immutable` is the CI idempotency check. |
+| 2 | 2026-06-02 | [Shell launcher footgun](LESSONS.md#2) | Resolve executables with `type -P`, not `command -v`, when a shell function may share the binary's name. |
+| 3 | 2026-06-02 | [Multi-theme via CSS-vars + `[data-theme]`](LESSONS.md#3) | Bind design tokens into the Tailwind theme as `var(--…)` and switch themes by flipping `[data-theme]`; never author your own Tailwind `dark:` utilities; keep CSS to the one token-var stylesheet. |
+| 4 | 2026-06-02 | [flowbite-react 0.10.2 theming](LESSONS.md#4) | Skin via `createTheme` + `<Flowbite theme={{ theme }}>` (not `ThemeProvider`); set `darkMode: ['selector','[data-theme="dark"]']` so Flowbite's baked-in `dark:` binds to the theme attribute, not OS media. |
+| 5 | 2026-06-02 | [RTK Query base testing](LESSONS.md#5) | Test the `prepareHeaders` XOR by injecting both accessor-seam providers + asserting exactly-one-header (+ no-leak); give store integration tests an absolute `VITE_API_BASE_URL` + late-bound `fetchFn` so undici's `new Request()` doesn't throw before the mocked `fetch`. |
+| 6 | 2026-06-02 | [REQ-I-008 boundary proof](LESSONS.md#6) | Prove the remote build is demo-free with BOTH a fast fail-open static import-graph assertion AND a fail-closed auth0 build-output grep over the federation-exposed chunk (+ positive control); keep demo-header source out of remote-reachable modules via a standalone-only injected seam. |
+| 7 | 2026-06-02 | [Status-taxonomy single source of visual truth](LESSONS.md#7) | Port the §4.2/§4.3 enum→`{tone,icon,label,ring}` maps once into `statusTaxonomy.ts` + consume everywhere; never re-map a status inline; unknown→render nothing; `OVERDUE` is a derived overlay; every badge is glyph+text+color. |
 
 <!-- Starts empty. Each row links to its `LESSONS.md` anchor. -->
 

@@ -139,9 +139,7 @@ State explicitly: *"Reachable from `<entry point>` via `<path>`"* — or *"NOT y
 
 Both must pass. If they don't, fix before saying done.
 
-<!-- If the project installed the optional starter subagents, parallel-fan-out
-     code-quality-reviewer + security-reviewer here (mandatory if invariant_touching);
-     their findings feed Step-9 categorization. -->
+**Per-slice reviewers are DISABLED (user directive 2026-06-03 — time/token cost).** Do **NOT** dispatch `code-quality-reviewer` / `security-reviewer` at this Step 7→8 boundary — not every slice. (Exception: the orchestrator may invoke `security-reviewer` **ad hoc** on a genuinely safety-invariant-touching slice if it judges one warranted — but it is never the automatic per-slice default.)
 
 ### Step 9 — Summarize + surface slice-level flags
 

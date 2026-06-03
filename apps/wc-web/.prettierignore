@@ -1,0 +1,7 @@
+dist
+coverage
+node_modules
+*.css
+# Orchestrator-territory docs — not formatted by this area's prettier config.
+CLAUDE.md
+LESSONS.md
