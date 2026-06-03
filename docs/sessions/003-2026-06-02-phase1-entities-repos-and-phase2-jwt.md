@@ -4,7 +4,7 @@
 - **Phase:** 1 (Physical schema / JPA) → 2 (Identity, authentication & central authorization)
 - **Role:** `st6-main-wc-api-implementer` (backend)
 - **Predecessor session:** [001 — Phase 0 backend + Phase 1 schema trio](001-2026-06-02-phase0-backend-and-phase1-schema.md) _(the backend arc; session 002 is the parallel `st6-main-wc-web-*` frontend track, not this arc)_
-- **Successor session:** _(TBD — team paused after 2.1; next backend slice is 2.2 claim mapper)_
+- **Successor session:** [004 — Phase 2 Auth0 claim mapper + env-gated demo-auth filter (rule #5)](004-2026-06-02-phase2-claim-mapper-and-demo-auth-filter.md)
 - **Commits this session (3 backend slices):** `1d43a01` (1.5 JPA entities + bare repos) · `8da6446` (1.6 repo finders + repo-layer invariant proofs) · `922211e` (2.1 Auth0 JWT decoder). _(Frontend-track commits `4efd1e6`/`1e4f5eb`/`1479ea6`/`cceaed7`/`9f17c3c` interleaved — not this arc.)_
 
 ## Why this session existed
