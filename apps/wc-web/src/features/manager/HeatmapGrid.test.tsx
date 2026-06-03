@@ -144,3 +144,97 @@ describe('HeatmapGrid (E14 report × DO grid — counts + enumerated riskBadges)
     expect(screen.getByText('Streamline onboarding')).toBeInTheDocument();
   });
 });
+
+// ST.6a — neutral volume-fill keyed on commitmentCount, decoupled from risk.
+describe('HeatmapGrid → volume-fill (ST.6a)', () => {
+  const heatmap = (cells: HeatmapCellDto[]): HeatmapResponseDto => ({
+    weekStart: '2026-06-01',
+    cells,
+  });
+  const cellBtn = (doTitle: string) =>
+    screen.getByRole('button', { name: `Ivy Chen — ${doTitle}` });
+
+  it('heatmap_cell_fill_scales_with_commitment_count: 0→none, 1→light, 2-3→normal, ≥4→heavy (Cadence volMeta breakpoints)', () => {
+    mockHeatmap({
+      data: heatmap([
+        cell({
+          definingObjectiveId: 'd0',
+          definingObjectiveTitle: 'Zero',
+          commitmentCount: 0,
+          riskBadges: [],
+        }),
+        cell({
+          definingObjectiveId: 'd1',
+          definingObjectiveTitle: 'One',
+          commitmentCount: 1,
+          riskBadges: [],
+        }),
+        cell({
+          definingObjectiveId: 'd3',
+          definingObjectiveTitle: 'Three',
+          commitmentCount: 3,
+          riskBadges: [],
+        }),
+        cell({
+          definingObjectiveId: 'd5',
+          definingObjectiveTitle: 'Five',
+          commitmentCount: 5,
+          riskBadges: [],
+        }),
+      ]),
+    });
+    render(<HeatmapGrid />);
+
+    expect(cellBtn('Zero')).toHaveAttribute('data-volume', 'none');
+    expect(cellBtn('One')).toHaveAttribute('data-volume', 'light');
+    expect(cellBtn('Three')).toHaveAttribute('data-volume', 'normal');
+    expect(cellBtn('Five')).toHaveAttribute('data-volume', 'heavy');
+  });
+
+  it('heatmap_volume_decoupled_from_risk: a heavy cell with no riskBadges shows no RiskBadge; a light cell with riskBadges still renders them (volume ≠ risk)', () => {
+    mockHeatmap({
+      data: heatmap([
+        cell({
+          definingObjectiveId: 'dh',
+          definingObjectiveTitle: 'Heavy no risk',
+          commitmentCount: 6,
+          riskBadges: [],
+        }),
+        cell({
+          definingObjectiveId: 'dl',
+          definingObjectiveTitle: 'Light with risk',
+          commitmentCount: 1,
+          riskBadges: ['BLOCKED'],
+        }),
+      ]),
+    });
+    render(<HeatmapGrid />);
+
+    const heavy = cellBtn('Heavy no risk');
+    expect(heavy).toHaveAttribute('data-volume', 'heavy');
+    expect(within(heavy).queryByText(/blocked|misaligned/i)).toBeNull();
+
+    const light = cellBtn('Light with risk');
+    expect(light).toHaveAttribute('data-volume', 'light');
+    expect(within(light).getByText(/blocked/i)).toBeInTheDocument();
+  });
+
+  it('heatmap_cell_keeps_count_text_and_badges: the count text + riskBadges still render (volume is additive — load is the number AND the fill, never color alone)', () => {
+    mockHeatmap({
+      data: heatmap([
+        cell({
+          definingObjectiveTitle: 'Loaded',
+          commitmentCount: 4,
+          riskBadges: ['MISALIGNED'],
+        }),
+      ]),
+    });
+    render(<HeatmapGrid />);
+
+    const btn = cellBtn('Loaded');
+    expect(
+      btn.querySelector('[data-cy="cell-commitmentCount"]'),
+    ).toHaveTextContent('4');
+    expect(within(btn).getByText(/misaligned/i)).toBeInTheDocument();
+  });
+});

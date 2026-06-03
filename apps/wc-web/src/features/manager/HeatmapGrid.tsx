@@ -64,6 +64,27 @@ function pivot(cells: HeatmapCellDto[]): Pivot {
 }
 
 /**
+ * Neutral load intensity per cell (ST.6a) — the Cadence `volMeta()` breakpoints,
+ * **decoupled from risk** (risk is the badges; this is the cell background).
+ * 0 → none (transparent gap), 1 → light, 2–3 → normal, ≥4 → heavy.
+ */
+type Volume = 'none' | 'light' | 'normal' | 'heavy';
+
+function cellVolume(count: number): Volume {
+  if (count <= 0) return 'none';
+  if (count === 1) return 'light';
+  if (count <= 3) return 'normal';
+  return 'heavy';
+}
+
+const VOLUME_BG: Record<Volume, string> = {
+  none: 'bg-transparent',
+  light: 'bg-vol-light',
+  normal: 'bg-vol-normal',
+  heavy: 'bg-vol-heavy',
+};
+
+/**
  * The manager heatmap (E14) — a report × Defining-Objective grid of alignment
  * counts + enumerated `riskBadges[]` (via `RiskBadge`, glyph+text+color, no opaque
  * score; unknown → nothing, LESSONS §7). Explicit loading/empty/error states.
@@ -130,14 +151,19 @@ export function HeatmapGrid() {
                 </th>
                 {objectives.map((o) => {
                   const cell = cellAt(r.id, o.id);
+                  // Neutral volume-fill keyed on load (ST.6a), decoupled from risk.
+                  const vol: Volume = cell
+                    ? cellVolume(cell.commitmentCount)
+                    : 'none';
                   return (
                     <td key={o.id} data-cy="heatmap-cell" className="py-3">
                       {cell ? (
                         <button
                           type="button"
                           aria-label={`${r.label} — ${o.label}`}
+                          data-volume={vol}
                           onClick={() => setSelectedCellId(cell.cellId)}
-                          className="flex w-full flex-col items-start gap-1 rounded-md border border-border bg-surface-raised px-3 py-2 text-left hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-brand-ring"
+                          className={`flex w-full flex-col items-start gap-1 rounded-md border border-border ${VOLUME_BG[vol]} px-3 py-2 text-left hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-brand-ring`}
                         >
                           <span
                             data-cy="cell-commitmentCount"
