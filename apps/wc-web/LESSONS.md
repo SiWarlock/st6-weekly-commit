@@ -199,3 +199,34 @@ The frontend NEVER re-derives lock eligibility, authorization, or lifecycle lega
 - **§3 read-only-post-lock is a render decision, not an edit-guard:** a field frozen by state (`alignmentStatus` when `plan.state!=='DRAFT'`) renders as static labelled text, not a disabled input.
 
 **Rule:** Never re-derive eligibility/authz/lifecycle-legality client-side; gate controls only on the server's `allowedActions[]` (via one `can()` helper) or server state, surface its `409`/`safeMessage`/`fieldErrors[]` verbatim, and treat every lifecycle transition as an invalidate→refetch-into-new-state (no optimistic flip). Recurs for 9.8/9.9/9.11/9.12.
+
+---
+
+## <a id="12"></a>12. `exactOptionalPropertyTypes` + clear-via-patch — declare a clearable optional field `field?: T | undefined`
+
+**Date:** 2026-06-03.
+**Source slice:** 9.9 (`CommandCenterParams`).
+
+Under TS strict's `exactOptionalPropertyTypes` (on in this project), an optional field `field?: T` accepts *presence-or-absence* but **not** an explicit `undefined` assignment — `{ field: undefined }` is a type error. This bites the moment a controlled value is *cleared by patching the property to `undefined`*: a filter/query-param object whose optional members are reset via `onChange({ reviewState: undefined })`, a partial-update spread that re-sets a removed key, etc. The `CommandCenterParams` filter object hit exactly this — clearing a filter by setting it to `undefined` failed to typecheck.
+
+- **Declare any optional field that is *assigned* `undefined` (not merely omitted) as `field?: T | undefined`.** That widens the field to accept the explicit clear while staying optional. Reserve the bare `field?: T` form for fields that are only ever omitted, never set-to-undefined.
+- This is distinct from "make it nullable" — `null` is a different wire value; the clear here is *absence*, expressed as `undefined`, so the union is `T | undefined`, not `T | null`.
+- Recurs across every params/patch interface (the manager filters, future form-patch shapes). Pure TS-strict ergonomics; no runtime effect — but it blocks GREEN until fixed, so bake it into the type when authoring the interface.
+
+**Rule:** Under `exactOptionalPropertyTypes`, any optional field that gets *cleared by assigning `undefined`* (params objects, patch shapes) must be typed `field?: T | undefined`, not `field?: T`.
+
+---
+
+## <a id="13"></a>13. Manager read-surface conventions — `PageEnvelope<T>`, Pageable query, the shared `manager` tag, and reaching an action via the aggregate root
+
+**Date:** 2026-06-03.
+**Source slice:** 9.9 / 9.10 (command center + heatmap + drilldown).
+
+The manager read surfaces (command-center E13, heatmap E14, drilldown E15) share a set of conventions worth reusing for any future paginated/manager read (9.11+):
+
+- **One generic `PageEnvelope<T>` in `dtos.ts`** mirrors Appendix B.20 verbatim (`{ content: T[]; page: {number,size,totalElements,totalPages}; sort: {property,direction}[] }`) and is reused by command-center, drilldown, comments. Pageable queries take a single typed params object (`weekStart` required where the contract says so), **omit `undefined` filters** from the query string (clean cache keys), and apply the F.5 default sort client-side only when the caller sends none.
+- **There is no `heatmap` tag.** Command-center + heatmap project off the same §9 read models that co-change, so both queries `providesTags: ['manager']` and every reconciliation/dispute/review/mark-reviewed mutation that invalidates `manager` refetches both. (See §10 for the plan-side tags; `manager` is the general one.)
+- **When a row DTO lacks the id/`allowedActions` an action needs, reach it via the aggregate root — don't invent a read endpoint.** `ManagerCommandCenterRowDto` (B.11) carries no `reviewId`/`allowedActions`, so mark-reviewed (E16) is driven from the plan's `managerReview` (B.7) via a lazy `getPlanById` (E4, which authorizes the direct manager) on a per-row expand — skip-until-expanded. The action component (`MarkReviewedAction`) is self-contained + `can()`-gated, like `LockButton`. (This is the *frontend* mirror of the dispute-gap resolution: when the wire model omits an action's handle, expose it through the aggregate it belongs to.)
+- **A single `page`/`size` that paginates grouped sub-lists (E15 drilldown) must drive the pager off `max(totalPages)` across groups,** not the first group — else a deeper group's items become unreachable. The server paginates every group at the same page; the client pager spans the max so nothing is hidden.
+
+**Rule:** Reuse one generic `PageEnvelope<T>` (B.20) + a typed omit-undefined Pageable params object; tag manager reads `['manager']` (no `heatmap` tag); reach an action's missing id/allowedActions via the aggregate root (lazy `getPlanById`, not a new endpoint); and span a grouped-drilldown pager off `max(totalPages)` so no group is hidden.

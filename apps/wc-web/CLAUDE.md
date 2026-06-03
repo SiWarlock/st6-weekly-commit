@@ -126,6 +126,12 @@ Several typed models in this codebase are **contracts** mirrored in `ARCHITECTUR
 | `RcdoBreadcrumbDto` (`shared/lib/dtos.ts`) | Appendix B.5 / §5 | RC→DO→SO labels for display (9.6) |
 | `CreateCommitmentRequest` / `PatchCommitmentRequest` / `CreateUnplannedCommitmentRequest` (`shared/lib/dtos.ts`) | Appendix B.6 (E5/E6/E11) | request DTOs; no `version` (per Appendix B) (9.6) |
 | B.1 enum unions (`PlanState`/`CommitmentKind`/`Priority`/`WorkType`/`Confidence`/`AlignmentStatus`/`ReconciliationOutcome`/`ReviewStatus`/`AllowedAction`) (`shared/lib/dtos.ts`) | Appendix B.1 | typed unions mirroring the B.1 wire vocab verbatim (9.6) |
+| `ManagerCommandCenterRowDto` (`shared/lib/dtos.ts`) | Appendix B.11 | manager command-center roll-up row; mirrors `manager_plan_summary` §9 (no `reviewId`/`allowedActions`) (9.9) |
+| `PageEnvelope<T>` (`shared/lib/dtos.ts`) | Appendix B.20 | generic Spring `Page<T>` envelope `{content, page, sort}`; reused by command-center / drilldown / comments (9.9) |
+| `MarkReviewedRequest` (`shared/lib/dtos.ts`) | Appendix B.7 (E16) | `{ summaryNote? }`; status is server-derived, never sent (9.9) |
+| B.1 enums `RiskBadge` / `SyncStatus` / `EventKind` / `SyncRelatedType` (`shared/lib/dtos.ts`) | Appendix B.1 | typed unions mirroring the B.1 wire vocab verbatim (`RiskBadge` 9.10; sync trio 9.12) |
+| `HeatmapCellDto` / `HeatmapResponseDto` / `HeatmapDrilldownDto` / `DrilldownOutcomeGroup` (`shared/lib/dtos.ts`) | Appendix B.12 | manager heatmap grid + per-cell SO→commitment drilldown (drilldown commitments = `PageEnvelope<WeeklyCommitmentDto>`) (9.10) |
+| `OutlookSyncRecordDto` (`shared/lib/dtos.ts`) | Appendix B.10 | IC sync record; `safeMessage` is the only user-visible failure text (rule #7); `RETRY_SYNC` iff `FAILED` (9.12) |
 
 <!-- Starts empty (or with the first model if one exists). Populated as contract models land. -->
 
@@ -186,6 +192,8 @@ Lessons start at §1.
 | 9 | 2026-06-02 | [Query slices: read-only tags + §5 harness + problem+json](LESSONS.md#9) | Read-only query domains (`RCDO`/`Me`) tag-once-never-invalidate (pin the no-`*Mutation` half); reuse the §5 store harness; give `fetchBaseQuery` an `isJsonContentType` matching `application/problem+json` or RFC-7807 error bodies won't parse. |
 | 10 | 2026-06-02 | [Mutation cache-invalidation](LESSONS.md#10) | Per-id `{type:'plans',id}`+`'CURRENT'` tags (`planId` arg = invalidation key); guard `invalidatesTags` with `(_r,error)=>error?[]:tags` for success-only; assert via `endpoint.select()` raw `.status` not `.isFetching`; prove no-optimistic behaviorally (gated refetch) + structurally (no `updateQueryData`). |
 | 11 | 2026-06-02 | [Server-authoritative control gating](LESSONS.md#11) | Never re-derive eligibility/authz/lifecycle-legality client-side; gate controls only on server `allowedActions[]` (one `can()` helper) or server state; surface `409`/`safeMessage`/`fieldErrors[]` verbatim; lifecycle transition = invalidate→refetch-into-new-state, no optimistic flip. |
+| 12 | 2026-06-03 | [exactOptionalPropertyTypes clear-via-patch](LESSONS.md#12) | A clearable optional field (params/patch shapes set to `undefined`) must be typed `field?: T \| undefined`, not `field?: T`, under `exactOptionalPropertyTypes`. |
+| 13 | 2026-06-03 | [Manager read-surface conventions](LESSONS.md#13) | One generic `PageEnvelope<T>` (B.20) + omit-undefined Pageable params; tag manager reads `manager` (no `heatmap` tag); reach a row's missing action id/allowedActions via the aggregate root (lazy `getPlanById`, not a new endpoint); span a grouped-drilldown pager off `max(totalPages)`. |
 
 <!-- Starts empty. Each row links to its `LESSONS.md` anchor. -->
 
