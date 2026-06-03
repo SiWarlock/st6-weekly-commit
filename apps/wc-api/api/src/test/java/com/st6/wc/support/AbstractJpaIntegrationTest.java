@@ -6,7 +6,6 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.PostgreSQLContainer;
 
 /**
  * Shared JPA + Testcontainers PostgreSQL 16 base for the Phase-1 entity round-trip/mapping tests
@@ -39,17 +38,10 @@ import org.testcontainers.containers.PostgreSQLContainer;
 @EnableJpaRepositories("com.st6.wc")
 public abstract class AbstractJpaIntegrationTest {
 
-  @SuppressWarnings("resource") // singleton container, reaped by the Testcontainers Ryuk sidecar
-  protected static final PostgreSQLContainer<?> PG = new PostgreSQLContainer<>("postgres:16.13");
-
-  static {
-    PG.start();
-  }
-
   @DynamicPropertySource
   static void datasourceProperties(DynamicPropertyRegistry registry) {
-    registry.add("spring.datasource.url", PG::getJdbcUrl);
-    registry.add("spring.datasource.username", PG::getUsername);
-    registry.add("spring.datasource.password", PG::getPassword);
+    registry.add("spring.datasource.url", SharedPostgres.INSTANCE::getJdbcUrl);
+    registry.add("spring.datasource.username", SharedPostgres.INSTANCE::getUsername);
+    registry.add("spring.datasource.password", SharedPostgres.INSTANCE::getPassword);
   }
 }

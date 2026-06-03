@@ -1,26 +1,26 @@
 package com.st6.wc;
 
+import com.st6.wc.support.AbstractAppBootTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 
-/** Proves {@code WcApiApplication} also boots under the {@code demo} profile (acceptance 0.4). */
+/**
+ * Proves {@code WcApiApplication} also boots under the {@code demo} profile (acceptance 0.4)
+ * against the shared Testcontainers PG16 ({@link AbstractAppBootTest}). As of Phase 2 demo mode is
+ * DB-backed (DemoAuthFilter resolves the demo id + AuditService writes against PG), so this boots
+ * with a real DB — only the security autoconfig is excluded (the real SecurityFilterChain is 2.6).
+ */
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.MOCK,
-    // task 1.5/2.1: boot DB-less + security-less despite the data-jpa + oauth2-resource-server
-    // starters being on the classpath — this test only proves the demo-profile context assembles,
-    // not persistence or auth. (Demo profile is demo mode, so the real JwtDecoder is gated off
-    // too.)
     properties =
         "spring.autoconfigure.exclude="
-            + "org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration,"
-            + "org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration,"
             + "org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration,"
             + "org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration,"
             + "org.springframework.boot.autoconfigure.security.oauth2.resource.servlet.OAuth2ResourceServerAutoConfiguration,"
             + "org.springframework.boot.actuate.autoconfigure.security.servlet.ManagementWebSecurityAutoConfiguration")
 @ActiveProfiles("demo")
-class WcApiDemoBootTest {
+class WcApiDemoBootTest extends AbstractAppBootTest {
 
   @Test
   void contextLoadsUnderDemoProfile() {
