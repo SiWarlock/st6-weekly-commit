@@ -7,6 +7,12 @@
 - **Agent-side gates: ALL GREEN (rc=0)** — `terraform fmt -check` · `validate` · `tflint` · `kubeconform -strict` (16 res, 12 valid/4 CRD-skipped) · `actionlint`. **Every confirmed finding passed these gates** — they are apply-time / 2nd-deploy / controller-runtime issues static validation cannot see.
 - **Severity tally:** **1 Critical · 1 High · 3 Medium · 6 Low** (11 confirmed). 2 must-fix-before-deploy (C1, H1).
 
+> **✅ RESOLVED — 2026-06-02 (human-approved remediation, brief 014).** All 8 actionable findings fixed + verified green (`fmt`/`validate`/`tflint`/`kubeconform -strict`/`actionlint` all rc=0 on committed state):
+> - **Fix-slice A `0e4db1c`** — C1 (node-role `wc-aws-node-*`, closes the D3 PassRole deny; `/tmp` policy-sim + control proven) + M2 (`eks_public_access_cidrs` var + `docs/decisions/001` Decision 4 residual).
+> - **Fix-slice B `eb60ee3`** — H1 (migration delete-before-apply) · M1 (RDS `ignore_changes=[engine_version]`) · M3 (ALB `ssl-policy` TLS 1.2+) · L1 (migration wait fail-fast poll loop) · L3 (3 stale-comment rewords).
+> - **L2** — `ARCHITECTURE.md` §13 apply/migrate reorder (orchestrator; rides the round-2 commit).
+> The 10 adversarially-refuted findings need no action. Per-finding `RESOLVED @hash` in the disposition table below.
+
 ---
 
 ## CRITICAL
@@ -93,15 +99,17 @@
 
 ## Disposition summary
 
-| ID | Sev | Disposition |
-|---|---|---|
-| **C1** | Critical | **ESCALATED → human** (D3 design); fix-slice A (`eks.tf` node-role rename) |
-| **H1** | High | **ESCALATED → human** (must-fix; approach sign-off); fix-slice B (`deploy.yml` delete-before-apply) |
-| M1 | Medium | fix-slice B (`rds.tf` `ignore_changes`) |
-| M2 | Medium | fix-slice A (`eks.tf` scoping var + decisions/001 residual) |
-| M3 | Medium | fix-slice B (`ingress-api.yaml` ssl-policy) |
-| L1 | Low | fix-slice B (`deploy.yml` wait fail-fast) |
-| L2 | Low | ✅ DONE (orchestrator — ARCH §13 reorder) |
-| L3 | Low | fix-slice B (comment cleanup) |
+| ID | Sev | Disposition | Status |
+|---|---|---|---|
+| **C1** | Critical | fix-slice A — node-role `wc-aws-node-*` (closes the D3 PassRole deny; policy-sim + control proven) | ✅ **RESOLVED @0e4db1c** |
+| **H1** | High | fix-slice B — migration Job delete-before-apply | ✅ **RESOLVED @eb60ee3** |
+| M1 | Medium | fix-slice B — `rds.tf` `lifecycle{ignore_changes=[engine_version]}` | ✅ RESOLVED @eb60ee3 |
+| M2 | Medium | fix-slice A — `eks_public_access_cidrs` var + `decisions/001` Decision 4 residual | ✅ RESOLVED @0e4db1c |
+| M3 | Medium | fix-slice B — ALB `ssl-policy` `ELBSecurityPolicy-TLS13-1-2-2021-06` | ✅ RESOLVED @eb60ee3 |
+| L1 | Low | fix-slice B — migration wait fail-fast (poll Complete/Failed, 5s/600s) | ✅ RESOLVED @eb60ee3 |
+| L2 | Low | orchestrator — `ARCHITECTURE.md` §13 apply/migrate reorder | ✅ RESOLVED (round-2 commit) |
+| L3 | Low | fix-slice B — 3 stale `external-dns.yaml` comment rewords | ✅ RESOLVED @eb60ee3 |
+
+**Resolution verified green** (committed state, all rc=0): `terraform fmt -check`/`validate`/`tflint` · `kubeconform -strict` (16 res, 12 valid/4 CRD-skipped) · `actionlint`. Banked: **LESSON §19** (scoped name-prefix deny vs vendored-module-named roles). Audit closed.
 
 **Close-out HELD** pending the human's C1 + H1 rulings and a go on the fix-plan. No fixes applied yet (except L2 doc, orchestrator territory). Machine-readable fan-out result: see the implementer's workflow task output.

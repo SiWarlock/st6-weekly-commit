@@ -200,3 +200,83 @@ Two gotchas: (1) the boundary's self-referencing Denies must reference a **const
 
 **Rule:** For an apply-role, put service-least-privilege in the identity policy and escalation-prevention in a permissions boundary (`Allow *` + the Deny set); thread that boundary onto every TF-created role; self-reference the boundary via a constructed ARN; env-scope the OIDC trust with reviewer approval; no static keys.
 
+<a id="14"></a>
+## 14. TF-output → k8s-manifest injection via `${PLACEHOLDER}` tokens + allowlisted CI `envsubst`
+
+**Date:** 2026-06-02.
+**Source slice:** 12.8 (k8s deploy surface + external-dns).
+
+Several k8s manifest values are only known *after* `terraform apply` — the four IRSA role ARNs (SA annotations), the external-dns role ARN, the ALB ACM cert ARN, the three secret ARNs (SecretProviderClass `objectName`s), and `ROOT_DOMAIN`. Manifests are static YAML committed to the repo, so the value can't be a Terraform reference. The pattern: each unknown carries a `${TOKEN}` placeholder (e.g. `${IRSA_API_ROLE_ARN}`, `${ALB_CERT_ARN}`, `${ROOT_DOMAIN}`), and the 12.11 CI pipeline substitutes the tokens from `terraform output` values via `envsubst` immediately before `kubectl apply`. `kubeconform -strict` validates the manifests with the placeholders treated as plain strings, so the structure is provable agent-side without the real values.
+
+**Use an *allowlisted* `envsubst`** — `envsubst '$ALB_CERT_ARN $DB_SECRET_ARN …' < f.yaml` (the explicit single-quoted variable list) so ONLY the intended token set is expanded. Bare `envsubst` expands *every* `$NAME` in the file, which would clobber any future manifest content that legitimately contains a `$` (shell-style args, regex, JSONPath). Keep the token set tight and enumerated, each mapping 1:1 to a named TF output — and re-derive it by grepping the live manifests, don't carry a hardcoded count (the set shifts as manifests/installs change: external-dns's role ARN left the envsubst set when it became a Terraform-managed `helm_release` in 12.2b, so the 12.11 pipeline's allowlist is 15 tokens, not the 16 a stale carry-forward implied). Scrub stray `${...}` strings out of comments so the live token set equals the real one.
+
+**Rule:** Bind post-apply TF values into static k8s manifests with `${TOKEN}` placeholders + an **allowlisted** CI `envsubst` (enumerated variable list) before `kubectl apply`; `kubeconform` validates the placeholder form agent-side.
+
+<a id="15"></a>
+## 15. Per-SA SecretProviderClass mirrors IRSA least-privilege — and two correctness gotchas
+
+**Date:** 2026-06-02.
+**Source slice:** 12.8 (k8s deploy surface + external-dns).
+
+The Secrets Store CSI Driver + AWS provider (ASCP) mounts secrets per ServiceAccount. Author **one SecretProviderClass per SA** whose `objects` list exposes ONLY the secrets that SA's IRSA role can read — a defense-in-depth mirror of the 12.7b least-privilege split (api → db/auth0/graph; worker → graph only; cron/migration → db only). The IRSA role is the hard control (the pod literally can't `GetSecretValue` outside it); the per-SA SPC is the soft mirror that keeps the mount surface honest and the manifest auditable against the IAM policy.
+
+Two correctness gotchas that bite silently:
+1. **Dotted JMESPath keys MUST be double-quoted.** When extracting a secret-JSON key that contains dots (e.g. `spring.datasource.url`), the `jmesPath[].path` must be `'"spring.datasource.url"'` — unquoted, JMESPath parses the dots as nested field access (`spring` → `datasource` → `url`) and the extraction returns null. Keys without dots (e.g. `GRAPH_TENANT_ID`) stay unquoted.
+2. **No `secretObjects:` block.** Mount the extracted values as files under `/mnt/secrets` (tmpfs) only; do NOT add a `secretObjects:` stanza, which would sync the values into a Kubernetes `Secret` (etcd-persisted) — a needless second copy and a rule-#7 (secrets-never-leak) violation. Spring reads the file-per-key mount via `spring.config.import=configtree:/mnt/secrets/` (config-tree = file-per-property; NOT `file:`, which expects a single parseable config document — see the Appendix D.2 reconciliation carry-forward).
+
+**Rule:** One SecretProviderClass per SA exposing only that SA's IRSA-permitted secrets; double-quote dotted JMESPath keys; mount to tmpfs files with NO `secretObjects:` etcd sync.
+
+<a id="16"></a>
+## 16. k8s workload manifest conventions — per-pod CSI secret volume + the single-Flyway-owner / no-third-image audits
+
+**Date:** 2026-06-02.
+**Source slice:** 12.9 (Deployments + generation CronJob + migration/perf-seed Jobs).
+
+Workload manifests (Deployments/Jobs/CronJob) consume the 12.8 secret surface and must honor two §12 invariants that are easy to violate silently. Bank the shape + the audit recipe:
+
+**CSI secret volume, one per pod.** Each pod declares a `volumes[]` entry with `csi.driver: secrets-store.csi.k8s.io`, `readOnly: true`, and `volumeAttributes.secretProviderClass: <that workload's SPC>`, mounted `readOnly` at `/mnt/secrets`. The DB/Auth0/Graph **secret values are files** under that mount (read by Spring via `configtree:` — see §15), **never** plain `env:`. Only non-secret config (region, ARNs, `ROOT_DOMAIN`, profiles, flags) is `env:`, injected via `${PLACEHOLDER}` tokens (§14). The volume references the per-SA SPC by name, so the SA→SPC→IRSA least-privilege chain stays 1:1 across all four workloads. (The CSI Driver + AWS provider/ASCP that back this must be installed cluster-side via `helm_release` — a separate platform addon, peer to the ALB controller; a manifest that mounts the volume does not install the driver.)
+
+**Two forbidden-pattern audits, grep-checkable before GREEN.** (1) **Single Flyway owner:** exactly ONE manifest carries `spring.flyway.enabled=true` (relaxed-binding `SPRING_FLYWAY_ENABLED=true`) — the migration Job; api/worker/cronjob/perf-seed are `false`. (2) **No third image:** the CronJob, migration Job, and perf-seed Job all reuse the **wc-api** image (`${ECR_API_IMAGE}`); only the worker uses `${ECR_WORKER_IMAGE}` — exactly two image tokens across all manifests. Both are one-line greps; run them at the verify step. The migration-before-deploy *ordering* is NOT a manifest property — the CI pipeline enforces it (`kubectl wait --for=condition=complete job/...`); the perf-seed Job is opt-in (excluded from the deploy chain, marked by an annotation/banner).
+
+**Rule:** k8s workloads mount secrets as a per-pod CSI SecretProviderClass volume (files at `/mnt/secrets`, never env); grep-audit the single-Flyway-owner + no-third-image invariants before GREEN; ordering + opt-in exclusion live in the pipeline, not the manifest.
+
+<a id="17"></a>
+## 17. A manifest that USES a cluster add-on never INSTALLS it — and install all add-ons by one consistent mechanism
+
+**Date:** 2026-06-02.
+**Source slice:** 12.9 Step-2.5 Finding → 12.2b (cluster add-ons install + consistency).
+
+Authoring the manifests that *consume* a cluster add-on is not the same as *installing* the add-on, and it's easy to ship the consumer while silently omitting the provider. Here: 12.6 (secrets) + 12.7b (IRSA) + 12.8 (SecretProviderClasses) + 12.9 (pod CSI volume mounts) all rode on the **Secrets Store CSI Driver + AWS provider (ASCP)** — but nothing installed the driver. It validates clean (the CSI volume is a core PodSpec field; the `SecretProviderClass` is referenced by name as a string), so `kubeconform`/`validate` are all green — yet at deploy the CRD wouldn't exist and the volumes wouldn't mount. **The audit that catches this:** for every cluster feature a manifest depends on (a CSI driver, an ingress class / controller, a DNS annotation, a webhook, an admission policy), confirm a corresponding *install* resource exists (a `helm_release` or applied manifest). A reachability pass over manifests must include their controllers, not just the workloads.
+
+**Install all cluster add-ons by ONE mechanism.** The cluster grew three add-ons — ALB Load Balancer Controller, external-dns, Secrets Store CSI Driver + ASCP — and they had drifted into two install styles (`helm_release` vs a hand-written manifest). Because the ALB controller and the CSI driver are effectively helm-only (they ship CRDs/webhooks/DaemonSets that are impractical to hand-maintain), consistency converges on **all cluster add-ons via Terraform `helm_release`** (version-pinned, installed during `terraform apply`, before the app `kubectl apply`). external-dns — which has an official chart — was converted from its raw manifest to a `helm_release` to match. Draw the line at **platform controllers (Terraform `helm_release`) vs application workloads (kubectl manifests)**: SAs, SecretProviderClasses, Deployments, Jobs, Service, Ingress stay manifests; the controllers they depend on are `helm_release`s.
+
+**Rule:** Every cluster-feature a manifest depends on needs its own install resource — audit controllers, not just workloads; install all cluster add-ons by one consistent mechanism (here: Terraform `helm_release` for platform controllers, kubectl manifests for app workloads).
+
+<a id="18"></a>
+## 18. GitHub Actions deploy pipeline — OIDC-only, env-scoped trust forces a single reviewer-gated AWS job, ordered graph
+
+**Date:** 2026-06-02.
+**Source slice:** 12.11 (GitHub Actions OIDC deploy pipeline).
+
+The §13 deploy pipeline shape that satisfies the hardened-CI decisions (D1) — and the non-obvious constraint that shapes the whole job layout:
+
+**env-scoped OIDC forces the job layout.** The CI role trust is `StringEquals` on `sub = repo:<repo>:environment:production` (12.7c), so **every job that calls `aws-actions/configure-aws-credentials` MUST run under `environment: production`** — otherwise its OIDC `sub` is `…:ref:refs/…` and `AssumeRoleWithWebIdentity` is **denied at the real run** (a latent failure `actionlint` cannot see). Putting AWS work in a separate non-environment job (e.g. a `build-images` job that pushes to ECR *before* the gated deploy) breaks. **Consolidate ALL AWS-touching steps — build+push, `terraform apply`, migrate, roll, S3 sync, deployed smoke — into ONE `environment: production` job** (one OIDC assumption + one reviewer approval); keep `gates` (no AWS) as a separate pre-job that runs on every trigger. (Two AWS jobs both referencing the environment would also double the reviewer prompt.)
+
+**The rest of the shape:** OIDC-only, no static keys (`permissions.id-token: write`; `role-to-assume` = the env-scoped role; zero `aws-access-key-id`/`secrets.AWS*` inputs — REQ-S-010). Ordered graph: `gates → deploy` via `needs`; within the deploy job, sequential steps enforce the §12/§13 order so an out-of-order path is unreachable — `terraform apply` (installs the cluster add-ons, §17) **before** any `kubectl`; the migration Job + `kubectl wait --for=condition=complete` **before** any Deployment/CronJob roll (§12). Value injection via the allowlisted `envsubst` (§14), token set grepped from the live manifests. Non-secret config via GitHub `vars.*`; AWS via OIDC. Author+validate only (`actionlint`); the workflow orchestrates the app area's build/test/Docker targets (forward-deps) and runs HITL.
+
+**Rule:** Deploy pipeline = OIDC-only (no static keys) + ALL AWS work in ONE `environment: production` job (the env-scoped trust requires it — a separate AWS job is denied at the real run) + `gates` separate + an ordered `needs`/sequential-step graph that makes apply-before-kubectl and migrate-before-roll unreachable to violate + allowlisted-`envsubst` injection.
+
+<a id="19"></a>
+## 19. A scoped resource-Deny on a NAME PREFIX breaks if a vendored module names a role outside the prefix
+
+**Date:** 2026-06-02.
+**Source slice:** Phase-12 final-audit finding C1 → remediation (brief 014).
+
+D3 scoped the CI role's `iam:PassRole` to `role/wc-*` (a `NotResource` Deny). The intent: every Terraform-created role is `wc-*` + bounded, so PassRole-to-`wc-*` is the complete allowed set. But the EKS **managed node-group** IAM role is auto-named `default-eks-node-group-<suffix>` by the vendored eks v21 module — derived from the node-group **map key** (`default`), NOT the cluster name. So it falls **outside** `wc-*`, and creating the node group (which `PassRole`s the node role to the service) is denied by the CI role's **own** boundary → the first `terraform apply` fails with `AccessDenied`. The cluster role was fine (named from the cluster name → `wc-aws-cluster-*`); the asymmetry is that the node role derives from a different source.
+
+This is the dangerous class: **a scoped deny on a name prefix is only as correct as your control over EVERY name in scope** — and vendored modules name resources from their own inputs (keys, defaults), not your prefix convention. Static validation (`validate`/`tflint`/no-plan) cannot see it; it only fires at apply, when the role is actually `PassRole`'d. The comprehensive pre-deploy audit caught it precisely because it reasoned about apply-time behavior, not just static structure.
+
+Two defenses: **(1)** when a boundary/policy scopes by resource-name prefix, **audit every TF-created role name — including module-created ones — against the prefix**; don't assume the convention holds. **(2)** Force the name: set the module's `iam_role_name` input (here `iam_role_name = "${local.cluster_name}-node"` → `wc-aws-node`) so the role joins the prefix, rather than widening the scope. The C1 fix used (2) — it preserves the tight `wc-*` scope the human ruled.
+
+**Rule:** A scoped resource-Deny/Allow on a name prefix is only correct if EVERY name in scope — including vendored-module-created roles named from keys/defaults, not your convention — matches the prefix; audit them all, and force module role names into the prefix (`iam_role_name`) rather than widening the scope.
+

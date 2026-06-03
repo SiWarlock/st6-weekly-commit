@@ -147,3 +147,19 @@ The human is fine with CI performing the deploy, and explicitly wants the archit
 - **Supersedes** the "api.wc deferred / post-deploy script" carry-forward from 12.7a — external-dns now owns that record declaratively; no scripted/runbook DNS step needed.
 
 **Unblocks:** 12.7c (broad role + permissions boundary + env-scoped OIDC + `github_repo` var), 12.8 (k8s SAs/ingress + external-dns manifest + its IRSA), 12.9, 12.11. Orchestrator resumes the queue.
+
+---
+
+## Decision 4 — EKS public API endpoint exposure → ACCEPTED RESIDUAL (var-scopeable) — 2026-06-02
+
+> Surfaced by the Phase-12 comprehensive final audit (`docs/audits/001-phase12-audit.md`, finding **M2**); human-approved remediation relayed by the lead.
+
+### The posture question
+The EKS cluster has `endpoint_public_access = true` with no CIDR restriction → the public Kubernetes API endpoint defaults (via the module) to `0.0.0.0/0`. Access is still gated by IAM/OIDC access entries and the **private** endpoint path is also enabled (defense-in-depth) — so this is an exposure-surface posture, **not** an unauthenticated open admin port. But the wide-open CIDR was an unstated module default.
+
+### Ruling (human-approved) — keep public, make it scopeable, accept the open default as a documented residual
+- **Added `variable "eks_public_access_cidrs"`** (`list(string)`, default `["0.0.0.0/0"]`) in `variables.tf`, wired to the eks module's `endpoint_public_access_cidrs` (12-audit fix-slice A). The operator CAN now scope the public endpoint to a known egress (e.g. a self-hosted-runner / office CIDR) by overriding the var.
+- **Accepted residual (default `0.0.0.0/0`):** for the assessment, CI runs from GitHub-hosted runners (dynamic IPs), so fully scoping the public endpoint would force a self-hosted runner or a published-GitHub-IP set. The open default is accepted — backstopped by IAM/OIDC auth-gating + the private path — and is now **explicit** (this note), the same way **D3 residual #1** (the boundary's broad service ceiling) was accepted. A reviewer expecting a scoped endpoint sees the trim was intentional + the knob exists.
+- **Phase-13 hardening candidate:** scope `eks_public_access_cidrs` to a real egress (or go private-only with a bastion/VPN) — surface in the §20 hardening set alongside Multi-AZ / role-separation / SHA-pinned actions.
+
+**Audit cross-ref:** see `docs/audits/001-phase12-audit.md` M2.
