@@ -92,10 +92,26 @@ public class ProblemDetailsExceptionHandler {
 
   @ExceptionHandler(IllegalStateTransitionException.class)
   ResponseEntity<ProblemDetail> handleIllegalState(IllegalStateTransitionException ex) {
+    ProblemDetail body =
+        ProblemDetailFactory.of(
+            HttpStatus.CONFLICT,
+            "The action is not allowed from the current state.",
+            ErrorCodes.ILLEGAL_STATE_TRANSITION);
+    if (ex.getConstraint() != null) {
+      body.setProperty("constraint", ex.getConstraint());
+    }
+    return ResponseEntity.status(HttpStatus.CONFLICT)
+        .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+        .body(body);
+  }
+
+  @ExceptionHandler(LockedBaselineEditException.class)
+  ResponseEntity<ProblemDetail> handleLockedBaseline(LockedBaselineEditException ex) {
+    // rule #2 — a frozen planned-baseline field cannot be edited after lock (RISK-002, §3).
     return render(
         HttpStatus.CONFLICT,
-        "The action is not allowed from the current state.",
-        ErrorCodes.ILLEGAL_STATE_TRANSITION);
+        "Locked plan commitments cannot be edited.",
+        ErrorCodes.LOCKED_BASELINE_EDIT);
   }
 
   @ExceptionHandler(Exception.class)

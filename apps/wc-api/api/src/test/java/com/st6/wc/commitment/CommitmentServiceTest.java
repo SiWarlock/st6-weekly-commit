@@ -13,6 +13,7 @@ import static org.mockito.Mockito.when;
 import com.st6.wc.auth.DomainAuthorizationService;
 import com.st6.wc.auth.ResourceNotFoundOrUnauthorizedException;
 import com.st6.wc.commitment.dto.CreateCommitmentRequest;
+import com.st6.wc.commitment.dto.PatchCommitmentRequest;
 import com.st6.wc.commitment.mapper.CommitmentMapper;
 import com.st6.wc.commitment.repo.WeeklyCommitmentRepository;
 import com.st6.wc.enums.AlignmentStatus;
@@ -27,6 +28,7 @@ import com.st6.wc.plan.WeeklyPlan;
 import com.st6.wc.plan.repo.WeeklyPlanRepository;
 import com.st6.wc.rcdo.RcdoReadService;
 import com.st6.wc.web.IllegalStateTransitionException;
+import com.st6.wc.web.LockedBaselineEditException;
 import com.st6.wc.web.ValidationException;
 import java.util.Optional;
 import java.util.UUID;
@@ -52,6 +54,7 @@ class CommitmentServiceTest {
 
   private static final UUID ACTOR = UUID.randomUUID();
   private static final UUID PLAN_ID = UUID.randomUUID();
+  private static final UUID COMMITMENT_ID = UUID.randomUUID();
 
   private UserPrincipal actor() {
     return new UserPrincipal(ACTOR, RoleType.IC, false);
@@ -63,6 +66,44 @@ class CommitmentServiceTest {
     p.setEmployeeId(ACTOR);
     p.setState(state);
     return p;
+  }
+
+  private static WeeklyCommitment commitment() {
+    WeeklyCommitment c = new WeeklyCommitment();
+    c.setId(COMMITMENT_ID);
+    c.setWeeklyPlanId(PLAN_ID);
+    c.setCommitmentKind(CommitmentKind.PLANNED);
+    c.setTitle("Original");
+    c.setPriority(Priority.P1);
+    c.setWorkType(WorkType.STRATEGIC);
+    c.setConfidence(Confidence.MEDIUM);
+    c.setAlignmentStatus(AlignmentStatus.NEEDS_REVIEW);
+    return c;
+  }
+
+  private static PatchCommitmentRequest patchTitlePriority(String title, Priority prio) {
+    PatchCommitmentRequest req = new PatchCommitmentRequest();
+    req.setTitle(title);
+    req.setPriority(prio);
+    return req;
+  }
+
+  private static PatchCommitmentRequest patchSupportingOutcome(UUID soId) {
+    PatchCommitmentRequest req = new PatchCommitmentRequest();
+    req.setSupportingOutcomeId(soId);
+    return req;
+  }
+
+  private static PatchCommitmentRequest patchAlignment(AlignmentStatus status) {
+    PatchCommitmentRequest req = new PatchCommitmentRequest();
+    req.setAlignmentStatus(status);
+    return req;
+  }
+
+  private static PatchCommitmentRequest patchWorkType(WorkType workType) {
+    PatchCommitmentRequest req = new PatchCommitmentRequest();
+    req.setWorkType(workType);
+    return req;
   }
 
   private static CreateCommitmentRequest request(WorkType workType, UUID soId) {
@@ -135,5 +176,128 @@ class CommitmentServiceTest {
     assertThatThrownBy(() -> service.create(actor(), PLAN_ID, request(WorkType.STRATEGIC, soId)))
         .isInstanceOf(ValidationException.class);
     verify(commitments, never()).save(any());
+  }
+
+  // ===================== update (E6) =====================
+
+  // --- authorize-mutation chokepoint, then apply ONLY the provided fields ----
+  @Test
+  void update_authorizesThenAppliesProvidedFields() {
+    when(commitments.findById(COMMITMENT_ID)).thenReturn(Optional.of(commitment()));
+    when(plans.findById(PLAN_ID)).thenReturn(Optional.of(plan(PlanState.DRAFT)));
+
+    service.update(actor(), COMMITMENT_ID, patchTitlePriority("New title", Priority.P0));
+
+    verify(authz).authorizeCommitmentMutation(actor(), COMMITMENT_ID); // the chokepoint ran
+    ArgumentCaptor<WeeklyCommitment> saved = ArgumentCaptor.forClass(WeeklyCommitment.class);
+    verify(commitments).save(saved.capture());
+    assertThat(saved.getValue().getTitle()).isEqualTo("New title");
+    assertThat(saved.getValue().getPriority()).isEqualTo(Priority.P0);
+    assertThat(saved.getValue().getConfidence()).isEqualTo(Confidence.MEDIUM); // untouched
+  }
+
+  // --- rule #3: a denied mutation-authorize is the chokepoint — nothing is loaded or saved ----
+  @Test
+  void update_deniedAuthorizer_neverLoadsOrSaves() {
+    doThrow(new ResourceNotFoundOrUnauthorizedException())
+        .when(authz)
+        .authorizeCommitmentMutation(any(), eq(COMMITMENT_ID));
+
+    assertThatThrownBy(
+            () -> service.update(actor(), COMMITMENT_ID, patchTitlePriority("x", Priority.P1)))
+        .isInstanceOf(ResourceNotFoundOrUnauthorizedException.class);
+    verify(commitments, never()).findById(COMMITMENT_ID); // no load before authorization
+    verify(commitments, never()).save(any());
+  }
+
+  // --- rule #2: a baseline-field edit on a LOCKED plan → LockedBaselineEditException ----
+  @Test
+  void update_lockedPlan_baselineField_throwsLockedBaselineEdit() {
+    when(commitments.findById(COMMITMENT_ID)).thenReturn(Optional.of(commitment()));
+    when(plans.findById(PLAN_ID)).thenReturn(Optional.of(plan(PlanState.LOCKED)));
+
+    assertThatThrownBy(
+            () -> service.update(actor(), COMMITMENT_ID, patchTitlePriority("x", Priority.P1)))
+        .isInstanceOf(LockedBaselineEditException.class);
+    verify(commitments, never()).save(any());
+  }
+
+  // --- alignmentStatus post-lock is read-only → ILLEGAL_STATE_TRANSITION (distinct from baseline)
+  // -
+  @Test
+  void update_lockedPlan_alignmentStatus_throwsIllegalStateTransition() {
+    when(commitments.findById(COMMITMENT_ID)).thenReturn(Optional.of(commitment()));
+    when(plans.findById(PLAN_ID)).thenReturn(Optional.of(plan(PlanState.LOCKED)));
+
+    assertThatThrownBy(
+            () -> service.update(actor(), COMMITMENT_ID, patchAlignment(AlignmentStatus.ALIGNED)))
+        .isInstanceOf(IllegalStateTransitionException.class);
+    verify(commitments, never()).save(any());
+  }
+
+  // --- unknown supportingOutcomeId on a re-link → 400 VALIDATION_ERROR ----
+  @Test
+  void update_unknownSupportingOutcome_throwsValidation() {
+    UUID soId = UUID.randomUUID();
+    when(commitments.findById(COMMITMENT_ID)).thenReturn(Optional.of(commitment()));
+    when(plans.findById(PLAN_ID)).thenReturn(Optional.of(plan(PlanState.DRAFT)));
+    when(rcdoReadService.findSupportingOutcome(soId))
+        .thenThrow(new ResourceNotFoundOrUnauthorizedException());
+
+    assertThatThrownBy(() -> service.update(actor(), COMMITMENT_ID, patchSupportingOutcome(soId)))
+        .isInstanceOf(ValidationException.class);
+    verify(commitments, never()).save(any());
+  }
+
+  // --- planned-only on PATCH too: workType=UNPLANNED → 400 VALIDATION_ERROR (UNPLANNED is E11)
+  // ----
+  @Test
+  void update_unplannedWorkType_throwsValidation() {
+    when(commitments.findById(COMMITMENT_ID)).thenReturn(Optional.of(commitment()));
+    when(plans.findById(PLAN_ID)).thenReturn(Optional.of(plan(PlanState.DRAFT)));
+
+    assertThatThrownBy(
+            () -> service.update(actor(), COMMITMENT_ID, patchWorkType(WorkType.UNPLANNED)))
+        .isInstanceOf(ValidationException.class);
+    verify(commitments, never()).save(any());
+  }
+
+  // ===================== delete (E7) =====================
+
+  // --- authorize-mutation chokepoint, then delete a DRAFT-plan commitment ----
+  @Test
+  void delete_authorizesThenDeletes() {
+    WeeklyCommitment c = commitment();
+    when(commitments.findById(COMMITMENT_ID)).thenReturn(Optional.of(c));
+    when(plans.findById(PLAN_ID)).thenReturn(Optional.of(plan(PlanState.DRAFT)));
+
+    service.discard(actor(), COMMITMENT_ID);
+
+    verify(authz).authorizeCommitmentMutation(actor(), COMMITMENT_ID);
+    verify(commitments).delete(c);
+  }
+
+  // --- rule #3: a denied delete-authorize is the chokepoint — nothing is loaded or deleted ----
+  @Test
+  void delete_deniedAuthorizer_neverLoadsOrDeletes() {
+    doThrow(new ResourceNotFoundOrUnauthorizedException())
+        .when(authz)
+        .authorizeCommitmentMutation(any(), eq(COMMITMENT_ID));
+
+    assertThatThrownBy(() -> service.discard(actor(), COMMITMENT_ID))
+        .isInstanceOf(ResourceNotFoundOrUnauthorizedException.class);
+    verify(commitments, never()).findById(COMMITMENT_ID);
+    verify(commitments, never()).delete(any());
+  }
+
+  // --- delete requires DRAFT: a non-DRAFT plan → 409 ILLEGAL_STATE_TRANSITION ----
+  @Test
+  void delete_nonDraftPlan_throwsIllegalStateTransition() {
+    when(commitments.findById(COMMITMENT_ID)).thenReturn(Optional.of(commitment()));
+    when(plans.findById(PLAN_ID)).thenReturn(Optional.of(plan(PlanState.LOCKED)));
+
+    assertThatThrownBy(() -> service.discard(actor(), COMMITMENT_ID))
+        .isInstanceOf(IllegalStateTransitionException.class);
+    verify(commitments, never()).delete(any());
   }
 }

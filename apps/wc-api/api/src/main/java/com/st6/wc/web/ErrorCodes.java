@@ -17,4 +17,7 @@ public final class ErrorCodes {
 
   /** A lifecycle action attempted from an illegal source state (409). */
   public static final String ILLEGAL_STATE_TRANSITION = "ILLEGAL_STATE_TRANSITION";
+
+  /** An edit of a frozen planned-baseline field after lock (409; RISK-002 / rule #2, task 3.4b). */
+  public static final String LOCKED_BASELINE_EDIT = "LOCKED_BASELINE_EDIT";
 }

@@ -413,6 +413,93 @@ class DomainAuthorizationServiceTest {
     verifyNoInteractions(auditer); // no existence leak AND no audit-spam on a nonexistent id
   }
 
+  // ===== commitment mutation: access + IC-owner-only capability (task 3.4b) =====
+
+  // --- M1. the owning IC may mutate its own commitment -> authorized, no scope lookup, no audit --
+  @Test
+  void commitmentMutation_ownerIc_authorized() {
+    UUID ic = UUID.randomUUID();
+    UUID planId = UUID.randomUUID();
+    UUID commitmentId = UUID.randomUUID();
+    when(commitments.findById(commitmentId))
+        .thenReturn(Optional.of(commitment(commitmentId, planId)));
+    when(plans.findById(planId)).thenReturn(Optional.of(plan(planId, ic)));
+
+    assertThatCode(
+            () -> authz.authorizeCommitmentMutation(user(ic, RoleType.IC, false), commitmentId))
+        .doesNotThrowAnyException();
+    verifyNoInteractions(relationships); // self short-circuit
+    verifyNoInteractions(auditer);
+  }
+
+  // --- M2. a manager-direct-report can SEE the commitment but NOT mutate it -> 403 + one audit
+  // ----
+  @Test
+  void commitmentMutation_managerDirectReport_throws403_oneAudit() {
+    UUID mgr = UUID.randomUUID();
+    UUID ic = UUID.randomUUID();
+    UUID planId = UUID.randomUUID();
+    UUID commitmentId = UUID.randomUUID();
+    when(commitments.findById(commitmentId))
+        .thenReturn(Optional.of(commitment(commitmentId, planId)));
+    when(plans.findById(planId)).thenReturn(Optional.of(plan(planId, ic)));
+    when(relationships.findByDirectReportEmployeeIdAndActiveTrue(ic))
+        .thenReturn(Optional.of(relationship(mgr, ic, true)));
+
+    UserPrincipal principal = user(mgr, RoleType.MANAGER, true);
+    assertThatThrownBy(() -> authz.authorizeCommitmentMutation(principal, commitmentId))
+        .isInstanceOf(AuthorizationDeniedException.class)
+        .hasFieldOrPropertyWithValue("code", "COMMITMENT_OWNER_REQUIRED");
+    verify(auditer, times(1))
+        .recordDenial(eq(principal), eq("Commitment"), eq(commitmentId), anyString());
+  }
+
+  // --- M3. a cross-IC mutation attempt -> IDOR-safe 404 + one audit (existence-hidden) ----
+  @Test
+  void commitmentMutation_crossIc_throws404_oneAudit() {
+    UUID ic1 = UUID.randomUUID();
+    UUID ic2 = UUID.randomUUID();
+    UUID planId = UUID.randomUUID();
+    UUID commitmentId = UUID.randomUUID();
+    when(commitments.findById(commitmentId))
+        .thenReturn(Optional.of(commitment(commitmentId, planId)));
+    when(plans.findById(planId)).thenReturn(Optional.of(plan(planId, ic2)));
+
+    UserPrincipal principal = user(ic1, RoleType.IC, false);
+    assertThatThrownBy(() -> authz.authorizeCommitmentMutation(principal, commitmentId))
+        .isInstanceOf(ResourceNotFoundOrUnauthorizedException.class);
+    verify(auditer, times(1))
+        .recordDenial(eq(principal), eq("Commitment"), eq(commitmentId), anyString());
+  }
+
+  // --- M4. SYSTEM is exempt from the owner check -> authorized, no audit ----
+  @Test
+  void commitmentMutation_systemExempt_authorized() {
+    UUID planId = UUID.randomUUID();
+    UUID commitmentId = UUID.randomUUID();
+    when(commitments.findById(commitmentId))
+        .thenReturn(Optional.of(commitment(commitmentId, planId)));
+    when(plans.findById(planId)).thenReturn(Optional.of(plan(planId, UUID.randomUUID())));
+
+    assertThatCode(() -> authz.authorizeCommitmentMutation(SystemPrincipal.INSTANCE, commitmentId))
+        .doesNotThrowAnyException();
+    verifyNoInteractions(auditer);
+  }
+
+  // --- M5. a genuinely missing commitment -> 404 with NO audit (probe, not a denial) ----
+  @Test
+  void commitmentMutation_missingCommitment_throws404_withoutAudit() {
+    UUID commitmentId = UUID.randomUUID();
+    when(commitments.findById(commitmentId)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(
+            () ->
+                authz.authorizeCommitmentMutation(
+                    user(UUID.randomUUID(), RoleType.IC, false), commitmentId))
+        .isInstanceOf(ResourceNotFoundOrUnauthorizedException.class);
+    verifyNoInteractions(auditer);
+  }
+
   // ===== fixtures =====
 
   private static UserPrincipal user(UUID id, RoleType role, boolean isManager) {

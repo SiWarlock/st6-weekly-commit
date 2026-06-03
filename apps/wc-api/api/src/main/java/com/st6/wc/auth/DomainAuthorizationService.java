@@ -58,9 +58,11 @@ public class DomainAuthorizationService {
   private static final String REASON_CROSS_OWNER = "cross_owner_or_unauthorized";
   private static final String REASON_IC_NO_RESOLVE = "ic_cannot_resolve_dispute";
   private static final String REASON_MANAGER_ROLE = "manager_role_required";
+  private static final String REASON_NOT_OWNER = "not_commitment_owner";
 
   private static final String CODE_IC_CANNOT_RESOLVE = "IC_CANNOT_RESOLVE_DISPUTE";
   private static final String CODE_MANAGER_ROLE_REQUIRED = "MANAGER_ROLE_REQUIRED";
+  private static final String CODE_COMMITMENT_OWNER_REQUIRED = "COMMITMENT_OWNER_REQUIRED";
 
   private final WeeklyPlanRepository plans;
   private final WeeklyCommitmentRepository commitments;
@@ -148,6 +150,26 @@ public class DomainAuthorizationService {
     if (principal instanceof UserPrincipal up && !up.isManager()) {
       throw deny403(principal, HEATMAP, null, REASON_MANAGER_ROLE, CODE_MANAGER_ROLE_REQUIRED);
     }
+  }
+
+  /**
+   * Mutating a commitment (E6 PATCH / E7 DELETE, task 3.4b) is an <strong>IC-owner-only</strong>
+   * capability on top of access: a manager-direct-report can <em>read</em> the commitment (3.3b)
+   * but cannot edit/delete it. First the access chokepoint (cross-owner/cross-team/missing →
+   * IDOR-safe {@code 404} + audit), then an explicit owner check — a principal who can see but does
+   * not own it (a manager-direct-report) gets {@code 403 COMMITMENT_OWNER_REQUIRED} + a denial
+   * audit (existence is already known via read, so {@code 403} capability, not {@code 404}).
+   * Mirrors {@link #authorizeDisputeResolution} (access-then-capability). SYSTEM is exempt.
+   */
+  public void authorizeCommitmentMutation(DomainPrincipal principal, UUID commitmentId) {
+    UUID owner = commitmentOwner(commitmentId); // missing → 404 WITHOUT audit
+    authorizeOwnership(
+        principal, owner, COMMITMENT, commitmentId); // no access at all → 404 + audit
+    if (principal instanceof UserPrincipal up && !up.employeeId().equals(owner)) {
+      throw deny403(
+          principal, COMMITMENT, commitmentId, REASON_NOT_OWNER, CODE_COMMITMENT_OWNER_REQUIRED);
+    }
+    // the owning IC (or SYSTEM) may mutate
   }
 
   /** Resolving a dispute is a manager capability: the IC owner can see it but cannot resolve it. */

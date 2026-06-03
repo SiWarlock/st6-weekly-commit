@@ -1,12 +1,15 @@
 package com.st6.wc.commitment;
 
 import com.st6.wc.commitment.dto.CreateCommitmentRequest;
+import com.st6.wc.commitment.dto.PatchCommitmentRequest;
 import com.st6.wc.commitment.dto.WeeklyCommitmentDto;
 import com.st6.wc.identity.UserPrincipal;
 import jakarta.validation.Valid;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -14,10 +17,16 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * {@code POST /api/plans/{id}/commitments} (E5, task 3.4a, §5 / §6 rule #3). Thin: {@code @Valid}
- * runs the Appendix-E field validation on the (constructor-normalized) request → 400 on violation;
- * the service authorizes the parent plan first (the chokepoint) → codeless 404 on a cross-owner/
- * missing plan; on success → 201 with the created {@link WeeklyCommitmentDto}.
+ * Commitment write endpoints (task 3.4a/3.4b, §5 / §6 rule #3). Thin controllers — {@code @Valid}
+ * runs the Appendix-E field validation → 400 on violation; the service authorizes first (the
+ * chokepoint, codeless 404 on a cross-owner/missing resource) then applies the state rules.
+ *
+ * <ul>
+ *   <li>{@code POST /api/plans/{id}/commitments} (E5) → 201 created {@link WeeklyCommitmentDto};
+ *   <li>{@code PATCH /api/commitments/{id}} (E6) → 200 updated DTO (owner-only, DRAFT-gated
+ *       baseline + read-only {@code alignmentStatus} post-lock);
+ *   <li>{@code DELETE /api/commitments/{id}} (E7) → 204 (owner-only, DRAFT-only).
+ * </ul>
  */
 @RestController
 public class CommitmentController {
@@ -35,5 +44,23 @@ public class CommitmentController {
       @PathVariable("id") UUID planId,
       @Valid @RequestBody CreateCommitmentRequest request) {
     return commitmentService.create(principal, planId, request);
+  }
+
+  @PatchMapping("/api/commitments/{id}")
+  public WeeklyCommitmentDto update(
+      @AuthenticationPrincipal UserPrincipal principal,
+      @PathVariable("id") UUID commitmentId,
+      @RequestBody PatchCommitmentRequest request) {
+    // No @Valid: PatchCommitmentRequest carries no bean constraints — partial-update validation +
+    // normalization live in the service (reusing TextNormalizer, uniform with E5, on present
+    // fields).
+    return commitmentService.update(principal, commitmentId, request);
+  }
+
+  @DeleteMapping("/api/commitments/{id}")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void delete(
+      @AuthenticationPrincipal UserPrincipal principal, @PathVariable("id") UUID commitmentId) {
+    commitmentService.discard(principal, commitmentId);
   }
 }
