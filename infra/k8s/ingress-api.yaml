@@ -4,7 +4,8 @@
 #   - HTTPS:443 listener terminating the regional ACM cert (${ALB_CERT_ARN}, 12.7a)
 #   - ALB target-group health check -> the api readiness probe path (13.3)
 # external-dns watches the hostname annotation and upserts the api.wc.${ROOT_DOMAIN}
-# -> ALB alias Route53 record (Decision 2) — inert until external-dns.yaml deploys.
+# -> ALB alias Route53 record (Decision 2) — upserted once the external-dns helm_release
+# (addons.tf, kube-system, installed by `terraform apply` before kubectl) reconciles it.
 # ${ALB_CERT_ARN} + ${ROOT_DOMAIN} are injected at deploy via CI envsubst (12.11).
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -18,6 +19,9 @@ metadata:
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    # 12-audit M3: pin a TLS 1.2+ floor (matches the CloudFront TLSv1.2_2021 floor); the
+    # ALB controller default ELBSecurityPolicy-2016-08 still negotiates TLS 1.0/1.1.
+    alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-2021-06
     alb.ingress.kubernetes.io/certificate-arn: ${ALB_CERT_ARN}
     alb.ingress.kubernetes.io/healthcheck-path: /actuator/health/readiness
     external-dns.alpha.kubernetes.io/hostname: api.wc.${ROOT_DOMAIN}

@@ -71,5 +71,13 @@ resource "aws_db_instance" "wc" {
   skip_final_snapshot = true
   deletion_protection = false
 
+  # 12-audit M1: auto_minor_version_upgrade=true means AWS bumps the minor in a maintenance
+  # window; engine_version pins only the INITIAL provision (RISK-011). Ignore post-create
+  # drift so `plan` doesn't perpetually try to revert to var.rds_minor_version — and a
+  # `-auto-approve` CI apply never attempts an unintended in-place engine change.
+  lifecycle {
+    ignore_changes = [engine_version]
+  }
+
   tags = local.common_tags
 }

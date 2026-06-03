@@ -192,7 +192,7 @@ jobs:
 
       # (d) Apply namespace + SAs + SPCs, then the migration Job, and WAIT for it to
       #     complete BEFORE any Deployment/CronJob roll (§12 — sole schema owner first).
-      - name: Apply base + run migration Job (wait)
+      - name: Apply base + run migration Job (fail-fast wait)
         run: |
           set -euo pipefail
           kubectl apply -f rendered/namespace.yaml
@@ -202,8 +202,34 @@ jobs:
             -f rendered/serviceaccount-cronjob.yaml \
             -f rendered/serviceaccount-migration.yaml \
             -f rendered/secretproviderclass.yaml
+          # H1 (12-audit): delete any prior completed migration Job first — a Job's
+          # spec.template is immutable, so re-applying the fixed-name Job with a new image
+          # SHA on deploy #2+ fails "field is immutable". Delete-then-apply is clean.
+          kubectl delete job/wc-migration -n wc --ignore-not-found
           kubectl apply -f rendered/job-migration.yaml
-          kubectl wait --for=condition=complete job/wc-migration -n wc --timeout=600s
+          # L1 (12-audit): fail-fast — poll BOTH terminal conditions so a Failed migration
+          # aborts the deploy promptly (with logs) instead of blocking the full 600s
+          # --for=condition=complete timeout. Migrate-before-roll ordering is preserved:
+          # this step must exit 0 before step (e) rolls the Deployments.
+          deadline=$((SECONDS + 600))
+          while true; do
+            if kubectl get job/wc-migration -n wc \
+                 -o 'jsonpath={.status.conditions[?(@.type=="Complete")].status}' 2>/dev/null | grep -q True; then
+              echo "migration Job complete"
+              break
+            fi
+            if kubectl get job/wc-migration -n wc \
+                 -o 'jsonpath={.status.conditions[?(@.type=="Failed")].status}' 2>/dev/null | grep -q True; then
+              echo "migration Job FAILED"
+              kubectl logs -n wc job/wc-migration --tail=50 || true
+              exit 1
+            fi
+            if [ "${SECONDS}" -ge "${deadline}" ]; then
+              echo "migration Job timed out after 600s"
+              exit 1
+            fi
+            sleep 5
+          done
 
       # (e) Roll api/worker/cron + service/ingress (only after the migration completed).
       - name: Roll Deployments + CronJob + Service + Ingress

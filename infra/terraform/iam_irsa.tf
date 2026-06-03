@@ -172,8 +172,9 @@ resource "aws_iam_role_policy" "irsa_migration" {
 # Decision 2 (docs/decisions/001): external-dns owns the api.wc.${ROOT_DOMAIN} -> ALB
 # alias record. The ALB is created by the AWS Load Balancer Controller from the 12.8
 # ingress at deploy time (post-apply), so the alias can't be a pure-Terraform record;
-# external-dns (k8s Deployment, 12.8) watches the Ingress hostname annotation and
-# upserts it. The SA `system:serviceaccount:wc:external-dns` assumes this role (IRSA).
+# external-dns (a kube-system helm_release cluster add-on @12.2b — see addons.tf) watches
+# the Ingress hostname annotation and upserts it. The SA
+# `system:serviceaccount:kube-system:external-dns` assumes this role (IRSA).
 # Least-privilege: ChangeResourceRecordSets + ListResourceRecordSets are scoped to the
 # project hosted-zone ARN (NOT `*`); ListHostedZones cannot be resource-scoped by IAM,
 # so it is the only `*` action. Decision 3 (Option A): carries the ci_boundary
