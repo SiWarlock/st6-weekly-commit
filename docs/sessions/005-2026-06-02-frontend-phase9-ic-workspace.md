@@ -5,7 +5,7 @@
 - **Area:** `apps/wc-web/`
 - **Role:** implementer (`st6-main-wc-web-implementer`)
 - **Predecessor session:** [002 — frontend styling foundation + Phase 9 spine](002-2026-06-02-frontend-styling-foundation-and-phase9-spine.md) (0.6/ST.1/ST.2 + 9.1/9.2/9.3)
-- **Successor session:** _(next frontend pair — 9.8 reconciliation)_
+- **Successor session:** [007 — frontend Phase 9: reconciliation, manager surfaces, edit/delete, sync](007-2026-06-03-frontend-phase9-reconciliation-manager-sync.md) (9.8/9.9/9.10/9.7b/9.12)
 - **Slices landed:** 9.4, 9.5, 9.6, 9.7 — all green, `apps/wc-web/`-only, no push (orchestrator round-commit pending).
 
 ---
