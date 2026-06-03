@@ -24,5 +24,12 @@ public abstract class AbstractAppBootTest {
     registry.add("spring.datasource.password", SharedPostgres.INSTANCE::getPassword);
     registry.add("spring.flyway.enabled", () -> "true");
     registry.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
+    // Each distinct @SpringBootTest context keeps a live Hikari pool in Spring's context cache for
+    // the JVM's lifetime; with the default pool (10) the growing set of cached contexts exhausts
+    // the
+    // shared PG container's max_connections (100) → "FATAL: sorry, too many clients already". These
+    // MockMvc app-boot tests are single-threaded, so a tiny pool suffices and many contexts
+    // coexist.
+    registry.add("spring.datasource.hikari.maximum-pool-size", () -> "2");
   }
 }

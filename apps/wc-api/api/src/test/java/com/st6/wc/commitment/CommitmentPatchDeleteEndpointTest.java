@@ -15,13 +15,20 @@ import com.st6.wc.enums.CommitmentKind;
 import com.st6.wc.enums.Confidence;
 import com.st6.wc.enums.PlanState;
 import com.st6.wc.enums.Priority;
+import com.st6.wc.enums.ReconciliationOutcome;
+import com.st6.wc.enums.ReviewStatus;
 import com.st6.wc.enums.RoleType;
 import com.st6.wc.enums.WorkType;
 import com.st6.wc.plan.WeeklyPlan;
 import com.st6.wc.plan.repo.WeeklyPlanRepository;
+import com.st6.wc.projection.repo.ManagerHeatmapCellRepository;
+import com.st6.wc.projection.repo.ManagerPlanSummaryRepository;
 import com.st6.wc.relationship.ManagerRelationship;
 import com.st6.wc.relationship.repo.ManagerRelationshipRepository;
+import com.st6.wc.review.ManagerReview;
+import com.st6.wc.review.repo.ManagerReviewRepository;
 import com.st6.wc.support.AbstractAppBootTest;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -60,11 +67,17 @@ class CommitmentPatchDeleteEndpointTest extends AbstractAppBootTest {
   @Autowired private WeeklyPlanRepository plans;
   @Autowired private WeeklyCommitmentRepository commitments;
   @Autowired private ManagerRelationshipRepository relationships;
+  @Autowired private ManagerReviewRepository reviews;
+  @Autowired private ManagerPlanSummaryRepository summaries;
+  @Autowired private ManagerHeatmapCellRepository heatmapCells;
   @Autowired private AuditEventRepository auditEvents;
 
   @AfterEach
   void cleanup() {
     auditEvents.deleteAll();
+    summaries.deleteAll();
+    heatmapCells.deleteAll();
+    reviews.deleteAll();
     commitments.deleteAll();
     relationships.deleteAll();
     plans.deleteAll();
@@ -113,6 +126,16 @@ class CommitmentPatchDeleteEndpointTest extends AbstractAppBootTest {
     r.setDirectReportEmployeeId(reportId);
     r.setActive(true);
     relationships.saveAndFlush(r);
+  }
+
+  private void saveReview(UUID planId, UUID managerId) {
+    ManagerReview r = new ManagerReview();
+    r.setId(UUID.randomUUID());
+    r.setWeeklyPlanId(planId);
+    r.setManagerEmployeeId(managerId);
+    r.setStatus(ReviewStatus.NOT_REVIEWED);
+    r.setReviewDueAt(Instant.parse("2026-06-02T22:00:00Z"));
+    reviews.saveAndFlush(r);
   }
 
   // ===================== PATCH (E6) =====================
@@ -381,6 +404,117 @@ class CommitmentPatchDeleteEndpointTest extends AbstractAppBootTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"title\":\"x\"}"))
         .andExpect(status().isUnauthorized());
+  }
+
+  // ===================== PATCH outcome recording (E6 / 4.1, RECONCILING) =====================
+
+  // --- #O1: owning IC records an outcome on a RECONCILING plan → 200; persisted + projection
+  // refreshed (plan_state=RECONCILING) + OUTCOME_RECORDED audit, all in one txn ----
+  @Test
+  void patch_outcomeInReconciling_persists_andProjectionRefreshed() throws Exception {
+    Employee ic = saveEmployee("ada@x.test", RoleType.IC);
+    Employee mgr = saveEmployee("mgr@x.test", RoleType.MANAGER);
+    saveActiveRelationship(mgr.getId(), ic.getId());
+    WeeklyPlan plan = savePlan(ic.getId(), PlanState.RECONCILING);
+    WeeklyCommitment c = saveCommitment(plan.getId(), SEED_SO_1_1);
+    saveReview(plan.getId(), mgr.getId());
+
+    mvc.perform(
+            patch("/api/commitments/" + c.getId())
+                .header(HEADER, ic.getId().toString())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"reconciliationOutcome\":\"COMPLETED\",\"outcomeNote\":\"  Shipped it  \"}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.reconciliationOutcome").value("COMPLETED"));
+
+    WeeklyCommitment after = commitments.findById(c.getId()).orElseThrow();
+    assertThat(after.getReconciliationOutcome()).isEqualTo(ReconciliationOutcome.COMPLETED);
+    assertThat(after.getOutcomeNote()).isEqualTo("Shipped it"); // normalized (strip ends)
+    // §9 synchronous projection refresh in the same txn
+    assertThat(summaries.findAll().get(0).getPlanState()).isEqualTo(PlanState.RECONCILING);
+    // IC-actor audit
+    assertThat(
+            auditEvents.findAll().stream().anyMatch(a -> a.getAction().equals("OUTCOME_RECORDED")))
+        .isTrue();
+  }
+
+  // --- #O2: single-outcome rule — a DIRECT reconciliationOutcome=CARRIED_FORWARD → 400 ----
+  @Test
+  void patch_directCarriedForward_400() throws Exception {
+    Employee ic = saveEmployee("ada@x.test", RoleType.IC);
+    WeeklyPlan plan = savePlan(ic.getId(), PlanState.RECONCILING);
+    WeeklyCommitment c = saveCommitment(plan.getId(), SEED_SO_1_1);
+
+    mvc.perform(
+            patch("/api/commitments/" + c.getId())
+                .header(HEADER, ic.getId().toString())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reconciliationOutcome\":\"CARRIED_FORWARD\"}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    assertThat(commitments.findById(c.getId()).orElseThrow().getReconciliationOutcome()).isNull();
+  }
+
+  // --- #O3: unknown reconciliationOutcome enum value → 400, never 500 (HttpMessageNotReadable)
+  // ----
+  @Test
+  void patch_unknownOutcomeEnum_400() throws Exception {
+    Employee ic = saveEmployee("ada@x.test", RoleType.IC);
+    WeeklyPlan plan = savePlan(ic.getId(), PlanState.RECONCILING);
+    WeeklyCommitment c = saveCommitment(plan.getId(), SEED_SO_1_1);
+
+    mvc.perform(
+            patch("/api/commitments/" + c.getId())
+                .header(HEADER, ic.getId().toString())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reconciliationOutcome\":\"NOPE\"}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    assertThat(commitments.findById(c.getId()).orElseThrow().getReconciliationOutcome()).isNull();
+  }
+
+  // --- #O4: per-state allow-list — an outcome on a LOCKED (not-yet-reconciling) plan → 409 ----
+  @Test
+  void patch_outcomeWhileLocked_409IllegalState() throws Exception {
+    Employee ic = saveEmployee("ada@x.test", RoleType.IC);
+    WeeklyPlan plan = savePlan(ic.getId(), PlanState.LOCKED);
+    WeeklyCommitment c = saveCommitment(plan.getId(), SEED_SO_1_1);
+
+    mvc.perform(
+            patch("/api/commitments/" + c.getId())
+                .header(HEADER, ic.getId().toString())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reconciliationOutcome\":\"COMPLETED\"}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("ILLEGAL_STATE_TRANSITION"));
+    assertThat(commitments.findById(c.getId()).orElseThrow().getReconciliationOutcome()).isNull();
+  }
+
+  // --- #O5: outcomeNote validation — blank → NULL persisted; 4001 code points → 400 ----
+  @Test
+  void patch_outcomeNote_blankClears_oversizeRejected() throws Exception {
+    Employee ic = saveEmployee("ada@x.test", RoleType.IC);
+    WeeklyPlan plan = savePlan(ic.getId(), PlanState.RECONCILING);
+    WeeklyCommitment c = saveCommitment(plan.getId(), SEED_SO_1_1);
+
+    // blank outcomeNote → NULL (with a valid outcome)
+    mvc.perform(
+            patch("/api/commitments/" + c.getId())
+                .header(HEADER, ic.getId().toString())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reconciliationOutcome\":\"BLOCKED\",\"outcomeNote\":\"   \"}"))
+        .andExpect(status().isOk());
+    assertThat(commitments.findById(c.getId()).orElseThrow().getOutcomeNote()).isNull();
+
+    // 4001 code points → 400
+    mvc.perform(
+            patch("/api/commitments/" + c.getId())
+                .header(HEADER, ic.getId().toString())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"outcomeNote\":\"" + "a".repeat(4001) + "\"}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
   }
 
   // ===================== DELETE (E7) =====================

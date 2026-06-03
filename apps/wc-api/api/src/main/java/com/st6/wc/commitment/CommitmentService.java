@@ -1,5 +1,6 @@
 package com.st6.wc.commitment;
 
+import com.st6.wc.audit.AuditService;
 import com.st6.wc.auth.DomainAuthorizationService;
 import com.st6.wc.auth.ResourceNotFoundOrUnauthorizedException;
 import com.st6.wc.commitment.dto.CreateCommitmentRequest;
@@ -9,14 +10,20 @@ import com.st6.wc.commitment.mapper.CommitmentMapper;
 import com.st6.wc.commitment.repo.WeeklyCommitmentRepository;
 import com.st6.wc.enums.CommitmentKind;
 import com.st6.wc.enums.PlanState;
+import com.st6.wc.enums.ReconciliationOutcome;
 import com.st6.wc.enums.WorkType;
 import com.st6.wc.identity.UserPrincipal;
 import com.st6.wc.plan.WeeklyPlan;
 import com.st6.wc.plan.repo.WeeklyPlanRepository;
+import com.st6.wc.projection.ProjectionService;
 import com.st6.wc.rcdo.RcdoReadService;
+import com.st6.wc.relationship.ManagerRelationship;
+import com.st6.wc.relationship.repo.ManagerRelationshipRepository;
+import com.st6.wc.review.repo.ManagerReviewRepository;
 import com.st6.wc.web.IllegalStateTransitionException;
 import com.st6.wc.web.LockedBaselineEditException;
 import com.st6.wc.web.ValidationException;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,18 +47,30 @@ public class CommitmentService {
   private final WeeklyCommitmentRepository commitments;
   private final RcdoReadService rcdoReadService;
   private final CommitmentMapper commitmentMapper;
+  private final ManagerRelationshipRepository relationships;
+  private final ManagerReviewRepository reviews;
+  private final ProjectionService projectionService;
+  private final AuditService auditService;
 
   public CommitmentService(
       DomainAuthorizationService authz,
       WeeklyPlanRepository plans,
       WeeklyCommitmentRepository commitments,
       RcdoReadService rcdoReadService,
-      CommitmentMapper commitmentMapper) {
+      CommitmentMapper commitmentMapper,
+      ManagerRelationshipRepository relationships,
+      ManagerReviewRepository reviews,
+      ProjectionService projectionService,
+      AuditService auditService) {
     this.authz = authz;
     this.plans = plans;
     this.commitments = commitments;
     this.rcdoReadService = rcdoReadService;
     this.commitmentMapper = commitmentMapper;
+    this.relationships = relationships;
+    this.reviews = reviews;
+    this.projectionService = projectionService;
+    this.auditService = auditService;
   }
 
   @Transactional
@@ -91,15 +110,28 @@ public class CommitmentService {
   }
 
   /**
-   * E6 partial edit (task 3.4b, §3 rule #2 / §5 / §6 rule #3). Authorizes the <strong>commitment
-   * mutation</strong> FIRST (the chokepoint — IC-owner-only, no load before authorization), then
-   * gates on the parent-plan state: on a non-{@code DRAFT} plan a frozen-baseline-field edit → 409
-   * {@code LOCKED_BASELINE_EDIT} (rule #2, baseline-first precedence) and an {@code
-   * alignmentStatus} edit → 409 {@code ILLEGAL_STATE_TRANSITION} ({@code
-   * alignment_status_read_only_post_lock}, Appendix E rule 2). On a {@code DRAFT} plan only the
-   * provided fields are applied (validated + normalized like E5; {@code workType=UNPLANNED}
-   * rejected — that is the Phase-4 path). One transaction; no projection upsert (§9, 3.5 owns
-   * projections).
+   * E6 partial edit (task 3.4b draft edit + 4.1 reconciliation outcome, §3 rule #2 + single-outcome
+   * rule / §5 / §6 rule #3 / §9). Authorizes the <strong>commitment mutation</strong> FIRST (the
+   * chokepoint — IC-owner-only, no load before authorization), then applies a
+   * <strong>per-plan-state editable-field allow-list</strong> (the rule-#2-adjacent forward-guard —
+   * each state names its editable set; never a widened {@code != DRAFT} condition):
+   *
+   * <ul>
+   *   <li><b>baseline-first precedence (every non-DRAFT state):</b> a frozen planned-baseline field
+   *       edit → 409 {@code LOCKED_BASELINE_EDIT} (rule #2) — checked before any other field so a
+   *       patch mixing a baseline field with an outcome can never apply the outcome.
+   *   <li><b>{@code alignmentStatus} (every non-DRAFT state):</b> read-only post-lock → 409 {@code
+   *       ILLEGAL_STATE_TRANSITION} ({@code alignment_status_read_only_post_lock}).
+   *   <li><b>outcome fields ({@code reconciliationOutcome}/{@code outcomeNote}):</b> editable ONLY
+   *       in {@code RECONCILING}; provided in any other state → 409 {@code
+   *       ILLEGAL_STATE_TRANSITION} (not-yet / no-longer recordable).
+   *   <li><b>DRAFT:</b> only the provided baseline/alignment fields are applied (validated +
+   *       normalized like E5; {@code workType=UNPLANNED} rejected — that is the E11 path).
+   *   <li><b>RECONCILING + an outcome:</b> records the outcome under the single-outcome rule (a
+   *       direct {@code CARRIED_FORWARD} is rejected — set only via E12/carry-forward), recomputes
+   *       the manager projection synchronously (§9), and writes an IC audit — all in this one
+   *       {@code @Version}-guarded transaction.
+   * </ul>
    */
   @Transactional
   public WeeklyCommitmentDto update(
@@ -113,20 +145,43 @@ public class CommitmentService {
         plans
             .findById(commitment.getWeeklyPlanId())
             .orElseThrow(ResourceNotFoundOrUnauthorizedException::new);
+    PlanState state = plan.getState();
 
-    if (plan.getState() != PlanState.DRAFT) {
-      if (touchesBaseline(req)) {
-        throw new LockedBaselineEditException(); // rule #2 — baseline-first precedence
-      }
-      if (req.alignmentStatusProvided()) {
-        throw new IllegalStateTransitionException("alignment_status_read_only_post_lock");
-      }
-      return commitmentMapper.toDto(commitment); // locked + nothing editable provided → no-op
+    if (state != PlanState.DRAFT && touchesBaseline(req)) {
+      throw new LockedBaselineEditException(); // rule #2 — baseline-first precedence (every
+      // non-DRAFT)
+    }
+    if (state != PlanState.DRAFT && req.alignmentStatusProvided()) {
+      throw new IllegalStateTransitionException("alignment_status_read_only_post_lock");
+    }
+    if ((req.reconciliationOutcomeProvided() || req.outcomeNoteProvided())
+        && state != PlanState.RECONCILING) {
+      throw new IllegalStateTransitionException(); // outcomes recordable only in RECONCILING
     }
 
-    applyFields(commitment, req);
-    commitments.save(commitment);
-    return commitmentMapper.toDto(commitment);
+    if (state == PlanState.DRAFT) {
+      applyFields(commitment, req);
+      commitments.save(commitment);
+      return commitmentMapper.toDto(commitment);
+    }
+
+    if (state == PlanState.RECONCILING
+        && (req.reconciliationOutcomeProvided() || req.outcomeNoteProvided())) {
+      applyOutcome(commitment, req);
+      commitments.save(commitment); // @Version-guarded: stale conflict → 409
+      recomputeProjection(
+          plan); // §9 synchronous manager-projection refresh (skipped if no manager)
+      auditService.record(
+          "OUTCOME_RECORDED",
+          "WeeklyCommitment",
+          commitmentId,
+          actor.employeeId(),
+          "Reconciliation outcome recorded",
+          "{}");
+      return commitmentMapper.toDto(commitment);
+    }
+
+    return commitmentMapper.toDto(commitment); // non-DRAFT, nothing editable provided → no-op
   }
 
   /**
@@ -219,5 +274,58 @@ public class CommitmentService {
     if (req.alignmentStatusProvided() && req.getAlignmentStatus() != null) {
       commitment.setAlignmentStatus(req.getAlignmentStatus());
     }
+  }
+
+  /**
+   * Apply the reconciliation-outcome fields on a {@code RECONCILING} commitment (E6 outcome
+   * contract, §3 single-outcome rule). A direct {@code reconciliationOutcome=CARRIED_FORWARD} is
+   * rejected — it is mutually exclusive with completion outcomes and reached only via E12
+   * (carry-forward), so the valid direct values are {@code COMPLETED|PARTIALLY_COMPLETED|BLOCKED|
+   * CANCELED}. {@code outcomeNote} is normalized + length-capped like a description (Appendix E
+   * Part 1, reusing {@link TextNormalizer}); blank/present-null → {@code null}.
+   */
+  private void applyOutcome(WeeklyCommitment commitment, PatchCommitmentRequest req) {
+    if (req.reconciliationOutcomeProvided()) {
+      ReconciliationOutcome outcome = req.getReconciliationOutcome();
+      if (outcome == ReconciliationOutcome.CARRIED_FORWARD) {
+        throw ValidationException.field(
+            "reconciliationOutcome", "CARRIED_FORWARD is set only via carry-forward");
+      }
+      commitment.setReconciliationOutcome(outcome);
+    }
+    if (req.outcomeNoteProvided()) {
+      String note = TextNormalizer.normalizeMultiLine(req.getOutcomeNote());
+      if (TextNormalizer.codePointCount(note) > 4000) {
+        throw ValidationException.field("outcomeNote", "must be at most 4000 code points");
+      }
+      commitment.setOutcomeNote(note); // present-null / blank → null (cleared)
+    }
+  }
+
+  /**
+   * Synchronously recompute the manager projection for the plan's owner after an outcome write (§9
+   * — reconciliation mutations keep the read models in lockstep in the same transaction). Skipped
+   * when the IC has no active manager or no review row yet (nothing to project). Reuses the 3.5
+   * {@link ProjectionService#recompute} from-source path unchanged — recording an outcome refreshes
+   * {@code plan_state}/{@code updated_at} without changing the 3.5 count derivations (the §9
+   * outcome-count source is an open doc-clarification, not introduced here).
+   */
+  private void recomputeProjection(WeeklyPlan plan) {
+    UUID managerId =
+        relationships
+            .findByDirectReportEmployeeIdAndActiveTrue(plan.getEmployeeId())
+            .map(ManagerRelationship::getManagerEmployeeId)
+            .orElse(null);
+    if (managerId == null) {
+      return;
+    }
+    final UUID resolvedManagerId = managerId;
+    reviews
+        .findByWeeklyPlanId(plan.getId())
+        .ifPresent(
+            review -> {
+              List<WeeklyCommitment> all = commitments.findByWeeklyPlanIdOrderByIdAsc(plan.getId());
+              projectionService.recompute(plan, resolvedManagerId, all, review);
+            });
   }
 }

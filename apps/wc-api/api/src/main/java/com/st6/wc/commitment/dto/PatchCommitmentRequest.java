@@ -3,6 +3,7 @@ package com.st6.wc.commitment.dto;
 import com.st6.wc.enums.AlignmentStatus;
 import com.st6.wc.enums.Confidence;
 import com.st6.wc.enums.Priority;
+import com.st6.wc.enums.ReconciliationOutcome;
 import com.st6.wc.enums.WorkType;
 import java.util.UUID;
 import lombok.Getter;
@@ -35,6 +36,8 @@ public class PatchCommitmentRequest {
   @Getter private WorkType workType;
   @Getter private Confidence confidence;
   @Getter private AlignmentStatus alignmentStatus;
+  @Getter private ReconciliationOutcome reconciliationOutcome;
+  @Getter private String outcomeNote;
 
   private boolean titleProvided;
   private boolean descriptionProvided;
@@ -43,6 +46,8 @@ public class PatchCommitmentRequest {
   private boolean workTypeProvided;
   private boolean confidenceProvided;
   private boolean alignmentStatusProvided;
+  private boolean reconciliationOutcomeProvided;
+  private boolean outcomeNoteProvided;
 
   public void setTitle(String title) {
     this.title = title;
@@ -79,6 +84,16 @@ public class PatchCommitmentRequest {
     this.alignmentStatusProvided = true;
   }
 
+  public void setReconciliationOutcome(ReconciliationOutcome reconciliationOutcome) {
+    this.reconciliationOutcome = reconciliationOutcome;
+    this.reconciliationOutcomeProvided = true;
+  }
+
+  public void setOutcomeNote(String outcomeNote) {
+    this.outcomeNote = outcomeNote;
+    this.outcomeNoteProvided = true;
+  }
+
   // Non-bean-style accessors (not getX/isX) so Jackson never treats presence as a JSON property.
 
   public boolean titleProvided() {
@@ -107,5 +122,13 @@ public class PatchCommitmentRequest {
 
   public boolean alignmentStatusProvided() {
     return alignmentStatusProvided;
+  }
+
+  public boolean reconciliationOutcomeProvided() {
+    return reconciliationOutcomeProvided;
+  }
+
+  public boolean outcomeNoteProvided() {
+    return outcomeNoteProvided;
   }
 }
