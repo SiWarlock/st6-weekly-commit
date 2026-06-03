@@ -240,7 +240,7 @@ Full set in root `CLAUDE.md` (key safety rules, typing posture, commit messages)
 
 **Slash commands** — your pair is `/orchestrate-start` + `/orchestrate-end`. Never run `/session-start`/`/session-end` (implementer's). Plus `/tdd`, `/wired`, `/preflight`, `/run-tests`, `/check-arch` (full list + descriptions in root `CLAUDE.md`).
 
-**Subagents** (`.claude/agents/README.md`) — delegate read-heavy codebase research to the **Explore** agent to keep your context lean. Step-8 reviewer agents (`code-quality-reviewer`, `security-reviewer`) run on the implementer side at Step 7→8 if installed; their findings reach you via Step-9 categorization. (Optional: **`brief-drafter`** drafts first-pass briefs from a 3-5 line request — output is DRAFT, you finalize; requires quality trial before standard adoption.)
+**Subagents** (`.claude/agents/README.md`) — delegate read-heavy codebase research to the **Explore** agent to keep your context lean. **The per-slice Step 7→8 reviewers (`code-quality-reviewer`, `security-reviewer`) are DISABLED (user directive 2026-06-03 — too costly in time/tokens); they do NOT run every slice, so expect no reviewer findings in Step-9.** You MAY invoke `security-reviewer` **ad hoc** on a genuinely safety-invariant-touching slice (e.g. `2.3` demo-auth, `2.5` IDOR authz) if you judge a security pass warranted — exception, not default. (Optional: **`brief-drafter`** drafts first-pass briefs from a 3-5 line request — output is DRAFT, you finalize; requires quality trial before standard adoption.)
 
 **Standard tools** — `Read`, `Edit`, `Write`, `Bash`, `Grep`, the `Agent` tool.
 
