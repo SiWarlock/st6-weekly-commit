@@ -142,3 +142,53 @@ export interface PatchCommitmentRequest {
   reconciliationOutcome?: ReconciliationOutcome;
   outcomeNote?: string;
 }
+
+// ── B.11 — ManagerCommandCenterRowDto (E13, mirrors `manager_plan_summary` §9) ─
+/**
+ * One direct-report roll-up row for the manager command center. Carries the
+ * at-a-glance alignment signal (state + counts) WITHOUT a `reviewId`/
+ * `allowedActions[]` — acting on a review (E16) goes through the report's plan
+ * (`WeeklyPlanDto.managerReview`, B.7), not the row.
+ */
+export interface ManagerCommandCenterRowDto {
+  managerEmployeeId: string;
+  employeeId: string;
+  employeeDisplayName: string;
+  weeklyPlanId?: string;
+  weekStartDate: string;
+  planState: PlanState;
+  reviewStatus?: ReviewStatus;
+  reviewDueAt?: string;
+  isReviewOverdue: boolean;
+  plannedCount: number;
+  unplannedCount: number;
+  misalignedCount: number;
+  needsReviewCount: number;
+  blockedCount: number;
+  carryForwardCount: number;
+  unresolvedDisputeCount: number;
+  updatedAt: string;
+}
+
+// ── B.20 — Pageable response envelope (command-center, comments, drill-down) ──
+/** Spring Data `Page<T>` serialization (pinned shape, B.20). */
+export interface PageEnvelope<T> {
+  content: T[];
+  page: {
+    number: number;
+    size: number;
+    totalElements: number;
+    totalPages: number;
+  };
+  sort: { property: string; direction: 'ASC' | 'DESC' }[];
+}
+
+// ── B.7 — MarkReviewedRequest (E16 request) ──────────────────────────────────
+/**
+ * E16 `POST /api/manager/reviews/{reviewId}/mark-reviewed`. Carries only the
+ * optional note — the server DERIVES `REVIEWED` vs `REVIEWED_WITH_DISPUTES` from
+ * the plan's unresolved-dispute count; the status is never client-supplied (§3).
+ */
+export interface MarkReviewedRequest {
+  summaryNote?: string;
+}
