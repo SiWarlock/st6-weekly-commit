@@ -6,6 +6,8 @@ import static org.mockito.Mockito.mock;
 import com.st6.wc.action.AllowedAction;
 import com.st6.wc.commitment.WeeklyCommitment;
 import com.st6.wc.commitment.mapper.CommitmentMapper;
+import com.st6.wc.dispute.mapper.DisputeMapper;
+import com.st6.wc.dispute.repo.AlignmentDisputeRepository;
 import com.st6.wc.enums.AlignmentStatus;
 import com.st6.wc.enums.CommitmentKind;
 import com.st6.wc.enums.Confidence;
@@ -29,16 +31,18 @@ import org.junit.jupiter.api.Test;
  * to {@link CommitmentMapper}, computes the planned/unplanned counts, stamps {@code
  * allowedActions[]} via the real {@link AllowedActionResolver}, and leaves {@code managerReview}
  * null while DRAFT (3.5 wires the review). The commitment→DTO shape itself (breadcrumb,
- * dispute-omission) is proven in {@code CommitmentMapperTest}.
+ * dispute-nesting) is proven in {@code CommitmentMapperTest}.
  */
 class PlanMapperTest {
 
   private final RcdoReadService rcdoReadService = mock(RcdoReadService.class);
+  private final AlignmentDisputeRepository disputes = mock(AlignmentDisputeRepository.class);
   private final ManagerReviewRepository reviews = mock(ManagerReviewRepository.class);
   private final ReviewMapper reviewMapper = mock(ReviewMapper.class);
   private final PlanMapper mapper =
       new PlanMapper(
-          new CommitmentMapper(rcdoReadService, new AllowedActionResolver()),
+          new CommitmentMapper(
+              rcdoReadService, new AllowedActionResolver(), disputes, new DisputeMapper()),
           new AllowedActionResolver(),
           reviews,
           reviewMapper);

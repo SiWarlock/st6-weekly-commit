@@ -2,19 +2,24 @@ package com.st6.wc.commitment.mapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.st6.wc.action.AllowedAction;
 import com.st6.wc.commitment.WeeklyCommitment;
 import com.st6.wc.commitment.dto.RcdoBreadcrumbDto;
 import com.st6.wc.commitment.dto.WeeklyCommitmentDto;
+import com.st6.wc.dispute.AlignmentDispute;
+import com.st6.wc.dispute.mapper.DisputeMapper;
+import com.st6.wc.dispute.repo.AlignmentDisputeRepository;
 import com.st6.wc.enums.AlignmentStatus;
 import com.st6.wc.enums.CommitmentKind;
 import com.st6.wc.enums.Confidence;
+import com.st6.wc.enums.DisputeStatus;
+import com.st6.wc.enums.FlagType;
 import com.st6.wc.enums.PlanState;
 import com.st6.wc.enums.Priority;
 import com.st6.wc.enums.WorkType;
@@ -22,22 +27,27 @@ import com.st6.wc.plan.AllowedActionResolver;
 import com.st6.wc.plan.WeeklyPlan;
 import com.st6.wc.rcdo.RcdoReadService;
 import java.time.LocalDate;
+import java.util.Collection;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 /**
  * Unit proof of {@link CommitmentMapper} (task 3.4a, Appendix B.6) — the single commitment→DTO
  * mapper reused by {@code PlanMapper} (nested in a plan) and {@code CommitmentController} (a single
  * created commitment). Resolves the RC→DO→SO breadcrumb via {@link RcdoReadService} when linked,
- * null when unlinked; the DTO intentionally <strong>omits the dispute field</strong> (B.6-minus,
- * Option-A at the disputes slice); commitment-level {@code allowedActions} empty in this phase
- * (§15).
+ * null when unlinked; nests the commitment's current {@code OPEN}/{@code IC_RESPONDED} dispute via
+ * {@link DisputeMapper} (B.6 Option-A, task 5.3b — else null); commitment-level {@code
+ * allowedActions} empty in this phase (§15).
  */
 class CommitmentMapperTest {
 
   private final RcdoReadService rcdoReadService = mock(RcdoReadService.class);
+  private final AlignmentDisputeRepository disputes = mock(AlignmentDisputeRepository.class);
   private final CommitmentMapper mapper =
-      new CommitmentMapper(rcdoReadService, new AllowedActionResolver());
+      new CommitmentMapper(
+          rcdoReadService, new AllowedActionResolver(), disputes, new DisputeMapper());
 
   private static WeeklyPlan reconcilingPlan(UUID owner) {
     WeeklyPlan p = new WeeklyPlan();
@@ -81,11 +91,75 @@ class CommitmentMapperTest {
     verify(rcdoReadService, never()).resolveBreadcrumb(null);
   }
 
+  private static AlignmentDispute dispute(UUID commitmentId, DisputeStatus status) {
+    AlignmentDispute d = new AlignmentDispute();
+    d.setId(UUID.randomUUID());
+    d.setCommitmentId(commitmentId);
+    d.setManagerEmployeeId(UUID.randomUUID());
+    d.setStatus(status);
+    d.setFlagType(FlagType.MISALIGNED);
+    d.setManagerNote("please re-scope");
+    d.setVersion(0L);
+    return d;
+  }
+
+  // --- 5.3b: an OPEN dispute on the commitment is nested via DisputeMapper (B.6 Option-A) ----
   @Test
-  void toDto_omitsDisputeField() throws Exception {
+  void toDto_commitmentWithOpenDispute_nestsDisputeDto() {
     when(rcdoReadService.resolveBreadcrumb(any())).thenReturn(null);
-    String json = new ObjectMapper().writeValueAsString(mapper.toDto(commitment(null)));
-    assertThat(json).doesNotContain("hasUnresolvedDispute").doesNotContain("dispute");
+    WeeklyCommitment c = commitment(null);
+    AlignmentDispute open = dispute(c.getId(), DisputeStatus.OPEN);
+    when(disputes.findByCommitmentIdAndStatusIn(eq(c.getId()), any()))
+        .thenReturn(Optional.of(open));
+
+    WeeklyCommitmentDto dto = mapper.toDto(c);
+
+    assertThat(dto.dispute()).isNotNull();
+    assertThat(dto.dispute().id()).isEqualTo(open.getId());
+    assertThat(dto.dispute().status()).isEqualTo(DisputeStatus.OPEN);
+    assertThat(dto.dispute().flagType()).isEqualTo(FlagType.MISALIGNED);
+    assertThat(dto.dispute().managerNote()).isEqualTo("please re-scope");
+  }
+
+  // --- 5.3b: an IC_RESPONDED dispute is still unresolved → also nested ({OPEN,IC_RESPONDED}) ----
+  @Test
+  void toDto_commitmentWithIcRespondedDispute_nestsDisputeDto() {
+    when(rcdoReadService.resolveBreadcrumb(any())).thenReturn(null);
+    WeeklyCommitment c = commitment(null);
+    when(disputes.findByCommitmentIdAndStatusIn(eq(c.getId()), any()))
+        .thenReturn(Optional.of(dispute(c.getId(), DisputeStatus.IC_RESPONDED)));
+
+    WeeklyCommitmentDto dto = mapper.toDto(c);
+
+    assertThat(dto.dispute()).isNotNull();
+    assertThat(dto.dispute().status()).isEqualTo(DisputeStatus.IC_RESPONDED);
+  }
+
+  // --- 5.3b: no unresolved dispute (the finder's empty branch — incl. resolved-only) → null ----
+  @Test
+  void toDto_commitmentWithNoUnresolvedDispute_disputeNull() {
+    when(rcdoReadService.resolveBreadcrumb(any())).thenReturn(null);
+    WeeklyCommitment c = commitment(null);
+    when(disputes.findByCommitmentIdAndStatusIn(eq(c.getId()), any())).thenReturn(Optional.empty());
+
+    assertThat(mapper.toDto(c).dispute()).isNull();
+  }
+
+  // --- 5.3b: the lookup queries ONLY the unresolved bucket {OPEN, IC_RESPONDED} (RESOLVED
+  // excluded)
+  @Test
+  void toDto_queriesUnresolvedBucketOnly() {
+    when(rcdoReadService.resolveBreadcrumb(any())).thenReturn(null);
+    WeeklyCommitment c = commitment(null);
+    when(disputes.findByCommitmentIdAndStatusIn(eq(c.getId()), any())).thenReturn(Optional.empty());
+
+    mapper.toDto(c);
+
+    @SuppressWarnings("unchecked")
+    ArgumentCaptor<Collection<DisputeStatus>> bucket = ArgumentCaptor.forClass(Collection.class);
+    verify(disputes).findByCommitmentIdAndStatusIn(eq(c.getId()), bucket.capture());
+    assertThat(bucket.getValue())
+        .containsExactlyInAnyOrder(DisputeStatus.OPEN, DisputeStatus.IC_RESPONDED);
   }
 
   // --- 4.4b: the context-aware overload fills allowedActions via the resolver (eligible

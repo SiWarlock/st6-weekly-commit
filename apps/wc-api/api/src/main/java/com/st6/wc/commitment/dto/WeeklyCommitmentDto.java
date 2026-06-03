@@ -1,6 +1,7 @@
 package com.st6.wc.commitment.dto;
 
 import com.st6.wc.action.AllowedAction;
+import com.st6.wc.dispute.dto.AlignmentDisputeDto;
 import com.st6.wc.enums.AlignmentStatus;
 import com.st6.wc.enums.CommitmentKind;
 import com.st6.wc.enums.Confidence;
@@ -14,12 +15,13 @@ import java.util.UUID;
  * A weekly commitment across the API boundary (task 3.3a, Appendix B.6; nested in {@link
  * com.st6.wc.plan.dto.WeeklyPlanDto}). A record, never the JPA entity (forbidden-pattern #3).
  *
- * <p><strong>Transitional subset:</strong> this intentionally <strong>omits the dispute
- * field</strong> B.6 currently lists (`hasUnresolvedDispute`). Building it now is throwaway — the
- * Phase-3 disputes slice lands the user-approved Option-A edit ({@code dispute?:
- * AlignmentDisputeDto}, dropping `hasUnresolvedDispute`) + the B.6 + frontend-mirror reconciliation
- * in one coordinated change. So 3.3a's DTO is B.6-minus-the-dispute-field (documented, not drift).
- * {@code allowedActions} is empty in 3.3a (CARRY_FORWARD/OPEN_DISPUTE/COMMENT are emitted by their
+ * <p>{@code dispute} nests the commitment's current <strong>unresolved</strong> dispute ({@code
+ * OPEN}/{@code IC_RESPONDED}) as an {@link AlignmentDisputeDto}, else {@code null} (task 5.3b — the
+ * user-approved B.6 Option-A realization; the redundant {@code hasUnresolvedDispute} boolean it
+ * replaced was never built, so the nested object's presence + status is the single source of
+ * truth). The dispute is an aggregate child (≤1 unresolved per commitment, rule #6) exposed through
+ * the commitment root; it rides the commitment's existing E3/E4 read authz (no new surface). {@code
+ * allowedActions} is empty in 3.3a (CARRY_FORWARD/OPEN_DISPUTE/COMMENT are emitted by their
  * enforcing slices — §15).
  */
 public record WeeklyCommitmentDto(
@@ -38,6 +40,7 @@ public record WeeklyCommitmentDto(
     ReconciliationOutcome reconciliationOutcome,
     String outcomeNote,
     UUID carryForwardSourceCommitmentId,
+    AlignmentDisputeDto dispute,
     List<AllowedAction> allowedActions,
     long version) {
 

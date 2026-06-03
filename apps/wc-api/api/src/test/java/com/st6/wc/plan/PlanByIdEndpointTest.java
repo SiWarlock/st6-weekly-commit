@@ -12,11 +12,15 @@ import com.st6.wc.audit.AuditEvent;
 import com.st6.wc.audit.repo.AuditEventRepository;
 import com.st6.wc.commitment.WeeklyCommitment;
 import com.st6.wc.commitment.repo.WeeklyCommitmentRepository;
+import com.st6.wc.dispute.AlignmentDispute;
+import com.st6.wc.dispute.repo.AlignmentDisputeRepository;
 import com.st6.wc.employee.Employee;
 import com.st6.wc.employee.repo.EmployeeRepository;
 import com.st6.wc.enums.AlignmentStatus;
 import com.st6.wc.enums.CommitmentKind;
 import com.st6.wc.enums.Confidence;
+import com.st6.wc.enums.DisputeStatus;
+import com.st6.wc.enums.FlagType;
 import com.st6.wc.enums.PlanState;
 import com.st6.wc.enums.Priority;
 import com.st6.wc.enums.RoleType;
@@ -60,11 +64,13 @@ class PlanByIdEndpointTest extends AbstractAppBootTest {
   @Autowired private WeeklyPlanRepository plans;
   @Autowired private WeeklyCommitmentRepository commitments;
   @Autowired private ManagerRelationshipRepository relationships;
+  @Autowired private AlignmentDisputeRepository disputes;
   @Autowired private AuditEventRepository auditEvents;
 
   @AfterEach
   void cleanup() {
     auditEvents.deleteAll();
+    disputes.deleteAll();
     commitments.deleteAll();
     plans.deleteAll();
     relationships.deleteAll();
@@ -111,6 +117,10 @@ class PlanByIdEndpointTest extends AbstractAppBootTest {
   }
 
   private void savePlannedCommitment(UUID planId) {
+    saveCommitmentReturning(planId);
+  }
+
+  private WeeklyCommitment saveCommitmentReturning(UUID planId) {
     WeeklyCommitment c = new WeeklyCommitment();
     c.setId(UUID.randomUUID());
     c.setWeeklyPlanId(planId);
@@ -120,7 +130,61 @@ class PlanByIdEndpointTest extends AbstractAppBootTest {
     c.setWorkType(WorkType.STRATEGIC);
     c.setConfidence(Confidence.MEDIUM);
     c.setAlignmentStatus(AlignmentStatus.ALIGNED);
-    commitments.saveAndFlush(c);
+    return commitments.saveAndFlush(c);
+  }
+
+  private AlignmentDispute saveDispute(UUID commitmentId, UUID managerId, DisputeStatus status) {
+    AlignmentDispute d = new AlignmentDispute();
+    d.setId(UUID.randomUUID());
+    d.setCommitmentId(commitmentId);
+    d.setManagerEmployeeId(managerId);
+    d.setStatus(status);
+    d.setFlagType(FlagType.MISALIGNED);
+    d.setManagerNote("please re-scope to the SO");
+    return disputes.saveAndFlush(d);
+  }
+
+  // --- 5.3b (the 9.11a unblock proof): a commitment with an OPEN dispute nests `dispute` in the
+  // E4 plan read — id + managerNote + status + flagType; the nested object is the B.8 DTO, never
+  // the
+  // entity (no audit quartet leak). This is the field the frontend dtos.ts mirror + 9.11a consume.
+  @Test
+  void byId_disputedCommitment_nestsDisputeInJson() throws Exception {
+    Employee ic = saveEmployee(RoleType.IC, "ada@x.test");
+    Employee mgr = saveEmployee(RoleType.MANAGER, "boss@x.test");
+    saveRelationship(mgr.getId(), ic.getId());
+    WeeklyPlan plan = saveReconcilingPlan(ic.getId());
+    WeeklyCommitment c = saveCommitmentReturning(plan.getId());
+    AlignmentDispute open = saveDispute(c.getId(), mgr.getId(), DisputeStatus.OPEN);
+
+    mvc.perform(get("/api/plans/" + plan.getId()).header(HEADER, ic.getId().toString()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.commitments[0].dispute.id").value(open.getId().toString()))
+        .andExpect(jsonPath("$.commitments[0].dispute.status").value("OPEN"))
+        .andExpect(jsonPath("$.commitments[0].dispute.flagType").value("MISALIGNED"))
+        .andExpect(
+            jsonPath("$.commitments[0].dispute.managerNote").value("please re-scope to the SO"))
+        // the nested dispute is the B.8 DTO, never the entity — no audit-quartet leak (FP #3)
+        .andExpect(jsonPath("$.commitments[0].dispute.createdAt").doesNotExist())
+        .andExpect(jsonPath("$.commitments[0].dispute.createdBy").doesNotExist())
+        .andExpect(jsonPath("$.commitments[0].dispute.updatedAt").doesNotExist())
+        .andExpect(jsonPath("$.commitments[0].dispute.updatedBy").doesNotExist());
+  }
+
+  // --- 5.3b: a commitment with ONLY a RESOLVED dispute (no unresolved) → `dispute` is null (the
+  // real finder's unresolved bucket {OPEN,IC_RESPONDED} excludes RESOLVED) ----
+  @Test
+  void byId_resolvedOnlyDispute_disputeNull() throws Exception {
+    Employee ic = saveEmployee(RoleType.IC, "ada@x.test");
+    Employee mgr = saveEmployee(RoleType.MANAGER, "boss@x.test");
+    saveRelationship(mgr.getId(), ic.getId());
+    WeeklyPlan plan = saveReconcilingPlan(ic.getId());
+    WeeklyCommitment c = saveCommitmentReturning(plan.getId());
+    saveDispute(c.getId(), mgr.getId(), DisputeStatus.RESOLVED);
+
+    mvc.perform(get("/api/plans/" + plan.getId()).header(HEADER, ic.getId().toString()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.commitments[0].dispute").doesNotExist());
   }
 
   // --- 4.4b: IC reads OWN RECONCILING plan -> the nested commitment carries CARRY_FORWARD
