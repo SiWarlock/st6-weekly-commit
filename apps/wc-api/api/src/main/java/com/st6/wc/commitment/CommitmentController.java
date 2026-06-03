@@ -1,6 +1,7 @@
 package com.st6.wc.commitment;
 
 import com.st6.wc.commitment.dto.CreateCommitmentRequest;
+import com.st6.wc.commitment.dto.CreateUnplannedCommitmentRequest;
 import com.st6.wc.commitment.dto.PatchCommitmentRequest;
 import com.st6.wc.commitment.dto.WeeklyCommitmentDto;
 import com.st6.wc.identity.UserPrincipal;
@@ -23,8 +24,10 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * <ul>
  *   <li>{@code POST /api/plans/{id}/commitments} (E5) → 201 created {@link WeeklyCommitmentDto};
+ *   <li>{@code POST /api/plans/{id}/unplanned-commitments} (E11) → 201 UNPLANNED commitment
+ *       (owner-only, plan {@code LOCKED}/{@code RECONCILING}, server-forced kind/work-type);
  *   <li>{@code PATCH /api/commitments/{id}} (E6) → 200 updated DTO (owner-only, DRAFT-gated
- *       baseline + read-only {@code alignmentStatus} post-lock);
+ *       baseline + read-only {@code alignmentStatus} post-lock + RECONCILING outcome recording);
  *   <li>{@code DELETE /api/commitments/{id}} (E7) → 204 (owner-only, DRAFT-only).
  * </ul>
  */
@@ -44,6 +47,15 @@ public class CommitmentController {
       @PathVariable("id") UUID planId,
       @Valid @RequestBody CreateCommitmentRequest request) {
     return commitmentService.create(principal, planId, request);
+  }
+
+  @PostMapping("/api/plans/{id}/unplanned-commitments")
+  @ResponseStatus(HttpStatus.CREATED)
+  public WeeklyCommitmentDto createUnplanned(
+      @AuthenticationPrincipal UserPrincipal principal,
+      @PathVariable("id") UUID planId,
+      @Valid @RequestBody CreateUnplannedCommitmentRequest request) {
+    return commitmentService.createUnplanned(principal, planId, request);
   }
 
   @PatchMapping("/api/commitments/{id}")

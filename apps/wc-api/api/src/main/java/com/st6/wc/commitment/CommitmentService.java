@@ -4,6 +4,7 @@ import com.st6.wc.audit.AuditService;
 import com.st6.wc.auth.DomainAuthorizationService;
 import com.st6.wc.auth.ResourceNotFoundOrUnauthorizedException;
 import com.st6.wc.commitment.dto.CreateCommitmentRequest;
+import com.st6.wc.commitment.dto.CreateUnplannedCommitmentRequest;
 import com.st6.wc.commitment.dto.PatchCommitmentRequest;
 import com.st6.wc.commitment.dto.WeeklyCommitmentDto;
 import com.st6.wc.commitment.mapper.CommitmentMapper;
@@ -106,6 +107,66 @@ public class CommitmentService {
     commitment.setConfidence(req.confidence());
     commitment.setAlignmentStatus(req.alignmentStatus());
     commitments.save(commitment);
+    return commitmentMapper.toDto(commitment);
+  }
+
+  /**
+   * E11 unplanned-commitment create (task 4.3, §3 / §5 / §6 rule #3 / §9 — REQ-F-025/026).
+   * Authorizes the parent plan <strong>owner-only</strong> via {@link
+   * DomainAuthorizationService#authorizePlanMutation} (the chokepoint — a manager-direct-report can
+   * READ a locked report's plan but must NOT author on it, §6) — deliberately NOT {@code
+   * authorizePlanAccess} (which also admits managers). Requires the plan be {@code LOCKED} or
+   * {@code RECONCILING} (else 409 — unplanned work surfaces post-lock, never on a {@code
+   * DRAFT}/{@code RECONCILED} plan), validates an optional Supporting-Outcome link (the link is
+   * enforced only at close, §4.5; unknown → 400), and <strong>server-forces</strong> {@code
+   * commitment_kind=UNPLANNED} + {@code work_type=UNPLANNED} (the inverse of the E5 planned-only
+   * create — {@code workType} is absent from the request, so a client value is ignored). An
+   * insert-only create: it never touches a planned-baseline row (REQ-F-025). One
+   * {@code @Transactional} unit — persist, recompute the manager projection (§9 {@code
+   * unplanned_count}, skipped if no manager), emit an IC audit.
+   */
+  @Transactional
+  public WeeklyCommitmentDto createUnplanned(
+      UserPrincipal actor, UUID planId, CreateUnplannedCommitmentRequest req) {
+    authz.authorizePlanMutation(
+        actor, planId); // chokepoint: owner-only (manager→403, cross/miss→404)
+    WeeklyPlan plan =
+        plans.findById(planId).orElseThrow(ResourceNotFoundOrUnauthorizedException::new);
+    PlanState state = plan.getState();
+    if (state != PlanState.LOCKED && state != PlanState.RECONCILING) {
+      throw new IllegalStateTransitionException(); // unplanned create only post-lock,
+      // pre-reconciled
+    }
+    UUID supportingOutcomeId = req.supportingOutcomeId();
+    if (supportingOutcomeId != null) {
+      try {
+        rcdoReadService.findSupportingOutcome(supportingOutcomeId);
+      } catch (ResourceNotFoundOrUnauthorizedException e) {
+        throw ValidationException.field("supportingOutcomeId", "unknown Supporting Outcome");
+      }
+    }
+
+    WeeklyCommitment commitment = new WeeklyCommitment();
+    commitment.setId(UUID.randomUUID());
+    commitment.setWeeklyPlanId(planId);
+    commitment.setCommitmentKind(CommitmentKind.UNPLANNED); // forced — E11 is unplanned-only (B.6)
+    commitment.setWorkType(WorkType.UNPLANNED); // forced — server-owned (the inverse of E5)
+    commitment.setTitle(req.title());
+    commitment.setDescription(req.description());
+    commitment.setSupportingOutcomeId(supportingOutcomeId);
+    commitment.setPriority(req.priority());
+    commitment.setConfidence(req.confidence());
+    commitment.setAlignmentStatus(req.alignmentStatus());
+    commitments.save(commitment);
+
+    recomputeProjection(plan); // §9 synchronous unplanned_count upsert (skipped if no manager)
+    auditService.record(
+        "UNPLANNED_COMMITMENT_CREATED",
+        "WeeklyCommitment",
+        commitment.getId(),
+        actor.employeeId(),
+        "Unplanned commitment created",
+        "{}");
     return commitmentMapper.toDto(commitment);
   }
 
