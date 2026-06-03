@@ -9,6 +9,7 @@ import com.st6.wc.enums.CommitmentKind;
 import com.st6.wc.enums.Confidence;
 import com.st6.wc.enums.PlanState;
 import com.st6.wc.enums.Priority;
+import com.st6.wc.enums.ReconciliationOutcome;
 import com.st6.wc.enums.WorkType;
 import java.time.LocalDate;
 import java.util.List;
@@ -95,5 +96,107 @@ class AllowedActionResolverTest {
         resolver.planActions(
             OWNER, plan(OWNER, PlanState.LOCKED), List.of(planned(UUID.randomUUID())));
     assertThat(actions).doesNotContain(AllowedAction.LOCK);
+  }
+
+  // ===================== commitmentActions — per-commitment CARRY_FORWARD (4.4b)
+  // =====================
+
+  private static WeeklyCommitment withOutcome(ReconciliationOutcome outcome) {
+    WeeklyCommitment c = planned(UUID.randomUUID());
+    c.setReconciliationOutcome(outcome);
+    return c;
+  }
+
+  // --- CARRY_FORWARD present iff owner ∧ RECONCILING ∧ not-already-carried (the 4.4b predicate)
+  // ----
+  @Test
+  void carryForward_present_whenOwnerReconcilingNotCarried() {
+    List<AllowedAction> actions =
+        resolver.commitmentActions(OWNER, plan(OWNER, PlanState.RECONCILING), withOutcome(null));
+    assertThat(actions).contains(AllowedAction.CARRY_FORWARD);
+  }
+
+  // --- absent in any non-RECONCILING state (no affordance without enforcement) ----
+  @Test
+  void carryForward_absent_whenNotReconciling() {
+    for (PlanState state : List.of(PlanState.DRAFT, PlanState.LOCKED, PlanState.RECONCILED)) {
+      assertThat(resolver.commitmentActions(OWNER, plan(OWNER, state), withOutcome(null)))
+          .as("no CARRY_FORWARD affordance in %s", state)
+          .doesNotContain(AllowedAction.CARRY_FORWARD);
+    }
+  }
+
+  // --- absent once already carried (re-carry is a pointless idempotent no-op — hide it) ----
+  @Test
+  void carryForward_absent_whenAlreadyCarried() {
+    List<AllowedAction> actions =
+        resolver.commitmentActions(
+            OWNER,
+            plan(OWNER, PlanState.RECONCILING),
+            withOutcome(ReconciliationOutcome.CARRIED_FORWARD));
+    assertThat(actions).doesNotContain(AllowedAction.CARRY_FORWARD);
+  }
+
+  // --- absent for a non-owner reader (a manager-direct-report can READ but it's an IC-self action)
+  // -
+  @Test
+  void carryForward_absent_whenNotOwner() {
+    List<AllowedAction> actions =
+        resolver.commitmentActions(OTHER, plan(OWNER, PlanState.RECONCILING), withOutcome(null));
+    assertThat(actions).doesNotContain(AllowedAction.CARRY_FORWARD);
+  }
+
+  // --- a completion outcome (PARTIALLY_COMPLETED/BLOCKED/COMPLETED) is still
+  // carry-forward-eligible
+  // (Q1 sub-q: do NOT restrict to incomplete — only already-carried is hidden) ----
+  @Test
+  void carryForward_present_whenPriorCompletionOutcome() {
+    List<AllowedAction> actions =
+        resolver.commitmentActions(
+            OWNER,
+            plan(OWNER, PlanState.RECONCILING),
+            withOutcome(ReconciliationOutcome.PARTIALLY_COMPLETED));
+    assertThat(actions).contains(AllowedAction.CARRY_FORWARD);
+  }
+
+  // --- an UNPLANNED commitment is equally carry-forward-eligible (the predicate has NO
+  // commitmentKind branch — 4.4 accepts + handles an UNPLANNED source → STRATEGIC successor; a
+  // future `&& kind==PLANNED` tidy would silently hide the affordance while E12 still accepts it)
+  // --
+  @Test
+  void carryForward_present_whenUnplannedOwnedReconciling() {
+    WeeklyCommitment unplanned = withOutcome(null);
+    unplanned.setCommitmentKind(CommitmentKind.UNPLANNED);
+    unplanned.setWorkType(WorkType.UNPLANNED);
+    List<AllowedAction> actions =
+        resolver.commitmentActions(OWNER, plan(OWNER, PlanState.RECONCILING), unplanned);
+    assertThat(actions).contains(AllowedAction.CARRY_FORWARD);
+  }
+
+  // --- single-source pin (§24 "no affordance without enforcement"): every commitment marked
+  // CARRY_FORWARD-eligible satisfies exactly the preconditions E12 enforces (owner ∧ RECONCILING) —
+  // so the affordance never offers a button CarryForwardService would reject ----
+  @Test
+  void carryForward_eligibility_impliesEnforcementPreconditions() {
+    UUID owner = UUID.randomUUID();
+    for (PlanState state : PlanState.values()) {
+      for (ReconciliationOutcome outcome :
+          new ReconciliationOutcome[] {
+            null, ReconciliationOutcome.BLOCKED, ReconciliationOutcome.CARRIED_FORWARD
+          }) {
+        for (UUID actor : List.of(owner, UUID.randomUUID())) {
+          WeeklyPlan p = plan(owner, state);
+          boolean eligible =
+              resolver
+                  .commitmentActions(actor, p, withOutcome(outcome))
+                  .contains(AllowedAction.CARRY_FORWARD);
+          if (eligible) {
+            // exactly E12's gate: owner ∧ RECONCILING (the central authz owner-check + state guard)
+            assertThat(actor).as("eligible ⇒ actor owns the plan").isEqualTo(owner);
+            assertThat(state).as("eligible ⇒ plan RECONCILING").isEqualTo(PlanState.RECONCILING);
+          }
+        }
+      }
+    }
   }
 }

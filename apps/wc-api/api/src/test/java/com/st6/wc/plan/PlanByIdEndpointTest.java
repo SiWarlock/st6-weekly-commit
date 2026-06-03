@@ -10,10 +10,17 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.st6.wc.audit.AuditEvent;
 import com.st6.wc.audit.repo.AuditEventRepository;
+import com.st6.wc.commitment.WeeklyCommitment;
+import com.st6.wc.commitment.repo.WeeklyCommitmentRepository;
 import com.st6.wc.employee.Employee;
 import com.st6.wc.employee.repo.EmployeeRepository;
+import com.st6.wc.enums.AlignmentStatus;
+import com.st6.wc.enums.CommitmentKind;
+import com.st6.wc.enums.Confidence;
 import com.st6.wc.enums.PlanState;
+import com.st6.wc.enums.Priority;
 import com.st6.wc.enums.RoleType;
+import com.st6.wc.enums.WorkType;
 import com.st6.wc.plan.repo.WeeklyPlanRepository;
 import com.st6.wc.relationship.ManagerRelationship;
 import com.st6.wc.relationship.repo.ManagerRelationshipRepository;
@@ -51,12 +58,14 @@ class PlanByIdEndpointTest extends AbstractAppBootTest {
   @Autowired private MockMvc mvc;
   @Autowired private EmployeeRepository employees;
   @Autowired private WeeklyPlanRepository plans;
+  @Autowired private WeeklyCommitmentRepository commitments;
   @Autowired private ManagerRelationshipRepository relationships;
   @Autowired private AuditEventRepository auditEvents;
 
   @AfterEach
   void cleanup() {
     auditEvents.deleteAll();
+    commitments.deleteAll();
     plans.deleteAll();
     relationships.deleteAll();
     employees.deleteAll();
@@ -89,6 +98,58 @@ class PlanByIdEndpointTest extends AbstractAppBootTest {
     r.setDirectReportEmployeeId(reportId);
     r.setActive(true);
     relationships.saveAndFlush(r);
+  }
+
+  private WeeklyPlan saveReconcilingPlan(UUID ownerId) {
+    WeeklyPlan p = new WeeklyPlan();
+    p.setId(UUID.randomUUID());
+    p.setEmployeeId(ownerId);
+    p.setWeekStartDate(WEEK);
+    p.setWeekEndDate(WEEK.plusDays(6));
+    p.setState(PlanState.RECONCILING);
+    return plans.saveAndFlush(p);
+  }
+
+  private void savePlannedCommitment(UUID planId) {
+    WeeklyCommitment c = new WeeklyCommitment();
+    c.setId(UUID.randomUUID());
+    c.setWeeklyPlanId(planId);
+    c.setCommitmentKind(CommitmentKind.PLANNED);
+    c.setTitle("Ship it");
+    c.setPriority(Priority.P1);
+    c.setWorkType(WorkType.STRATEGIC);
+    c.setConfidence(Confidence.MEDIUM);
+    c.setAlignmentStatus(AlignmentStatus.ALIGNED);
+    commitments.saveAndFlush(c);
+  }
+
+  // --- 4.4b: IC reads OWN RECONCILING plan -> the nested commitment carries CARRY_FORWARD
+  // (the must-have — the frontend CarryForwardButton gates on allowedActions.includes) ----
+  @Test
+  void byId_reconcilingOwnPlan_commitmentCarriesCarryForwardAffordance() throws Exception {
+    Employee ic = saveEmployee(RoleType.IC, "ada@x.test");
+    WeeklyPlan plan = saveReconcilingPlan(ic.getId());
+    savePlannedCommitment(plan.getId());
+
+    mvc.perform(get("/api/plans/" + plan.getId()).header(HEADER, ic.getId().toString()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.state").value("RECONCILING"))
+        .andExpect(jsonPath("$.commitments[0].allowedActions[?(@ == 'CARRY_FORWARD')]").exists());
+  }
+
+  // --- 4.4b: a manager-direct-report reading a report's RECONCILING plan sees NO CARRY_FORWARD
+  // (it's an IC-self action) ----
+  @Test
+  void byId_managerReadsReconcilingReportPlan_noCarryForward() throws Exception {
+    Employee mgr = saveEmployee(RoleType.MANAGER, "boss@x.test");
+    Employee report = saveEmployee(RoleType.IC, "rep@x.test");
+    saveRelationship(mgr.getId(), report.getId());
+    WeeklyPlan plan = saveReconcilingPlan(report.getId());
+    savePlannedCommitment(plan.getId());
+
+    mvc.perform(get("/api/plans/" + plan.getId()).header(HEADER, mgr.getId().toString()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.commitments[0].allowedActions[?(@ == 'CARRY_FORWARD')]").isEmpty());
   }
 
   // --- #1: IC reads OWN plan -> 200 WeeklyPlanDto ----

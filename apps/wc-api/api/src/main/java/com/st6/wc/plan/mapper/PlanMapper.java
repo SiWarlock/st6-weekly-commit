@@ -48,7 +48,12 @@ public class PlanMapper {
       UUID actorEmployeeId) {
 
     List<WeeklyCommitmentDto> commitmentDtos =
-        commitments.stream().map(commitmentMapper::toDto).toList();
+        commitments.stream()
+            .map(
+                c ->
+                    commitmentMapper.toDto(
+                        c, plan, actorEmployeeId)) // 4.4b per-commitment affordances
+            .toList();
     int plannedCount =
         (int)
             commitments.stream()

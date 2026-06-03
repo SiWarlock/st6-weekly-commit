@@ -4,6 +4,7 @@ import com.st6.wc.action.AllowedAction;
 import com.st6.wc.commitment.WeeklyCommitment;
 import com.st6.wc.enums.CommitmentKind;
 import com.st6.wc.enums.PlanState;
+import com.st6.wc.enums.ReconciliationOutcome;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
@@ -43,6 +44,41 @@ public class AllowedActionResolver {
       return List.of(AllowedAction.START_RECONCILIATION);
     }
     return List.of();
+  }
+
+  /**
+   * Per-commitment affordances for the viewing actor (task 4.4b) — currently just {@code
+   * CARRY_FORWARD} for a carry-forward-eligible commitment (others — {@code OPEN_DISPUTE}/{@code
+   * COMMENT} — join as their enforcing slices land, "no affordance without enforcement", §15/§24).
+   */
+  public List<AllowedAction> commitmentActions(
+      UUID actorEmployeeId, WeeklyPlan plan, WeeklyCommitment commitment) {
+    if (canCarryForward(actorEmployeeId, plan, commitment)) {
+      return List.of(AllowedAction.CARRY_FORWARD);
+    }
+    return List.of();
+  }
+
+  /**
+   * The {@code CARRY_FORWARD} affordance predicate (task 4.4b) — the owning IC may carry a
+   * commitment forward while the plan is {@code RECONCILING}, EXCEPT one already carried (re-carry
+   * is a pointless idempotent no-op, so the button is hidden). There is deliberately <strong>no
+   * {@code commitmentKind} branch</strong> (E12 accepts + handles an UNPLANNED source) and
+   * <strong>no completion-outcome restriction</strong> (a {@code PARTIALLY_COMPLETED}/{@code
+   * BLOCKED} item is the prime carry-forward case).
+   *
+   * <p>This is a UX-narrowed <strong>subset</strong> of what {@code CarryForwardService} enforces
+   * (E12 idempotent-accepts an already-carried re-invoke; the affordance hides it) — NOT a literal
+   * shared gate like {@link #canLock}. The §24 invariant that holds is "no affordance without
+   * enforcement": {@code canCarryForward}-true ⟹ E12 accepts (owner ∧ {@code RECONCILING}). {@code
+   * CarryForwardService} is NOT changed to reuse this — doing so would break E12's idempotent
+   * re-carry (REQ-D-006).
+   */
+  public boolean canCarryForward(
+      UUID actorEmployeeId, WeeklyPlan plan, WeeklyCommitment commitment) {
+    return plan.getEmployeeId().equals(actorEmployeeId)
+        && plan.getState() == PlanState.RECONCILING
+        && commitment.getReconciliationOutcome() != ReconciliationOutcome.CARRIED_FORWARD;
   }
 
   /**

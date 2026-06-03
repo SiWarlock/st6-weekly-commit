@@ -3,6 +3,7 @@ package com.st6.wc.plan.mapper;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
+import com.st6.wc.action.AllowedAction;
 import com.st6.wc.commitment.WeeklyCommitment;
 import com.st6.wc.commitment.mapper.CommitmentMapper;
 import com.st6.wc.enums.AlignmentStatus;
@@ -37,7 +38,7 @@ class PlanMapperTest {
   private final ReviewMapper reviewMapper = mock(ReviewMapper.class);
   private final PlanMapper mapper =
       new PlanMapper(
-          new CommitmentMapper(rcdoReadService),
+          new CommitmentMapper(rcdoReadService, new AllowedActionResolver()),
           new AllowedActionResolver(),
           reviews,
           reviewMapper);
@@ -91,5 +92,18 @@ class PlanMapperTest {
     assertThat(dto.commitments()).hasSize(2);
     assertThat(dto.managerReview()).as("null while DRAFT (B.5; 3.5 wires the review)").isNull();
     assertThat(dto.version()).isZero();
+  }
+
+  // --- 4.4b: the IC's RECONCILING plan-read surfaces per-commitment CARRY_FORWARD on the eligible
+  // nested commitments (the must-have — the frontend CarryForwardButton consumes this) ----
+  @Test
+  void toWeeklyPlanDto_reconciling_nestedCommitmentsCarryAffordance() {
+    WeeklyPlan plan = draftPlan();
+    plan.setState(PlanState.RECONCILING);
+
+    WeeklyPlanDto dto =
+        mapper.toWeeklyPlanDto(plan, "Ada", List.of(commitment(CommitmentKind.PLANNED)), OWNER);
+
+    assertThat(dto.commitments().get(0).allowedActions()).contains(AllowedAction.CARRY_FORWARD);
   }
 }
