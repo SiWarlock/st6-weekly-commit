@@ -1,0 +1,20 @@
+package com.st6.wc.web;
+
+/**
+ * The §5 named error-code vocabulary rendered on RFC-7807 bodies (task 3.4a). A computed
+ * response-layer constant set (like {@code AllowedAction}) — not a persisted {@code enums/} member.
+ * Starts with the codes E5 needs; later slices add theirs ({@code LOCKED_BASELINE_EDIT} at 3.4b,
+ * {@code EMPTY_PLAN_LOCK}/{@code UNLINKED_PLANNED_COMMITMENT} at 3.5, …). {@code
+ * MANAGER_ROLE_REQUIRED} / {@code IC_CANNOT_RESOLVE_DISPUTE} already live as constants in the 2.5
+ * authorizer.
+ */
+public final class ErrorCodes {
+
+  private ErrorCodes() {}
+
+  /** Server-side input-validation failure (400; carries {@code fieldErrors[]}). */
+  public static final String VALIDATION_ERROR = "VALIDATION_ERROR";
+
+  /** A lifecycle action attempted from an illegal source state (409). */
+  public static final String ILLEGAL_STATE_TRANSITION = "ILLEGAL_STATE_TRANSITION";
+}
