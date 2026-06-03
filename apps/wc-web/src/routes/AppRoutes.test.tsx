@@ -2,13 +2,49 @@ import { lazy, Suspense } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Link } from 'react-router-dom';
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AppRoutes } from './AppRoutes';
 import { RouteErrorBoundary } from './RouteErrorBoundary';
 import { LoadingState } from '../shared/components/LoadingState';
 import { useCurrentUser } from '../features/me/useCurrentUser';
+import {
+  useGetCurrentPlanQuery,
+  useLockPlanMutation,
+} from '../features/plan/plansApi';
+import type { WeeklyPlanDto } from '../shared/lib/dtos';
 
 vi.mock('../features/me/useCurrentUser');
+// The /weekly-commit route now renders WeeklyPlanView (9.7), which reads
+// getCurrentPlan. Mock it so the routing tests stay store-free.
+vi.mock('../features/plan/plansApi');
+
+const EMPTY_PLAN: WeeklyPlanDto = {
+  id: 'plan-1',
+  employeeId: 'emp-1',
+  employeeDisplayName: 'Ivy Chen',
+  weekStartDate: '2026-06-01',
+  weekEndDate: '2026-06-07',
+  state: 'DRAFT',
+  plannedCount: 0,
+  unplannedCount: 0,
+  commitments: [],
+  managerReview: null,
+  allowedActions: [],
+  version: 1,
+};
+
+beforeEach(() => {
+  vi.mocked(useGetCurrentPlanQuery).mockReturnValue({
+    data: EMPTY_PLAN,
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  } as unknown as ReturnType<typeof useGetCurrentPlanQuery>);
+  vi.mocked(useLockPlanMutation).mockReturnValue([
+    vi.fn(),
+    { isLoading: false, reset: vi.fn() },
+  ] as unknown as ReturnType<typeof useLockPlanMutation>);
+});
 
 function mockCurrentUser(value: {
   isManager?: boolean;
@@ -45,7 +81,7 @@ describe('AppRoutes — lazy route tree + real-role gating (9.5 / REQ-NF-005 / R
       phrase: RegExp;
       manager: boolean;
     }> = [
-      { path: '/weekly-commit', phrase: /coming in 9\.7/i, manager: false },
+      { path: '/weekly-commit', phrase: /weekly commitments/i, manager: false },
       {
         path: '/weekly-commit/history/abc-123',
         phrase: /coming in 9\.8/i,
@@ -77,7 +113,7 @@ describe('AppRoutes — lazy route tree + real-role gating (9.5 / REQ-NF-005 / R
     // IC → /weekly-commit
     mockCurrentUser({ isManager: false, role: 'IC' });
     const ic = renderAt('/');
-    expect(await screen.findByText(/coming in 9\.7/i)).toBeInTheDocument();
+    expect(await screen.findByText(/weekly commitments/i)).toBeInTheDocument();
     ic.unmount();
 
     // Pending → LoadingState (no premature redirect)
@@ -100,7 +136,7 @@ describe('AppRoutes — lazy route tree + real-role gating (9.5 / REQ-NF-005 / R
     const { container } = renderAt('/manager/command-center');
 
     // Manager route is not registered for an IC → catch-all → '/' → IC default.
-    expect(await screen.findByText(/coming in 9\.7/i)).toBeInTheDocument();
+    expect(await screen.findByText(/weekly commitments/i)).toBeInTheDocument();
     expect(screen.queryByText(/coming in 9\.9/i)).toBeNull();
     expect(container.querySelector('a[href*="/manager"]')).toBeNull();
   });
@@ -153,9 +189,9 @@ describe('AppRoutes — lazy route tree + real-role gating (9.5 / REQ-NF-005 / R
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText(/coming in 9\.7/i)).toBeInTheDocument();
+    expect(await screen.findByText(/weekly commitments/i)).toBeInTheDocument();
     await user.click(screen.getByRole('link', { name: /history/i }));
     expect(await screen.findByText(/coming in 9\.8/i)).toBeInTheDocument();
-    expect(screen.queryByText(/coming in 9\.7/i)).toBeNull();
+    expect(screen.queryByText(/weekly commitments/i)).toBeNull();
   });
 });

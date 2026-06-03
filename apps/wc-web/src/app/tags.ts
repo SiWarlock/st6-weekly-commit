@@ -16,3 +16,21 @@ export const TAG_TYPES = [
 ] as const;
 
 export type TagType = (typeof TAG_TYPES)[number];
+
+/**
+ * The tags a plan-affecting mutation (commitment CRUD, lock, reconciliation —
+ * 9.6/9.7/9.8) invalidates: the affected plan (per-id) + the current-plan
+ * sentinel + the general `manager` tag (§9: the command-center + heatmap
+ * projections co-change on the same triggers, so one tag covers both). Callers
+ * guard `error ? [] : planTags(id)` so a FAILED mutation invalidates nothing
+ * (RTK Query otherwise applies the callback's tags on error too) — LESSONS §10.
+ */
+export function planTags(
+  planId: string,
+): (TagType | { type: TagType; id: string })[] {
+  return [
+    { type: 'plans', id: planId },
+    { type: 'plans', id: 'CURRENT' },
+    'manager',
+  ];
+}

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { configureStore } from '@reduxjs/toolkit';
+import { waitFor } from '@testing-library/react';
 import { baseApi } from '../../app/baseApi';
 import {
   setAccessTokenProvider,
@@ -41,6 +42,13 @@ function makeStore() {
   return configureStore({
     reducer: { [baseApi.reducerPath]: baseApi.reducer },
     middleware: (gdm) => gdm().concat(baseApi.middleware),
+  });
+}
+
+function jsonResponse(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
   });
 }
 
@@ -112,5 +120,51 @@ describe('plansApi (E3/E4 → WeeklyPlanDto, the providesTags side)', () => {
     expect(err.safeMessage).toBe('Plan not found.');
     expect(err.code).toBe('NOT_FOUND');
     expect(JSON.stringify(err)).not.toMatch(/not visible|xyz-01/);
+  });
+});
+
+describe('lockPlan (E8 lifecycle mutation → invalidate→refetch into LOCKED)', () => {
+  it('lock_success_refetches_plan_into_LOCKED: a successful lockPlan invalidates the plan → getCurrentPlan refetches to state LOCKED; NO optimistic flip mid-flight', async () => {
+    vi.stubEnv('VITE_AUTH_MODE', 'demo');
+    setDemoAuthHeaderApplier((h) => h.set('X-Demo-Employee-Id', 'ic'));
+    let currentCalls = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const draft = { ...PLAN, state: 'DRAFT' as const };
+    const locked = { ...PLAN, state: 'LOCKED' as const };
+    const fetchMock = vi.fn(async (input: Request) => {
+      const { url, method } = input;
+      if (url.includes('/api/plans/current')) {
+        currentCalls += 1;
+        if (currentCalls === 1) return jsonResponse(draft);
+        await gate; // hold the refetch open to inspect for an optimistic flip
+        return jsonResponse(locked);
+      }
+      if (method === 'POST' && /\/plans\/plan-1\/lock$/.test(url)) {
+        return jsonResponse(locked);
+      }
+      throw new Error(`unexpected ${method} ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const store = makeStore();
+    const select = () =>
+      plansApi.endpoints.getCurrentPlan.select()(store.getState());
+
+    const sub = store.dispatch(plansApi.endpoints.getCurrentPlan.initiate());
+    await sub;
+    expect(select().data?.state).toBe('DRAFT');
+
+    await store.dispatch(plansApi.endpoints.lockPlan.initiate('plan-1'));
+
+    // Refetch in flight (gated) — the state is NOT optimistically flipped.
+    await waitFor(() => expect(select().status).toBe('pending'));
+    expect(select().data?.state).toBe('DRAFT');
+
+    release();
+    await waitFor(() => expect(select().data?.state).toBe('LOCKED'));
+    expect(currentCalls).toBe(2);
+    sub.unsubscribe();
   });
 });

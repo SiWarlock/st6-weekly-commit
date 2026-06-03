@@ -1,5 +1,6 @@
 import { baseApi } from '../../app/baseApi';
 import { parseProblemDetail } from '../../shared/lib/problemDetails';
+import { planTags } from '../../app/tags';
 import type { WeeklyPlanDto } from '../../shared/lib/dtos';
 
 /**
@@ -28,7 +29,23 @@ export const plansApi = baseApi.injectEndpoints({
       providesTags: (_result, _error, id) => [{ type: 'plans', id }],
       transformErrorResponse: (response) => parseProblemDetail(response.data),
     }),
+    /**
+     * E8 lock (rule #1, server-enforced). No body. On success the plan tag is
+     * invalidated so the view refetches into `LOCKED` — **no optimistic flip**.
+     * A blocked lock (`409 UNLINKED_PLANNED_COMMITMENT`/`EMPTY_PLAN_LOCK`) surfaces
+     * the parsed `safeMessage` + `fieldErrors[]`. Lifecycle transitions live here;
+     * 9.8 adds start/close-reconciliation alongside.
+     */
+    lockPlan: build.mutation<WeeklyPlanDto, string>({
+      query: (id) => ({ url: `/api/plans/${id}/lock`, method: 'POST' }),
+      invalidatesTags: (_result, error, id) => (error ? [] : planTags(id)),
+      transformErrorResponse: (response) => parseProblemDetail(response.data),
+    }),
   }),
 });
 
-export const { useGetCurrentPlanQuery, useGetPlanByIdQuery } = plansApi;
+export const {
+  useGetCurrentPlanQuery,
+  useGetPlanByIdQuery,
+  useLockPlanMutation,
+} = plansApi;
