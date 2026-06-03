@@ -2,10 +2,16 @@ package com.st6.wc.plan;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.st6.wc.auth.DomainAuthorizationService;
+import com.st6.wc.auth.ResourceNotFoundOrUnauthorizedException;
 import com.st6.wc.commitment.repo.WeeklyCommitmentRepository;
 import com.st6.wc.common.OrgTimeConfig;
 import com.st6.wc.employee.Employee;
@@ -44,6 +50,7 @@ class PlanServiceTest {
   private final WeeklyCommitmentRepository commitments = mock(WeeklyCommitmentRepository.class);
   private final EmployeeRepository employees = mock(EmployeeRepository.class);
   private final PlanMapper planMapper = mock(PlanMapper.class);
+  private final DomainAuthorizationService authz = mock(DomainAuthorizationService.class);
   private final PlanService service =
       new PlanService(
           plans,
@@ -51,7 +58,8 @@ class PlanServiceTest {
           employees,
           new OrgTimeConfig(ZoneId.of("America/Chicago")),
           Clock.fixed(ANCHOR, ZoneOffset.UTC),
-          planMapper);
+          planMapper,
+          authz);
 
   private UserPrincipal actor() {
     return new UserPrincipal(ACTOR, RoleType.IC, false);
@@ -120,5 +128,55 @@ class PlanServiceTest {
 
     assertThatThrownBy(() -> service.getCurrentPlan(actor()))
         .isInstanceOf(PlanNotFoundException.class);
+  }
+
+  // --- E4: getPlanById authorizes (chokepoint) then maps the plan for an authorized actor ----
+  @Test
+  void getPlanById_authorizedActor_mapsPlan() {
+    WeeklyPlan plan = plan();
+    WeeklyPlanDto expected =
+        new WeeklyPlanDto(
+            plan.getId(),
+            ACTOR,
+            "Ada",
+            WEEK_MONDAY,
+            WEEK_MONDAY.plusDays(6),
+            PlanState.DRAFT,
+            null,
+            null,
+            null,
+            null,
+            0,
+            0,
+            List.of(),
+            null,
+            List.of(),
+            0L);
+    // authz passes (void, no throw) → then load + map
+    when(plans.findById(plan.getId())).thenReturn(Optional.of(plan));
+    when(commitments.findByWeeklyPlanIdOrderByIdAsc(plan.getId())).thenReturn(List.of());
+    when(employees.findById(ACTOR)).thenReturn(Optional.of(employee()));
+    when(planMapper.toWeeklyPlanDto(eq(plan), eq("Ada"), eq(List.of()), eq(ACTOR)))
+        .thenReturn(expected);
+
+    WeeklyPlanDto result = service.getPlanById(actor(), plan.getId());
+
+    assertThat(result).isSameAs(expected);
+    verify(authz).authorizePlanAccess(actor(), plan.getId()); // the per-resource chokepoint ran
+  }
+
+  // --- E4 rule #3: a denied authorize is the CHOKEPOINT — no plan is loaded into a response path
+  // ----
+  @Test
+  void getPlanById_deniedByAuthorizer_neverLoadsPlan() {
+    UUID planId = UUID.randomUUID();
+    doThrow(new ResourceNotFoundOrUnauthorizedException())
+        .when(authz)
+        .authorizePlanAccess(any(), eq(planId));
+
+    assertThatThrownBy(() -> service.getPlanById(actor(), planId))
+        .isInstanceOf(ResourceNotFoundOrUnauthorizedException.class);
+    // authorize threw FIRST → the plan was never read into a response path (rule #3 chokepoint)
+    verify(plans, never()).findById(planId);
   }
 }
