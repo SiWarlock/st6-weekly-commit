@@ -232,3 +232,77 @@ The manager read surfaces (command-center E13, heatmap E14, drilldown E15) share
 - **A read-thread at a *list* grain mounts its query lazily.** When a paginated read-surface sits at a per-row grain (e.g. a comment thread per commitment), make it collapsed-by-default and mount the `getX` query only on open — otherwise a list of N rows fires N queries on render. The 9.11b `CommentThread` does this (COMMENT-gated + per-target `{type:'comments', id:'${targetType}:${targetId}'}` tag); same skip-until-open as the 9.10 drilldown.
 
 **Rule:** Reuse one generic `PageEnvelope<T>` (B.20) + a typed omit-undefined Pageable params object; tag manager reads `['manager']` (no `heatmap` tag); reach an action's missing id/allowedActions via the aggregate root (lazy `getPlanById`, not a new endpoint); span a grouped-drilldown pager off `max(totalPages)` so no group is hidden; and lazy-mount any per-row-grain read-thread's query (collapsed-by-default) to avoid N-queries-per-list.
+
+---
+
+## <a id="14"></a>14. Expand-in-place → themed Flowbite `Drawer` — always-renders-children means conditional-mount the inner data-component
+
+**Date:** 2026-06-03.
+**Source slice:** ST.6c (manager review + drilldown Drawers).
+
+Swapping a per-row inline-expand / inline-panel to a `flowbite-react` `Drawer` (right-slide + scrim) has a load-bearing gotcha: **the `Drawer` ALWAYS renders its children** — `open` only toggles an off-screen `translate` class, it does NOT conditionally mount. So putting a lazy/skip-until-open data-component directly inside the always-rendered `Drawer` fires its fetch while "closed" (a silent skip-until-selected regression) and makes open/close non-deterministic to assert.
+
+- **Conditionally mount the inner data-component on the trigger state** (`{expandedPlanId && <ManagerRowReview .../>}` inside the Drawer), not the Drawer itself. Preserves the lazy `getPlanById` / skip-until-selected fetch AND makes the surface assertable.
+- **Hand-roll the Drawer header** (token-native + a `react-icons/hi` close button) rather than `Drawer.Header` — Flowbite's header ships Material `MdHome`/`MdClose` icons that clash with the project's Heroicons.
+- The prop is **`position`**, not `placement`; `data-cy` rides the `...props` spread onto the dialog div.
+- The Drawer container's `data-cy` is present in the DOM even when closed (always-rendered) — assert *visibility/open-state*, not mere presence.
+
+**Rule:** A `flowbite-react` `Drawer` always renders its children (open = off-screen translate) — conditionally mount the inner lazy/data component on the trigger state (preserves skip-until-open + makes it assertable); hand-roll the header (Material-icon clash); the prop is `position` not `placement`.
+
+---
+
+## <a id="15"></a>15. Backend-less standalone via a standalone-only MSW layer — contract-typed fixtures, persona-driven, boundary-proven tree-shaken
+
+**Date:** 2026-06-03.
+**Source slice:** ST.7a (MSW mock-data layer).
+
+To render populated data surfaces without a backend (for real-browser QA + the demo-video deliverable), a Mock Service Worker (MSW v2) layer lives **only in `src/standalone/`** and is **tree-shaken from the Module Federation remote** (REQ-I-008), mirroring the demo-identity boundary (§6/§8):
+
+- **Fixtures are typed as their Appendix-B DTOs** (`const plan: WeeklyPlanDto = {…}`) so TS compile-enforces contract fidelity — the mock is a faithful double, not drifting from the wire contract. A fixture that won't type is a contract-drift Finding (flag it; don't patch the DTO).
+- **Persona-driven via the `X-Demo-Employee-Id` seam** — handlers route GETs off the demo header the `DemoIdentityProvider` applies; one IC persona per lifecycle state + a manager whose command-center/heatmap are those ICs as direct reports = one coherent demo org.
+- **Dynamic-imported + `await worker.start()` before `createRoot().render()`** in `standalone/main.tsx` (dev/`VITE_USE_MOCKS`-gated) so no request fires before the SW intercepts.
+- **Extend the 9.3 REQ-I-008 boundary proof** with a fail-open import-graph assertion + a fail-closed literal scan (`msw`/`setupWorker`/`mockServiceWorker`) over the remote closure **plus a positive control** that the standalone graph DOES contain it (so the scan isn't vacuous).
+- **Gotcha:** a `*/api` route glob inside a JSDoc block comment closes the comment (`*/`) — keep route globs out of block comments.
+
+**Rule:** A backend-less standalone uses a standalone-only MSW v2 layer (contract-typed fixtures compile-enforced vs `dtos.ts`; persona-routed via `X-Demo-Employee-Id`; dynamic-imported + awaited in `main.tsx`); prove it tree-shaken from the remote with a fail-closed literal scan + a positive control; keep `*/api` globs out of JSDoc block comments.
+
+---
+
+## <a id="16"></a>16. An identity/persona switch must `resetApiState()` — argless identity-scoped queries don't auto-invalidate on a header change
+
+**Date:** 2026-06-03.
+**Source slice:** ST.7d (persona-switch stale-data bug).
+
+Switching the demo persona updated the `X-Demo-Employee-Id` the accessor seam sends, but `/api/me` + `/api/plans/current` + the manager reads are cached under **argless** RTK Query keys — a header change does NOT change the cache key, so nothing refetched and **the previous identity's data stayed on screen** (a real stale-data bug, behaviorally confirmed in the connected browser). Tag invalidation doesn't help: no mutation fired, and the cache key is identical across identities.
+
+- **On identity change, `dispatch(baseApi.util.resetApiState())`** (in a `personaId`-keyed effect, skipping the initial mount) — drop the whole cache so every active query re-issues with the new identity. This is the idiomatic "user switched identity" reset, distinct from per-tag invalidation (§10).
+- **Standalone-only** — the exposed remote gets identity from the host, so this lives in `DemoIdentityProvider` (REQ-I-008 intact). Any future real auth-identity switch needs the same reset.
+
+**Rule:** An identity/persona switch must `dispatch(baseApi.util.resetApiState())` (skip first mount) — argless identity-scoped queries (`/api/me`, `/api/plans/current`) don't auto-invalidate on a header/identity change, so a tag-invalidate is insufficient; reset the whole cache.
+
+---
+
+## <a id="17"></a>17. Flowbite theme-mode is a second source of truth — drive `useThemeMode().setMode()` from our `[data-theme]`
+
+**Date:** 2026-06-03.
+**Source slice:** ST.7d (#6 theme desync).
+
+`flowbite-react` 0.10.2's `<Flowbite>` mounts its own `useThemeMode()`, which **independently persists `flowbite-theme-mode` (default `light`) and toggles the `.dark` class on `<html>`** — a second theme source that drifts from our `ThemeProvider`'s `[data-theme]` (QA caught `wc-theme=dark` vs `flowbite-theme-mode=light`). Binding `darkMode: ['selector','[data-theme="dark"]']` (§4) makes Flowbite's `dark:` *read* our attribute, but it doesn't stop Flowbite's own mode tracker from running.
+
+- **Make our `ThemeProvider` the single source:** a standalone-only `FlowbiteThemeSync` null-component mounted inside `<Flowbite>` drives `useThemeMode().setMode(ourTheme)` on every theme change, so `data-theme` / `flowbite-theme-mode` / `html.dark` always agree.
+
+**Rule:** `flowbite-react`'s `<Flowbite>` runs its own `useThemeMode()` (persists `flowbite-theme-mode` + toggles `.dark` independently) — drive it from our `[data-theme]` single source via a sync component inside `<Flowbite>`, else Flowbite primitives (Drawer/Modal) drift from the app theme. (Extends §4.)
+
+---
+
+## <a id="18"></a>18. A partially-overridden Flowbite primitive silently loses its default classes — they live in `.mjs`/`.cjs` outside the content glob
+
+**Date:** 2026-06-03.
+**Source slice:** ST.7e (manager Drawers rendered top-left, not right-slide).
+
+The manager Drawers rendered as a small top-left content-sized panel instead of the right-slide full-height overlay — even though both passed `position="right"` and `setTheme`'s `mergeDeep` preserved `root.position`. **Root cause: `flowbite-react`'s default theme classes (the Drawer's `right-0 top-0 h-screen w-80 transform-none translate-x-full` positioning + the `bg-gray-900/50` backdrop) live only in the library's `.mjs`/`.cjs` dist**, which the `tailwind.config` content glob (`node_modules/flowbite-react/**/*.{js,jsx,ts,tsx}`) **never scans** → those utilities are referenced-but-never-generated (inert) → a Drawer we'd only *partially* overridden (`root.base` skin only) fell through to a bare `fixed` element. Every *fully*-overridden primitive (badge/button/table/modal) worked because its classes live in our scanned `flowbiteTheme.ts`.
+
+- **Own the full slot in the scanned theme** (`root.base` + `root.position.<side>` on/off + `root.backdrop`), token-native — do NOT widen the content glob to `.mjs`/`.cjs` (that emits ALL of Flowbite's defaults → CSS bloat, REQ-NF-005).
+- **jsdom/Vitest pins a Drawer/overlay's open-state + content + gating, but NOT its computed position/size** — a right-slide/full-height/backdrop regression sails past unit tests. A real-browser pass (gstack `/connect-chrome` — a real Chromium, which also drives a React controlled `<select>` that headless synthetic events can't) is required to catch overlay positioning. Pin the deterministic boundary in Vitest (the theme config-shape carries the position/size/backdrop classes); confirm the visual in the real browser.
+
+**Rule:** A *partially*-overridden `flowbite-react` primitive silently loses its default positioning/backdrop — those classes live in `.mjs`/`.cjs` outside a `*.{js,jsx,ts,tsx}` content glob (inert). Own the full theme slot in the scanned config (don't widen the glob → CSS bloat); and real-browser QA, not jsdom, catches overlay computed-position regressions.
