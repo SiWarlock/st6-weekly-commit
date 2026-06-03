@@ -15,10 +15,16 @@ import {
   useAddUnplannedCommitmentMutation,
   useDeleteCommitmentMutation,
 } from '../commitment/commitmentsApi';
-import type { WeeklyPlanDto, WeeklyCommitmentDto } from '../../shared/lib/dtos';
+import { useGetSyncRecordsQuery, useRetrySyncMutation } from '../sync/syncApi';
+import type {
+  WeeklyPlanDto,
+  WeeklyCommitmentDto,
+  OutlookSyncRecordDto,
+} from '../../shared/lib/dtos';
 
 vi.mock('./plansApi');
 vi.mock('../commitment/commitmentsApi');
+vi.mock('../sync/syncApi');
 // The unplanned CommitmentForm (ADD_UNPLANNED toggle) mounts the RCDO picker,
 // which owns its own query hook — stub it so the view test stays store-free.
 vi.mock('../rcdo/SupportingOutcomePicker', () => ({
@@ -40,7 +46,19 @@ beforeEach(() => {
   vi.mocked(useCreateCommitmentMutation).mockReturnValue(tuple());
   vi.mocked(useAddUnplannedCommitmentMutation).mockReturnValue(tuple());
   vi.mocked(useDeleteCommitmentMutation).mockReturnValue(tuple());
+  // Sync surface (9.12) — default to no records (no sync panel) unless overridden.
+  mockSync([]);
+  vi.mocked(useRetrySyncMutation).mockReturnValue(tuple());
 });
+
+function mockSync(records: OutlookSyncRecordDto[]) {
+  vi.mocked(useGetSyncRecordsQuery).mockReturnValue({
+    data: records,
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  } as unknown as ReturnType<typeof useGetSyncRecordsQuery>);
+}
 
 function commitment(
   overrides: Partial<WeeklyCommitmentDto> & { id: string },
@@ -208,5 +226,45 @@ describe('WeeklyPlanView (IC workspace — getCurrentPlan view-states, §7)', ()
       screen.getByRole('button', { name: /save changes/i }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText(/title/i)).toHaveValue('Ship onboarding');
+  });
+
+  it('plan_view_shows_sync_and_stays_usable_with_FAILED: a FAILED sync record renders the warning + retry, AND the lifecycle bar + commitment list stay rendered/usable — proving the non-blocking guarantee (rule #4, REQ-E-004/REQ-UX-004)', () => {
+    mockSync([
+      {
+        id: 'sync-1',
+        ownerEmployeeId: 'emp-1',
+        relatedType: 'WEEKLY_PLAN',
+        relatedId: 'plan-1',
+        eventKind: 'IC_PLANNING',
+        status: 'FAILED',
+        safeMessage: 'Calendar sync failed; you can retry.',
+        failureCode: 'GRAPH_FORBIDDEN',
+        retryCount: 1,
+        allowedActions: ['RETRY_SYNC'],
+        version: 0,
+      },
+    ]);
+    mockQuery({
+      data: plan({
+        state: 'DRAFT',
+        commitments: [commitment({ id: 'c-1', title: 'Ship onboarding' })],
+      }),
+    });
+    render(<WeeklyPlanView />);
+
+    // The FAILED warning + retry are visible.
+    expect(
+      screen.getByText('Calendar sync failed; you can retry.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /retry sync/i }),
+    ).toBeInTheDocument();
+    // rule #7: the failure code is never rendered.
+    expect(screen.queryByText(/GRAPH_FORBIDDEN/)).toBeNull();
+
+    // NON-BLOCKING (rule #4): the lifecycle bar (Lock) + commitment list stay
+    // rendered/usable alongside the FAILED sync.
+    expect(screen.getByRole('button', { name: /lock/i })).toBeInTheDocument();
+    expect(screen.getByText('Ship onboarding')).toBeInTheDocument();
   });
 });

@@ -43,6 +43,19 @@ export type RiskBadge =
   | 'CARRY_FORWARD'
   | 'UNREVIEWED'
   | 'OVERDUE_REVIEW';
+/** Outlook-sync record lifecycle (B.1 / §10). `FAILED` is the retryable terminal. */
+export type SyncStatus =
+  | 'PENDING_PUBLISH'
+  | 'QUEUED'
+  | 'SYNCING'
+  | 'SYNCED'
+  | 'FAILED'
+  | 'RETRY_REQUESTED';
+export type EventKind =
+  | 'IC_PLANNING'
+  | 'IC_RECONCILIATION'
+  | 'MANAGER_REVIEW_BLOCK';
+export type SyncRelatedType = 'WEEKLY_PLAN' | 'MANAGER_REVIEW_WEEK';
 
 // ── B.6 — WeeklyCommitmentDto (nested in B.5) ────────────────────────────────
 export interface RcdoBreadcrumbDto {
@@ -241,4 +254,28 @@ export interface HeatmapDrilldownDto {
   employeeId: string;
   definingObjectiveId: string;
   supportingOutcomes: DrilldownOutcomeGroup[];
+}
+
+// ── B.10 — OutlookSyncRecordDto (E22 list item; E23 response) ─────────────────
+/**
+ * One Outlook calendar-sync record (§10). `safeMessage` is the ONLY user-visible
+ * error text — `failureCode`/`graphEventId`/`traceId` are never rendered (rule #7).
+ * A `FAILED` record is the retryable terminal; `RETRY_SYNC ∈ allowedActions` iff
+ * `FAILED` + actor owns/manages the owner.
+ */
+export interface OutlookSyncRecordDto {
+  id: string;
+  ownerEmployeeId: string;
+  relatedType: SyncRelatedType;
+  relatedId: string;
+  eventKind: EventKind;
+  weekStartDate?: string;
+  status: SyncStatus;
+  graphEventId?: string;
+  failureCode?: string;
+  safeMessage?: string;
+  retryCount: number;
+  traceId?: string;
+  allowedActions: AllowedAction[];
+  version: number;
 }

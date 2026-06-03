@@ -7,6 +7,9 @@ import { StatusBadge } from '../../shared/components/StatusBadge';
 import { CommitmentList } from '../commitment/CommitmentList';
 import { CommitmentForm } from '../commitment/CommitmentForm';
 import { PlanLifecycleBar } from './PlanLifecycleBar';
+import { useGetSyncRecordsQuery } from '../sync/syncApi';
+import { SyncStatusBadge } from '../sync/SyncStatusBadge';
+import { SyncRetryAction } from '../sync/SyncRetryAction';
 
 /**
  * The IC weekly-planning workspace. Renders `getCurrentPlan` (9.6) with the §7
@@ -16,6 +19,12 @@ import { PlanLifecycleBar } from './PlanLifecycleBar';
  */
 export function WeeklyPlanView() {
   const { data, isLoading, isError, error } = useGetCurrentPlanQuery();
+  // Sync surface (9.12) — read this plan's Outlook-sync records once the plan is
+  // loaded. Renders independently below, so a FAILED sync never blocks the
+  // lifecycle (rule #4). The hook is unconditional (skip-until-plan-loaded).
+  const { data: syncRecords } = useGetSyncRecordsQuery(data?.id ?? '', {
+    skip: !data?.id,
+  });
   const [showForm, setShowForm] = useState(false);
   const [showUnplannedForm, setShowUnplannedForm] = useState(false);
   const [editingCommitmentId, setEditingCommitmentId] = useState<string | null>(
@@ -69,6 +78,26 @@ export function WeeklyPlanView() {
           onEdit={(c) => setEditingCommitmentId(c.id)}
         />
       )}
+
+      {/* Outlook-sync surface (9.12) — visible but NON-BLOCKING (rule #4): a
+          FAILED record shows a warning + retry while the lifecycle/list above
+          stay fully usable. Renders only safeMessage (rule #7). */}
+      {syncRecords && syncRecords.length > 0 ? (
+        <section data-cy="sync-status-panel" className="mt-4 space-y-2">
+          <h2 className="text-label font-semibold text-ink-secondary">
+            Calendar sync
+          </h2>
+          {syncRecords.map((r) => (
+            <div
+              key={r.id}
+              className="space-y-2 rounded-lg border border-border bg-surface px-4 py-3"
+            >
+              <SyncStatusBadge record={r} />
+              <SyncRetryAction record={r} />
+            </div>
+          ))}
+        </section>
+      ) : null}
 
       {/* Edit an existing DRAFT commitment (9.7b, E6 PATCH). Keyed on the target
           so switching rows re-initialises the pre-filled form. */}

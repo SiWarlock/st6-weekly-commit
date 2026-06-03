@@ -15,6 +15,7 @@ import {
   useStartReconciliationMutation,
   useCloseReconciliationMutation,
 } from '../features/plan/plansApi';
+import { useGetSyncRecordsQuery } from '../features/sync/syncApi';
 import type { WeeklyPlanDto } from '../shared/lib/dtos';
 
 // The eager route gating reads useCurrentUser (an RTK Query hook). Mock it so the
@@ -23,6 +24,8 @@ import type { WeeklyPlanDto } from '../shared/lib/dtos';
 vi.mock('../features/me/useCurrentUser');
 // /weekly-commit now renders WeeklyPlanView (9.7) → reads getCurrentPlan. Mock it.
 vi.mock('../features/plan/plansApi');
+// WeeklyPlanView (9.12) also reads getSyncRecords — mock it (no records).
+vi.mock('../features/sync/syncApi');
 
 const EMPTY_PLAN: WeeklyPlanDto = {
   id: 'plan-1',
@@ -55,6 +58,12 @@ beforeEach(() => {
     vi.fn(),
     { isLoading: false, reset: vi.fn() },
   ] as unknown as ReturnType<typeof useStartReconciliationMutation>);
+  vi.mocked(useGetSyncRecordsQuery).mockReturnValue({
+    data: [],
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  } as unknown as ReturnType<typeof useGetSyncRecordsQuery>);
   vi.mocked(useCloseReconciliationMutation).mockReturnValue([
     vi.fn(),
     { isLoading: false, reset: vi.fn() },

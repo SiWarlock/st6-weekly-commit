@@ -17,6 +17,7 @@ import {
   useGetCommandCenterQuery,
   useGetHeatmapQuery,
 } from '../features/manager/managerApi';
+import { useGetSyncRecordsQuery } from '../features/sync/syncApi';
 import type { WeeklyPlanDto } from '../shared/lib/dtos';
 
 vi.mock('../features/me/useCurrentUser');
@@ -26,6 +27,9 @@ vi.mock('../features/plan/plansApi');
 // The /manager/command-center route now renders CommandCenter (9.9), which reads
 // getCommandCenter. Mock it so the routing tests stay store-free.
 vi.mock('../features/manager/managerApi');
+// WeeklyPlanView (9.12) reads getSyncRecords; mock it so the routing tests stay
+// store-free (default to no records → no sync panel).
+vi.mock('../features/sync/syncApi');
 
 const EMPTY_PLAN: WeeklyPlanDto = {
   id: 'plan-1',
@@ -82,6 +86,13 @@ beforeEach(() => {
     isError: false,
     refetch: vi.fn(),
   } as unknown as ReturnType<typeof useGetHeatmapQuery>);
+  // WeeklyPlanView (9.12) reads getSyncRecords; no records → no sync panel.
+  vi.mocked(useGetSyncRecordsQuery).mockReturnValue({
+    data: [],
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  } as unknown as ReturnType<typeof useGetSyncRecordsQuery>);
 });
 
 function mockCurrentUser(value: {

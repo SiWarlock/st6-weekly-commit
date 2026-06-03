@@ -12,6 +12,8 @@ import {
   HiBan,
   HiQuestionMarkCircle,
   HiArrowNarrowRight,
+  HiRefresh,
+  HiCloudUpload,
 } from 'react-icons/hi';
 
 /**
@@ -77,4 +79,28 @@ export const RISK_TAXONOMY: Record<string, TaxonomyEntry> = {
     ring: true,
   },
   UNREVIEWED: { tone: 'neutral', icon: HiOutlineEye, label: 'Unreviewed' },
+};
+
+/**
+ * The §10 Outlook-sync status taxonomy — the SINGLE SOURCE OF VISUAL TRUTH for
+ * `SyncStatus` rendering (B.1). `FAILED` is the user-visible retryable terminal
+ * (failure tone); in-flight states are neutral/info. Unknown/absent → `undefined`
+ * (the badge renders nothing). The `safeMessage` warning is rendered separately
+ * (rule #7 — never the failure code/secrets).
+ */
+export const SYNC_STATUS_TAXONOMY: Record<string, TaxonomyEntry> = {
+  PENDING_PUBLISH: {
+    tone: 'neutral',
+    icon: HiCloudUpload,
+    label: 'Pending sync',
+  },
+  QUEUED: { tone: 'info', icon: HiClock, label: 'Queued' },
+  SYNCING: { tone: 'info', icon: HiRefresh, label: 'Syncing' },
+  SYNCED: { tone: 'success', icon: HiCheckCircle, label: 'Synced' },
+  FAILED: { tone: 'failure', icon: HiExclamationCircle, label: 'Sync failed' },
+  RETRY_REQUESTED: {
+    tone: 'warning',
+    icon: HiRefresh,
+    label: 'Retry requested',
+  },
 };
