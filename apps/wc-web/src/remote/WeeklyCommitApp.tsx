@@ -4,7 +4,7 @@ import {
   setAccessTokenProvider,
   type AccessTokenProvider,
 } from '../app/authAccessor';
-import App from '../App';
+import { AppRoutes } from '../routes/AppRoutes';
 
 export interface WeeklyCommitAppProps {
   /**
@@ -17,10 +17,11 @@ export interface WeeklyCommitAppProps {
 
 /**
  * The single exposed Module-Federation module. It CONSUMES a host-provided
- * router (renders inside it — never creates a `BrowserRouter`) and a host auth
- * accessor (registers it into the 9.1 seam). It owns NO chrome (no
- * PersonaSwitcher / ThemeToggle) and contains NO demo/persona code path — those
- * are standalone-only and tree-shaken out of this entry (REQ-I-008).
+ * router (renders the lazy `<AppRoutes/>` inside it — never creates a
+ * `BrowserRouter`) and a host auth accessor (registers it into the 9.1 seam). It
+ * owns NO chrome (no PersonaSwitcher / ThemeToggle) and contains NO demo/persona
+ * code path — those are standalone-only and tree-shaken out of this entry
+ * (REQ-I-008).
  */
 export default function WeeklyCommitApp({
   getAccessToken,
@@ -46,5 +47,5 @@ export default function WeeklyCommitApp({
     );
   }
 
-  return <App />;
+  return <AppRoutes />;
 }

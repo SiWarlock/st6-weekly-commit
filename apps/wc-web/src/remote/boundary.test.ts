@@ -34,11 +34,18 @@ describe('REQ-I-008 — exposed remote excludes demo/persona/chrome (frontend mi
       ).toBe(false);
     }
 
-    // (c) the remote creates NO router of its own (consumes the host router),
-    // and (d, fail-closed) carries NO demo-header / demo-token literal. baseApi
-    // (which holds the demo branch) is NOT in the remote graph today; this guards
-    // a future slice from pulling it in. See the Step-9 flag re splitting the
-    // demo-header attach out of baseApi before 9.4 wires the store into the remote.
+    // (c) POSITIVE CONTROL: the lazy route tree IS now reachable from the remote
+    // entry — guards against this boundary test silently passing if WeeklyCommitApp
+    // ever stops mounting <AppRoutes/>. importGraph follows dynamic import(), so
+    // the lazy route chunks are in this closure and are scanned below.
+    expect(files.some((f) => f.endsWith('/AppRoutes.tsx'))).toBe(true);
+
+    // (d) the remote creates NO router of its own (consumes the host router), and
+    // (e, fail-closed) carries NO demo-header / demo-token literal anywhere in the
+    // enlarged closure. The 9.4 split moved the X-Demo-Employee-Id attach out of
+    // the shared baseApi/authAccessor into a standalone-only applier seam, so even
+    // as the route tree pulls more shared modules one import away, the demo literal
+    // stays out of the remote graph (REQ-I-008, the safety pin of this slice).
     for (const f of files) {
       const code = stripComments(readFileSync(f, 'utf8'));
       expect(code).not.toMatch(/\bBrowserRouter\b/);

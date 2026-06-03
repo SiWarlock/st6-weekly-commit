@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import WeeklyCommitApp from './WeeklyCommitApp';
@@ -15,15 +15,18 @@ afterEach(() => {
 });
 
 describe('WeeklyCommitApp (exposed remote module)', () => {
-  it('remote_consumes_host_router_no_own_browserrouter: renders WC content inside a host-supplied router', () => {
+  it('remote_consumes_host_router_no_own_browserrouter: renders the lazy route tree inside a host-supplied router', async () => {
     const { container } = render(
       <MemoryRouter>
         <WeeklyCommitApp getAccessToken={async () => 'host-jwt'} />
       </MemoryRouter>,
     );
-    // Renders the WC content subtree (App's token-probe) without creating its
-    // own router — the host MemoryRouter is the only router in the tree.
-    expect(container.querySelector('[data-cy="token-probe"]')).not.toBeNull();
+    // The default route ('/') is now a lazy chunk (App) mounted via <AppRoutes/>;
+    // it resolves behind Suspense without the remote creating its own router —
+    // the host MemoryRouter is the only router in the tree.
+    await waitFor(() =>
+      expect(container.querySelector('[data-cy="token-probe"]')).not.toBeNull(),
+    );
   });
 
   it('remote_registers_host_accessor_into_seam: a host getAccessToken is wired into the 9.1 seam (auth0 Bearer uses the host token)', async () => {
