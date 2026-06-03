@@ -10,6 +10,7 @@ import { PlanLifecycleBar } from './PlanLifecycleBar';
 import { useGetSyncRecordsQuery } from '../sync/syncApi';
 import { SyncStatusBadge } from '../sync/SyncStatusBadge';
 import { SyncRetryAction } from '../sync/SyncRetryAction';
+import { CommentThread } from '../comment/CommentThread';
 
 /**
  * The IC weekly-planning workspace. Renders `getCurrentPlan` (9.6) with the §7
@@ -78,6 +79,14 @@ export function WeeklyPlanView() {
           onEdit={(c) => setEditingCommitmentId(c.id)}
         />
       )}
+
+      {/* Plan-level comment thread (9.11b) — COMMENT-gated + lazy; renders
+          nothing unless the server permits COMMENT on the plan. */}
+      <CommentThread
+        targetType="PLAN"
+        targetId={plan.id}
+        allowedActions={plan.allowedActions}
+      />
 
       {/* Outlook-sync surface (9.12) — visible but NON-BLOCKING (rule #4): a
           FAILED record shows a warning + retry while the lifecycle/list above

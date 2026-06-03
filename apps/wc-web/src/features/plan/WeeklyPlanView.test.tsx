@@ -268,3 +268,27 @@ describe('WeeklyPlanView (IC workspace — getCurrentPlan view-states, §7)', ()
     expect(screen.getByText('Ship onboarding')).toBeInTheDocument();
   });
 });
+
+// Step-7.5 reachability (9.11b): the plan-level comment thread mounts wired to
+// {PLAN, planId} iff the plan allows COMMENT. Collapsed by default → no query
+// fires, so the real CommentThread renders without a store.
+describe('WeeklyPlanView → plan-level CommentThread wiring (9.11b reachability)', () => {
+  it('comment_thread_reachable_for_plan_gated: a plan that allows COMMENT mounts a CommentThread for {PLAN, planId}; a plan without COMMENT mounts none', () => {
+    mockQuery({ data: plan({ state: 'LOCKED', allowedActions: ['COMMENT'] }) });
+    const { container, rerender } = render(<WeeklyPlanView />);
+    expect(
+      container.querySelector(
+        '[data-cy="comment-thread"][data-target-type="PLAN"][data-target-id="plan-1"]',
+      ),
+    ).not.toBeNull();
+
+    // COMMENT absent on the plan → no plan-level thread.
+    mockQuery({ data: plan({ state: 'LOCKED', allowedActions: ['LOCK'] }) });
+    rerender(<WeeklyPlanView />);
+    expect(
+      container.querySelector(
+        '[data-cy="comment-thread"][data-target-type="PLAN"]',
+      ),
+    ).toBeNull();
+  });
+});

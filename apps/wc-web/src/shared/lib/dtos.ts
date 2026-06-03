@@ -56,6 +56,8 @@ export type EventKind =
   | 'IC_RECONCILIATION'
   | 'MANAGER_REVIEW_BLOCK';
 export type SyncRelatedType = 'WEEKLY_PLAN' | 'MANAGER_REVIEW_WEEK';
+/** Comment target (B.1 / §4 / §11) — flat one-level comments attach to a plan or a commitment. */
+export type CommentTargetType = 'PLAN' | 'COMMITMENT';
 
 // ── B.6 — WeeklyCommitmentDto (nested in B.5) ────────────────────────────────
 export interface RcdoBreadcrumbDto {
@@ -202,6 +204,32 @@ export interface PageEnvelope<T> {
     totalPages: number;
   };
   sort: { property: string; direction: 'ASC' | 'DESC' }[];
+}
+
+// ── B.9 — CommentDto (E20/E21) — flat, one-level in MVP ───────────────────────
+/**
+ * One flat comment on a plan or commitment (§11). `parentCommentId` is always
+ * `null` and `depth` always `0` in MVP (schema is nestable; the UI renders flat).
+ * `body` is rendered React-escaped — never `dangerouslySetInnerHTML` (§16,
+ * REQ-S-005, forbidden #4).
+ */
+export interface CommentDto {
+  id: string;
+  targetType: CommentTargetType;
+  targetId: string;
+  authorEmployeeId: string;
+  authorDisplayName: string;
+  parentCommentId: string | null;
+  depth: number;
+  body: string;
+  createdAt: string;
+}
+
+/** E21 `CreateCommentRequest` (POST /api/comments). Body is non-empty + validated. */
+export interface CreateCommentRequest {
+  targetType: CommentTargetType;
+  targetId: string;
+  body: string;
 }
 
 // ── B.7 — MarkReviewedRequest (E16 request) ──────────────────────────────────

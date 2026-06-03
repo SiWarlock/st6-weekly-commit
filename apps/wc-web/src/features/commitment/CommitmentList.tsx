@@ -5,6 +5,7 @@ import { can } from '../../shared/lib/allowedActions';
 import { CarryForwardButton } from './CarryForwardButton';
 import { ReconciliationOutcomeForm } from './ReconciliationOutcomeForm';
 import { DeleteCommitmentButton } from './DeleteCommitmentButton';
+import { CommentThread } from '../comment/CommentThread';
 import type { PlanState, WeeklyCommitmentDto } from '../../shared/lib/dtos';
 
 export interface CommitmentListProps {
@@ -98,6 +99,13 @@ export function CommitmentList({
             {showOutcomeForm ? (
               <ReconciliationOutcomeForm commitment={c} planId={planId} />
             ) : null}
+            {/* COMMENT-gated, lazy comment thread (9.11b) — renders nothing
+                unless the server permits COMMENT on this commitment. */}
+            <CommentThread
+              targetType="COMMITMENT"
+              targetId={c.id}
+              allowedActions={c.allowedActions}
+            />
           </li>
         );
       })}

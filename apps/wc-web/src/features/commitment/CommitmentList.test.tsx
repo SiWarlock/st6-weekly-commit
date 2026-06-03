@@ -211,3 +211,36 @@ describe('CommitmentList (badges + reconciliation row controls, REQ-UX-002)', ()
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ id: 'c-1' }));
   });
 });
+
+// Step-7.5 reachability (9.11b): each commitment row mounts a COMMENT-gated
+// comment thread wired to {COMMITMENT, commitmentId}. The thread is collapsed by
+// default (no query fires at render), so this renders the real CommentThread.
+describe('CommitmentList → CommentThread wiring (9.11b reachability)', () => {
+  it('comment_thread_reachable_per_commitment_gated: a row whose commitment allows COMMENT mounts a CommentThread for {COMMITMENT, commitmentId}; a row without COMMENT mounts none', () => {
+    const { container } = render(
+      <CommitmentList
+        planState="LOCKED"
+        planId="plan-1"
+        commitments={[
+          commitment({
+            id: 'c-1',
+            title: 'Has comments',
+            allowedActions: ['COMMENT'],
+          }),
+          commitment({ id: 'c-2', title: 'No comments', allowedActions: [] }),
+        ]}
+      />,
+    );
+
+    expect(
+      container.querySelector(
+        '[data-cy="comment-thread"][data-target-type="COMMITMENT"][data-target-id="c-1"]',
+      ),
+    ).not.toBeNull();
+    expect(
+      container.querySelector(
+        '[data-cy="comment-thread"][data-target-id="c-2"]',
+      ),
+    ).toBeNull();
+  });
+});
