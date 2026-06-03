@@ -83,6 +83,42 @@ describe('Cadence token bridge (F1, approach A)', () => {
     expect(String(badgeColor.failure)).toContain('tone-failure');
   });
 
+  it('drawer_theme_is_right_anchored_full_height: the Drawer theme carries the right-anchor + h-screen + token-native 640px width + token scrim (ST.7e — flowbite-react default position utilities live in unscanned .mjs, so we own them in the scanned theme)', () => {
+    const drawer = asRecord(asRecord(flowbiteTheme).drawer);
+    const root = asRecord(drawer.root);
+
+    // The surface skin + slide transition stay on the base.
+    const base = String(root.base);
+    expect(base).toContain('bg-surface-raised');
+    expect(base).toContain('shadow-drawer');
+    expect(base).toContain('transition-transform');
+
+    // Right-anchored, full-height, token-native ~640px width (open state).
+    const on = String(asRecord(asRecord(root.position).right).on);
+    expect(on).toContain('right-0');
+    expect(on).toContain('top-0');
+    expect(on).toContain('h-screen');
+    expect(on).toContain('max-w-drawer');
+    expect(on).toContain('transform-none');
+
+    // Off state slides the same-sized panel off to the right.
+    const off = String(asRecord(asRecord(root.position).right).off);
+    expect(off).toContain('h-screen');
+    expect(off).toContain('max-w-drawer');
+    expect(off).toContain('translate-x-full');
+
+    // A token-native scrim (the flowbite default backdrop also lives in the
+    // unscanned .mjs → inert; we own it so the scrim is visible).
+    const backdrop = String(root.backdrop);
+    expect(backdrop).toContain('inset-0');
+    expect(backdrop).toContain('bg-scrim');
+
+    // The width + scrim tokens are wired into the Tailwind theme (var-backed).
+    const extend = asRecord(asRecord(asRecord(tailwindConfig).theme).extend);
+    expect(asRecord(extend.maxWidth).drawer).toBe('var(--drawer-w)');
+    expect(asRecord(extend.colors).scrim).toBe('var(--overlay-scrim)');
+  });
+
   it('no_wc_component_css: no .wc-* class-based stylesheet ships (token-var file only)', () => {
     const cssFiles = listFiles(srcDir, /\.css$/);
     // The only permitted stylesheet is the token-variable layer.

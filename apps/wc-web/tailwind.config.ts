@@ -79,6 +79,8 @@ export default {
         'vol-light': 'var(--vol-light)',
         'vol-normal': 'var(--vol-normal)',
         'vol-heavy': 'var(--vol-heavy)',
+        // Overlay scrim behind drawers/modals (ST.7e)
+        scrim: 'var(--overlay-scrim)',
       },
       fontFamily: {
         sans: 'var(--font-sans)',
@@ -120,6 +122,7 @@ export default {
       maxWidth: {
         'reading-col': 'var(--reading-col)',
         'content-max': 'var(--content-max)',
+        drawer: 'var(--drawer-w)', // Cadence right-slide overlay width (ST.7e)
       },
       transitionDuration: {
         fast: 'var(--dur-fast)',

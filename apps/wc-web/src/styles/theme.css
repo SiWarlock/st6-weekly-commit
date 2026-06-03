@@ -133,6 +133,12 @@
   --cell-min: 88px;
   --reading-col: 1040px;
   --content-max: 1440px;
+  --drawer-w: 640px; /* Cadence right-slide overlay width (ST.7e) */
+
+  /* Overlay scrim behind drawers/modals — theme-independent (a dark scrim reads
+     in both themes). ST.7e: flowbite's default backdrop class lives in unscanned
+     .mjs, so we own the scrim token here. */
+  --overlay-scrim: rgba(0, 0, 0, 0.5);
 
   /* ---- Radii ---- */
   --radius-sm: 4px;

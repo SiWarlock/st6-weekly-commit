@@ -49,9 +49,25 @@ export const flowbiteTheme: CustomFlowbiteTheme = createTheme({
       cell: { base: 'px-4 py-2.5 text-ink-primary border-b border-border' },
     },
   },
+  // The Drawer needs its FULL positioning/backdrop slot owned here (ST.7e):
+  // flowbite-react's default position/width/backdrop classes live only in its
+  // `.mjs`/`.cjs` dist, which our tailwind content glob (`*.{js,jsx,ts,tsx}`)
+  // never scans — so those default utilities are referenced-but-never-generated
+  // (inert) and a partially-overridden Drawer renders as a bare `fixed` element
+  // (top-left, content-sized, no scrim). Owning base + position.right + backdrop
+  // here (all token-native, in the scanned src) makes the Cadence right-slide
+  // full-height ~640px overlay + scrim actually render. (Don't widen the glob to
+  // `.mjs` — that would emit ALL flowbite defaults → CSS bloat, REQ-NF-005.)
   drawer: {
     root: {
-      base: 'fixed z-40 overflow-y-auto bg-surface-raised shadow-drawer',
+      base: 'fixed z-40 overflow-y-auto bg-surface-raised shadow-drawer transition-transform',
+      backdrop: 'fixed inset-0 z-30 bg-scrim',
+      position: {
+        right: {
+          on: 'right-0 top-0 h-screen w-full max-w-drawer transform-none',
+          off: 'right-0 top-0 h-screen w-full max-w-drawer translate-x-full',
+        },
+      },
     },
   },
   modal: {
