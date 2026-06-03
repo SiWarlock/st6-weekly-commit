@@ -109,6 +109,12 @@ variable "alb_controller_chart_version" {
   default     = "3.3.0"
 }
 
+variable "eks_public_access_cidrs" {
+  description = "CIDRs allowed to reach the EKS public API endpoint. Default [\"0.0.0.0/0\"] (open, mirrors the module default) — tighten to operator/CI egress in real deploys. The accepted-residual rationale for the open default lives in docs/decisions/001 (12-audit M2)."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
 # --- 12.3: RDS PostgreSQL (thin/cost; hardening deferred to Phase 13 trims) --
 
 variable "rds_instance_class" {

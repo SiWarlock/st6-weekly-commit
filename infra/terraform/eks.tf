@@ -21,7 +21,11 @@ module "eks" {
   # granted admin via an access entry (API auth mode — v21 default). The CI-deploy-
   # role access entry is added in 12.7 alongside the role itself (deferred here to
   # avoid referencing a not-yet-created resource — infra LESSONS §3).
-  endpoint_public_access                   = true
+  endpoint_public_access = true
+  # 12-audit M2: make the public-endpoint CIDR scope explicit + overridable (default open,
+  # mirroring the module default). Tighten to operator/CI egress in real deploys; the
+  # accepted-residual rationale for the default-open value lives in docs/decisions/001.
+  endpoint_public_access_cidrs             = var.eks_public_access_cidrs
   enable_cluster_creator_admin_permissions = true
 
   # IRSA: create the cluster OIDC provider (the per-workload IRSA roles in 12.7 and
@@ -49,6 +53,13 @@ module "eks" {
       min_size     = var.node_min_size
       max_size     = var.node_max_size
       desired_size = var.node_desired_size
+
+      # 12-audit C1 (SAFETY): force the node-group IAM role name under the wc-* prefix
+      # (-> wc-aws-node-<suffix>). The vendored eks v21 module otherwise derives it from the
+      # map key ("default-eks-node-group-*"), which is OUTSIDE wc-* — so the ci_boundary's
+      # DenyPassRoleOutsideWc (NotResource arn:…:role/wc-*) would deny CI's iam:PassRole when
+      # creating the node group, failing `terraform apply`. wc-aws-node-* matches wc-* -> allowed.
+      iam_role_name = "${local.cluster_name}-node"
 
       # Node-group role carries ci_boundary (12.7c). NOTE: the per-node-group
       # input, NOT the module's node_iam_role_permissions_boundary (that one is
