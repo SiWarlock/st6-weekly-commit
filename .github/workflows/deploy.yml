@@ -61,6 +61,12 @@ jobs:
         with:
           node-version: "20"
 
+      # Node 20 ships Corepack disabled-by-default; enable it so `yarn` resolves the
+      # repo-pinned packageManager (yarn@4.5.3) instead of the runner's global yarn 1.x
+      # (else: "current global version of Yarn is 1.22.22 … Corepack must … be enabled").
+      - name: Enable Corepack (pinned yarn 4.5.3)
+        run: corepack enable
+
       # Backend gates (Gradle multi-module): format, unit tests, JaCoCo >=80%/module,
       # SpotBugs. Testcontainers needs Docker (present on ubuntu-latest).
       - name: Backend gates (Spotless / test / JaCoCo / SpotBugs)
@@ -113,6 +119,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+
+      # Corepack on so the post-approval wc-web build (step f) uses the pinned yarn@4.5.3
+      # — else it hits the same packageManager error AFTER burning the deploy approval +
+      # partial AWS work.
+      - name: Enable Corepack (pinned yarn 4.5.3)
+        run: corepack enable
 
       # Build + push the two app images, tagged the commit SHA (§13). The CronJob +
       # migration Job reuse the wc-api image (no third image). ECR repo names are the
