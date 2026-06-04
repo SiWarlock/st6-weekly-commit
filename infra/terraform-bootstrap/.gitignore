@@ -1,0 +1,28 @@
+# Terraform working-directory artifacts — never commit.
+#
+# This bootstrap root uses a LOCAL backend, so its terraform.tfstate lives here on
+# disk — it MUST be ignored (this sibling dir is NOT covered by
+# infra/terraform/.gitignore, which is dir-scoped to the main root).
+
+# Provider install dir (re-created by `terraform init`; can be hundreds of MB).
+.terraform/
+
+# Local state — gitignored (the bootstrap's local backend writes it here).
+*.tfstate
+*.tfstate.*
+
+# Saved plan outputs (may embed sensitive values).
+*.tfplan
+
+# Variable files (per-env values supplied at HITL init, never checked in).
+*.tfvars
+*.tfvars.json
+
+# Crash logs / CLI credential config.
+crash.log
+crash.*.log
+.terraformrc
+terraform.rc
+
+# NOTE: .terraform.lock.hcl is intentionally NOT ignored — the committed provider
+# lockfile (multi-platform hashes) is what makes the pinned versions reproducible.
