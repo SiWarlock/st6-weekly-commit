@@ -9,7 +9,6 @@ import com.st6.wc.enums.DisputeStatus;
 import com.st6.wc.enums.FlagType;
 import com.st6.wc.enums.ReconciliationOutcome;
 import com.st6.wc.enums.ReviewStatus;
-import com.st6.wc.enums.RiskBadge;
 import com.st6.wc.plan.WeeklyPlan;
 import com.st6.wc.projection.repo.ManagerHeatmapCellRepository;
 import com.st6.wc.projection.repo.ManagerPlanSummaryRepository;
@@ -187,7 +186,7 @@ public class ProjectionService {
           cell.setCarryForwardCount(count(group, ProjectionService::isCarryForward));
           cell.setUnresolvedDisputeCount(countWithDispute(group, unresolvedDisputeCommitmentIds));
           cell.setRiskBadges(
-              riskBadges(group, unreviewed, overdue, misalignedDisputeCommitmentIds));
+              RiskBadgeDeriver.derive(cell, unreviewed, overdue)); // 6.4 — count-driven, RISK-014
           cell.setUpdatedAt(clock.instant());
           cells.save(cell);
         });
@@ -203,33 +202,6 @@ public class ProjectionService {
             cells.delete(cell);
           }
         });
-  }
-
-  private static List<RiskBadge> riskBadges(
-      List<WeeklyCommitment> group,
-      boolean unreviewed,
-      boolean overdue,
-      Set<UUID> misalignedDisputeCommitmentIds) {
-    List<RiskBadge> badges = new ArrayList<>();
-    if (group.stream().anyMatch(c -> isMisaligned(c, misalignedDisputeCommitmentIds))) {
-      badges.add(RiskBadge.MISALIGNED); // alignment ∪ open-MISALIGNED-dispute (§9 union)
-    }
-    if (group.stream().anyMatch(ProjectionService::isNeedsReview)) {
-      badges.add(RiskBadge.NEEDS_REVIEW);
-    }
-    if (group.stream().anyMatch(ProjectionService::isBlocked)) {
-      badges.add(RiskBadge.BLOCKED);
-    }
-    if (group.stream().anyMatch(ProjectionService::isCarryForward)) {
-      badges.add(RiskBadge.CARRY_FORWARD);
-    }
-    if (unreviewed) {
-      badges.add(RiskBadge.UNREVIEWED);
-    }
-    if (overdue) {
-      badges.add(RiskBadge.OVERDUE_REVIEW);
-    }
-    return badges;
   }
 
   /**

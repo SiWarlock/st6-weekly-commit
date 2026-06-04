@@ -83,7 +83,10 @@ class BaselineImmutabilityIntegrationTest extends AbstractAppBootTest {
     heatmapCells.deleteAll();
     syncRecords.deleteAll();
     reviews.deleteAll();
-    commitments.deleteAll();
+    // batch (single DELETE) so the carry_forward_source_commitment_id self-FK is checked at
+    // statement-end (NO ACTION), not per-row — per-row deleteAll() can delete a source before its
+    // successor → FK violation → cleanup aborts → cross-test row leak.
+    commitments.deleteAllInBatch();
     relationships.deleteAll();
     plans.deleteAll();
     employees.deleteAll();
