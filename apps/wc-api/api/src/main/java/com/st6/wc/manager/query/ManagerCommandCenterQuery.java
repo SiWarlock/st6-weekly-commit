@@ -1,0 +1,141 @@
+package com.st6.wc.manager.query;
+
+import com.st6.wc.employee.Employee;
+import com.st6.wc.manager.dto.ManagerCommandCenterRowDto;
+import com.st6.wc.manager.mapper.ManagerProjectionMapper;
+import com.st6.wc.projection.ManagerPlanSummary;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import jakarta.persistence.Tuple;
+import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.CriteriaQuery;
+import jakarta.persistence.criteria.Order;
+import jakarta.persistence.criteria.Path;
+import jakarta.persistence.criteria.Predicate;
+import jakarta.persistence.criteria.Root;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.stereotype.Repository;
+
+/**
+ * Criteria-API command-center read (task 6.5a, §9/§14) — ONE indexed projection query cross-joining
+ * {@code employee} for the display name (flat-UUID FK, no JPA association → Specifications can't
+ * sort a non-association join; Criteria controls the join + ORDER BY), AND-combining the optional
+ * summary-level filters, applying the F.5 sort + pagination, plus ONE count query — N+1-free (a
+ * fixed two statements regardless of row count). An api-layer query over the shared projection +
+ * employee entities (the dynamic read is an api concern; the shared {@code
+ * ManagerPlanSummaryRepository} stays a plain upsert repo). The IDOR scope ({@code
+ * manager_employee_id} = the authenticated manager) is the first WHERE predicate, set by the
+ * service — a manager can never address another's rows. The 6.5a-2 cross-table EXISTS filters slot
+ * into {@link #summaryPredicates} without touching this structure.
+ */
+@Repository
+public class ManagerCommandCenterQuery {
+
+  @PersistenceContext private EntityManager em;
+
+  private final ManagerProjectionMapper mapper;
+
+  public ManagerCommandCenterQuery(ManagerProjectionMapper mapper) {
+    this.mapper = mapper;
+  }
+
+  /**
+   * DTO sort-property → {@code ManagerPlanSummary} attribute; the joined display name is special.
+   */
+  private static final Map<String, String> SUMMARY_SORT =
+      Map.of(
+          "weekStartDate", "weekStartDate",
+          "planState", "planState",
+          "reviewStatus", "reviewStatus",
+          "isReviewOverdue", "reviewOverdue",
+          "employeeId", "employeeId",
+          "updatedAt", "updatedAt");
+
+  public Page<ManagerCommandCenterRowDto> findCommandCenter(
+      UUID managerEmployeeId,
+      LocalDate weekStart,
+      CommandCenterFilters filters,
+      Pageable pageable) {
+    CriteriaBuilder cb = em.getCriteriaBuilder();
+
+    CriteriaQuery<Tuple> cq = cb.createTupleQuery();
+    Root<ManagerPlanSummary> s = cq.from(ManagerPlanSummary.class);
+    Root<Employee> e = cq.from(Employee.class);
+    cq.multiselect(s, e.get("displayName"));
+    List<Predicate> where = new ArrayList<>();
+    where.add(cb.equal(e.get("id"), s.get("employeeId"))); // display-name cross-join (1:1 via FK)
+    where.addAll(summaryPredicates(cb, s, managerEmployeeId, weekStart, filters));
+    cq.where(where.toArray(new Predicate[0]));
+    cq.orderBy(orders(cb, s, e, pageable.getSort()));
+
+    var query = em.createQuery(cq);
+    query.setFirstResult((int) pageable.getOffset());
+    query.setMaxResults(pageable.getPageSize());
+    List<ManagerCommandCenterRowDto> rows =
+        query.getResultList().stream()
+            .map(t -> mapper.toRowDto(t.get(0, ManagerPlanSummary.class), t.get(1, String.class)))
+            .toList();
+
+    // count is summary-only (the cross-join is 1:1 via the employee FK → no row multiplication).
+    CriteriaQuery<Long> countQ = cb.createQuery(Long.class);
+    Root<ManagerPlanSummary> cs = countQ.from(ManagerPlanSummary.class);
+    countQ
+        .select(cb.count(cs))
+        .where(
+            summaryPredicates(cb, cs, managerEmployeeId, weekStart, filters)
+                .toArray(new Predicate[0]));
+    long total = em.createQuery(countQ).getSingleResult();
+
+    return new PageImpl<>(rows, pageable, total);
+  }
+
+  /** Summary-level predicates (no employee join) — reused by the page + count queries. */
+  private static List<Predicate> summaryPredicates(
+      CriteriaBuilder cb,
+      Root<ManagerPlanSummary> s,
+      UUID managerEmployeeId,
+      LocalDate weekStart,
+      CommandCenterFilters f) {
+    List<Predicate> p = new ArrayList<>();
+    p.add(cb.equal(s.get("managerEmployeeId"), managerEmployeeId)); // IDOR scope — never widened
+    p.add(cb.equal(s.get("weekStartDate"), weekStart));
+    if (f.employeeId() != null) {
+      p.add(cb.equal(s.get("employeeId"), f.employeeId()));
+    }
+    if (f.planState() != null) {
+      p.add(cb.equal(s.get("planState"), f.planState()));
+    }
+    if (f.reviewStatus() != null) {
+      p.add(cb.equal(s.get("reviewStatus"), f.reviewStatus()));
+    }
+    if (f.overdue() != null) {
+      p.add(cb.equal(s.get("reviewOverdue"), f.overdue()));
+    }
+    return p;
+  }
+
+  private static List<Order> orders(
+      CriteriaBuilder cb, Root<ManagerPlanSummary> s, Root<Employee> e, Sort sort) {
+    List<Order> orders = new ArrayList<>();
+    for (Sort.Order o : sort) {
+      Path<?> path;
+      if ("employeeDisplayName".equals(o.getProperty())) {
+        path = e.get("displayName");
+      } else if (SUMMARY_SORT.containsKey(o.getProperty())) {
+        path = s.get(SUMMARY_SORT.get(o.getProperty()));
+      } else {
+        continue; // unknown sort property → ignored (the service guarantees a valid default sort)
+      }
+      orders.add(o.isAscending() ? cb.asc(path) : cb.desc(path));
+    }
+    return orders;
+  }
+}

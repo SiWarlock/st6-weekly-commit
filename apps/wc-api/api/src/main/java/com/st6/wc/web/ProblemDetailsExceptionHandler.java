@@ -15,8 +15,10 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 /**
  * The {@code @RestControllerAdvice} (task 2.6, extended 3.3a/3.4a, §5 / Appendix B.21 / §16) —
@@ -89,6 +91,20 @@ public class ProblemDetailsExceptionHandler {
       }
     }
     return renderValidation(fieldErrors);
+  }
+
+  @ExceptionHandler(MissingServletRequestParameterException.class)
+  ResponseEntity<ProblemDetail> handleMissingParam(MissingServletRequestParameterException ex) {
+    // a required query/form param is absent (e.g. command-center weekStart, task 6.5a) → 400
+    // VALIDATION_ERROR; surface ONLY the safe param NAME (§15), never any value.
+    return renderValidation(Map.of(ex.getParameterName(), "required"));
+  }
+
+  @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+  ResponseEntity<ProblemDetail> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+    // a param fails to bind (mistyped date / unknown enum / malformed UUID) → 400, never 500;
+    // surface ONLY the safe param NAME, never the offending value (§15 — no untrusted echo).
+    return renderValidation(Map.of(ex.getName(), "invalid value"));
   }
 
   @ExceptionHandler(IllegalStateTransitionException.class)

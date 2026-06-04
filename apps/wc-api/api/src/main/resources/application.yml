@@ -2,6 +2,13 @@
 spring:
   application:
     name: wc-api
+  data:
+    web:
+      pageable:
+        # Manager list views (E13/E14-drilldown/comments, §14/F.5/B.20): page-size default 25, max
+        # 100 (the resolver clamps oversize requests; ManagerQueryService keeps an in-service backstop).
+        default-page-size: 25
+        max-page-size: 100
   flyway:
     # API does NOT migrate — the Migration Job (flyway-migrate profile) is the sole schema owner (§12/D.2).
     enabled: false
