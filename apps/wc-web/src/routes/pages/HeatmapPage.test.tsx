@@ -5,6 +5,11 @@ import { useGetHeatmapQuery } from '../../features/manager/managerApi';
 import type { HeatmapResponseDto } from '../../shared/lib/dtos';
 
 vi.mock('../../features/manager/managerApi');
+// HeatmapGrid (ST.8e) sources its Rally-Cry line from the RCDO read — mock it so
+// this store-free page-module test doesn't need a Provider.
+vi.mock('../../features/rcdo/rcdoApi', () => ({
+  useGetRcdoQuery: () => ({ data: undefined, isLoading: false, isError: false }),
+}));
 
 afterEach(() => {
   vi.restoreAllMocks();

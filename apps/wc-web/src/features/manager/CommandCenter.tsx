@@ -31,6 +31,17 @@ function currentWeekStartIso(): string {
   return monday.toISOString().slice(0, 10);
 }
 
+/** Format the plan lock time as "Jun 1, 3:00 PM" (UTC — deterministic, canon dhead). */
+function formatLockedAt(iso: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'UTC',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(iso));
+}
+
 /**
  * The per-row review + plan-detail surface (9.9 + 9.14). B.11 rows carry no
  * `reviewId`/`allowedActions[]`, so this lazily fetches the report's plan (E4 —
@@ -58,11 +69,26 @@ function ManagerRowReview({ planId }: { planId: string }) {
   const review = data.managerReview;
   return (
     <div className="space-y-4">
+      {/* Lock-timestamp (canon dhead) — plan-sourced (B.5 lockedAt), so it lives
+          at the body top; the row-sourced avatar + pills are in the Drawer header. */}
+      {data.lockedAt ? (
+        <p className="text-meta text-ink-muted">
+          Locked {formatLockedAt(data.lockedAt)}
+        </p>
+      ) : null}
       {review ? (
-        <MarkReviewedAction review={review} />
+        <>
+          <MarkReviewedAction review={review} />
+          <p className="text-meta text-ink-muted">
+            Status is derived from the unresolved-dispute count.
+          </p>
+        </>
       ) : (
         <p className="text-meta text-ink-secondary">No review record yet.</p>
       )}
+      <p className="text-meta uppercase tracking-wide text-ink-muted">
+        Commitments ({data.plannedCount} planned)
+      </p>
       <CommitmentList
         commitments={data.commitments}
         planState={data.state}
@@ -294,11 +320,24 @@ export function CommandCenter() {
         {expandedPlanId !== null && expandedRow ? (
           <>
             <div className="flex items-start justify-between gap-4 border-b border-border px-4 py-3">
-              <div>
-                <h2 className="text-h3 font-semibold text-ink-primary">
-                  {expandedRow.employeeDisplayName}
-                </h2>
-                <WeekRangeLabel weekStart={expandedRow.weekStartDate} />
+              <div className="flex items-center gap-3">
+                <Avatar name={expandedRow.employeeDisplayName} />
+                <div>
+                  <h2 className="text-h3 font-semibold text-ink-primary">
+                    {expandedRow.employeeDisplayName}
+                  </h2>
+                  <div className="flex flex-wrap items-center gap-2 text-meta text-ink-secondary">
+                    <WeekRangeLabel weekStart={expandedRow.weekStartDate} />
+                    <StatusBadge kind="plan" value={expandedRow.planState} />
+                    {expandedRow.reviewStatus ? (
+                      <StatusBadge
+                        kind="review"
+                        value={expandedRow.reviewStatus}
+                        derivedOverdue={expandedRow.isReviewOverdue}
+                      />
+                    ) : null}
+                  </div>
+                </div>
               </div>
               <button
                 type="button"

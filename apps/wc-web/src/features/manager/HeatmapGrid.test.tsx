@@ -11,6 +11,12 @@ import type {
 } from '../../shared/lib/dtos';
 
 vi.mock('./managerApi');
+// ST.8e — the heatmap now sources its Rally-Cry line from the RCDO read; mock it
+// so these store-free HeatmapGrid tests don't need a Provider (the rally cry is
+// browser-verified, not unit-pinned).
+vi.mock('../rcdo/rcdoApi', () => ({
+  useGetRcdoQuery: () => ({ data: undefined, isLoading: false, isError: false }),
+}));
 
 function cell(overrides: Partial<HeatmapCellDto> = {}): HeatmapCellDto {
   return {
@@ -154,15 +160,9 @@ describe('HeatmapGrid → volume-fill (ST.6a)', () => {
   const cellBtn = (doTitle: string) =>
     screen.getByRole('button', { name: `Ivy Chen — ${doTitle}` });
 
-  it('heatmap_cell_fill_scales_with_commitment_count: 0→none, 1→light, 2-3→normal, ≥4→heavy (Cadence volMeta breakpoints)', () => {
+  it('heatmap_cell_fill_scales_with_commitment_count: 1→light, 2-3→normal, ≥4→heavy (Cadence volMeta breakpoints; the 0 case is the no-coverage cell — see no_coverage_cell_at_zero)', () => {
     mockHeatmap({
       data: heatmap([
-        cell({
-          definingObjectiveId: 'd0',
-          definingObjectiveTitle: 'Zero',
-          commitmentCount: 0,
-          riskBadges: [],
-        }),
         cell({
           definingObjectiveId: 'd1',
           definingObjectiveTitle: 'One',
@@ -185,10 +185,39 @@ describe('HeatmapGrid → volume-fill (ST.6a)', () => {
     });
     render(<HeatmapGrid />);
 
-    expect(cellBtn('Zero')).toHaveAttribute('data-volume', 'none');
     expect(cellBtn('One')).toHaveAttribute('data-volume', 'light');
     expect(cellBtn('Three')).toHaveAttribute('data-volume', 'normal');
     expect(cellBtn('Five')).toHaveAttribute('data-volume', 'heavy');
+  });
+
+  it('no_coverage_cell_at_zero: a commitmentCount===0 cell renders the dashed "no coverage" cell (non-clickable — nothing to drill into), distinct from a populated cell (canon HeatCell 0-branch)', () => {
+    mockHeatmap({
+      data: heatmap([
+        cell({
+          definingObjectiveId: 'd0',
+          definingObjectiveTitle: 'Empty',
+          commitmentCount: 0,
+          riskBadges: [],
+        }),
+        cell({
+          definingObjectiveId: 'd2',
+          definingObjectiveTitle: 'Filled',
+          commitmentCount: 2,
+          riskBadges: [],
+        }),
+      ]),
+    });
+    render(<HeatmapGrid />);
+
+    // The empty cell shows "no coverage" and is NOT a clickable button.
+    expect(screen.getByText(/no coverage/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Ivy Chen — Empty' }),
+    ).toBeNull();
+    // The populated cell remains a clickable drilldown button.
+    expect(
+      screen.getByRole('button', { name: 'Ivy Chen — Filled' }),
+    ).toBeInTheDocument();
   });
 
   it('heatmap_volume_decoupled_from_risk: a heavy cell with no riskBadges shows no RiskBadge; a light cell with riskBadges still renders them (volume ≠ risk)', () => {

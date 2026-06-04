@@ -601,4 +601,38 @@ describe('CommandCenter → manager dispute surface (9.14)', () => {
     expect(drawer.querySelector('[data-cy="commitment-list"]')).not.toBeNull();
     expect(within(drawer).getByText('Orphan work')).toBeInTheDocument();
   });
+
+  // ST.8e — review-drawer canon fidelity (the dhead in CommandCenter.jsx).
+  it('review_drawer_header_composition: the drawer header renders the report avatar + name + plan-state pill + review-status pill + the lock-timestamp (canon dhead)', async () => {
+    const drawer = await expandReview({
+      ...plan([mgrCommitment({ id: 'c-1', title: 'Ship it' })]),
+      lockedAt: '2026-06-01T15:00:00Z',
+    });
+    // Avatar (initials circle, data-tone) + report name.
+    expect(drawer.querySelector('[data-tone]')).not.toBeNull();
+    expect(within(drawer).getByText('Ivy Chen')).toBeInTheDocument();
+    // Plan-state + review-status pills (StatusBadge labels, from the row).
+    expect(within(drawer).getByText('Locked')).toBeInTheDocument();
+    expect(within(drawer).getByText('Not reviewed')).toBeInTheDocument();
+    // Lock-timestamp line (a single node, from the plan's lockedAt — distinct
+    // from the exact-"Locked" plan-state pill).
+    expect(
+      within(drawer).getByText(/Locked\b.*(AM|PM)/i),
+    ).toBeInTheDocument();
+  });
+
+  it('review_drawer_keeps_inline_flag_ux: a commitment that allows OPEN_DISPUTE renders the inline per-commitment flag control (DisputePanel open-form) — NOT a separate FlagModal (lead carve-out; regression guard)', async () => {
+    const drawer = await expandReview(
+      plan([
+        mgrCommitment({
+          id: 'c-1',
+          title: 'Flaggable',
+          allowedActions: ['OPEN_DISPUTE'],
+        }),
+      ]),
+    );
+    // The flag form renders inline in the commitment row — the carve-out holds.
+    expect(drawer.querySelector('[data-cy="dispute-open-form"]')).not.toBeNull();
+    expect(within(drawer).getByLabelText('Flag type')).toBeInTheDocument();
+  });
 });
