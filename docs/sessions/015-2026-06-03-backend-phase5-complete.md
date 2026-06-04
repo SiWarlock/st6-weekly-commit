@@ -1,4 +1,4 @@
-# Session 014 — Backend: Phase 5 COMPLETE — dispute resolve/affordances + draft-visibility + managerAlignmentNote (5.5/5.5b/5.6/5.7)
+# Session 015 — Backend: Phase 5 COMPLETE — dispute resolve/affordances + draft-visibility + managerAlignmentNote (5.5/5.5b/5.6/5.7)
 
 - **Date:** 2026-06-03
 - **Phase:** Phase 5 (manager review / SLA / disputes) — close-out.

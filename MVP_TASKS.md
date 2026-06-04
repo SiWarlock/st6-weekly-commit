@@ -1854,7 +1854,7 @@ Append-only, date-stamped, the orchestrator's framing of each round.
 - **Carry-forward triage:** **DELETE** the 5.5b-affordances entry (landed). **ADD** `authorizeCommitmentManagerCapability` extraction (3rd commitment-keyed-403 manager-capability → note-if-recurs). Phase-6 items (projection-completeness · MARK_REVIEWED read-affordance · `blocked_count` pin · `ReconciliationProjectionRefresher`) KEEP.
 - **Cycles:** impl `0095db66` healthy (NOT cycled); orch `4570249c` at the seal (~57%, backend-track max — lead's cycle decision pending). The WARN at the seal is the **frontend** impl (73%, handled via the frontend orch).
 - **Next session target:** **Phase 6** — manager command-center / projection-completeness (reuse the 5.5b `viewerIsDirectManager` threading).
-- **Reference:** session doc `014-2026-06-03-backend-phase5-complete.md`; briefs `062`–`066`. Slice commits `2d210d0`/`003394a`/`19dd610`/`f31710c`.
+- **Reference:** session doc `015-2026-06-03-backend-phase5-complete.md`; briefs `062`–`066`. Slice commits `2d210d0`/`003394a`/`19dd610`/`f31710c`.
 
 ---
 
