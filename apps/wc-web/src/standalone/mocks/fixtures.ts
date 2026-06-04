@@ -129,7 +129,7 @@ export const RCDO_TREE: RcdoTreeDto = {
   ],
 };
 
-function breadcrumb(soId: string): RcdoBreadcrumbDto {
+export function breadcrumb(soId: string): RcdoBreadcrumbDto {
   const so = SO_META[soId];
   if (!so) {
     throw new Error(`unknown SO ${soId}`);
@@ -511,75 +511,11 @@ const PLAN_BY_PERSONA: Record<string, WeeklyPlanDto> = {
   [IC_3]: planIc3,
   [IC_4]: planIc4,
 };
-const PLAN_BY_ID: Record<string, WeeklyPlanDto> = {
-  [PLAN_IC_1]: planIc1,
-  [PLAN_IC_2]: planIc2,
-  [PLAN_IC_3]: planIc3,
-  [PLAN_IC_4]: planIc4,
-};
 
-/**
- * Inject the per-viewer dispute affordances backend 5.5b emits on E3/E4 (9.14),
- * so the standalone demo + QA see the live controls:
- *  - a manager viewer (a report's plan): each UNDISPUTED LOCKED+ commitment gets
- *    `OPEN_DISPUTE`; each DISPUTED commitment's nested dispute gets `RESOLVE_DISPUTE`.
- *  - an IC owner viewer (own plan): each DISPUTED commitment's dispute gets
- *    `RESPOND_DISPUTE`.
- * (The full open-persists→resolve-clears round-trip rides the Phase-13 mutable-db;
- * these are static-coherent affordances — the controls render + fire E17/E18/E19.)
- */
-function emitDisputeAffordances(
-  plan: WeeklyPlanDto,
-  viewerIsManager: boolean,
-): WeeklyPlanDto {
-  const lockedPlus = plan.state !== 'DRAFT';
-  return {
-    ...plan,
-    commitments: plan.commitments.map((c) => {
-      if (c.dispute) {
-        const da: AllowedAction[] = viewerIsManager
-          ? ['RESOLVE_DISPUTE']
-          : ['RESPOND_DISPUTE'];
-        return { ...c, dispute: { ...c.dispute, allowedActions: da } };
-      }
-      if (viewerIsManager && lockedPlus) {
-        return {
-          ...c,
-          allowedActions: [
-            ...c.allowedActions,
-            'OPEN_DISPUTE' as AllowedAction,
-          ],
-        };
-      }
-      return c;
-    }),
-  };
-}
-
-/** The IC persona's own current plan (E3) — owner view (IC dispute respond). */
-export function planForPersona(personaId: string): WeeklyPlanDto {
-  return emitDisputeAffordances(PLAN_BY_PERSONA[personaId] ?? planIc1, false);
-}
-
-/**
- * A plan by id (E4). The owner (IC) sees their own dispute respond affordance;
- * a manager reading a report's plan (non-owner) sees the OPEN/RESOLVE dispute
- * affordances (9.14, backend 5.5b) with the plan-level `allowedActions` cleared
- * (owner-only lifecycle contract); the nested `managerReview` is preserved.
- */
-export function planById(
-  planId: string,
-  readerPersonaId?: string,
-): WeeklyPlanDto | undefined {
-  const plan = PLAN_BY_ID[planId];
-  if (!plan) {
-    return undefined;
-  }
-  if (readerPersonaId && readerPersonaId !== plan.employeeId) {
-    return { ...emitDisputeAffordances(plan, true), allowedActions: [] };
-  }
-  return emitDisputeAffordances(plan, false);
-}
+// The live plan-read path (`getPlanForPersona`/`getPlanById` + `emitDisputeAffordances`)
+// moved to `db.ts` (9.15) so it reads the MUTABLE store — the dispute lifecycle
+// writes through and the re-reads reflect it. These fixtures are the SEED `db.ts`
+// deep-clones; nothing here mutates.
 
 // ── Manager command center (the 4 ICs as Morgan's direct reports) ────────────
 function row(
@@ -615,7 +551,7 @@ function row(
   };
 }
 
-const COMMAND_CENTER_ROWS: ManagerCommandCenterRowDto[] = [
+export const COMMAND_CENTER_ROWS: ManagerCommandCenterRowDto[] = [
   row({
     employeeId: IC_1,
     employeeDisplayName: PERSON[IC_1]!.displayName,
@@ -662,18 +598,8 @@ const COMMAND_CENTER_ROWS: ManagerCommandCenterRowDto[] = [
   }),
 ];
 
-export function commandCenterPage(): PageEnvelope<ManagerCommandCenterRowDto> {
-  return {
-    content: COMMAND_CENTER_ROWS,
-    page: {
-      number: 0,
-      size: 25,
-      totalElements: COMMAND_CENTER_ROWS.length,
-      totalPages: 1,
-    },
-    sort: [{ property: 'weekStartDate', direction: 'DESC' }],
-  };
-}
+// `commandCenterPage()` moved to `db.ts` (9.15) — it overlays the live db review
+// state (unresolvedDisputeCount + reviewStatus) onto these seeded rows.
 
 // ── Manager heatmap (report × Defining-Objective; varied volume + badges) ─────
 const CELL_DO: { doId: string; doTitle: string }[] = [

@@ -5,33 +5,43 @@
  * `X-Demo-Employee-Id` header the standalone applier seam attaches — §6/§8;
  * referencing it here is fine: this module is never in the remote closure).
  *
- * GETs are faithfully populated per persona. Mutations return a STATIC coherent
- * DTO (so a stray click never errors) with empty `allowedActions` per the
- * write-response contract (the client re-reads the plan tag); they do NOT persist
- * — interactive round-trips are the Phase-13 demo-prep mutable-db follow-up.
+ * Reads come from the mutable `db` (9.15) so mutations show through on re-read.
+ * The dispute lifecycle (E17/E18/E19) WRITES THROUGH the db — enabling the live
+ * open→respond→resolve loop. The other (non-dispute) mutations still return a
+ * STATIC coherent DTO (so a stray click never errors) with empty `allowedActions`
+ * per the write-response contract (the client re-reads the plan tag); persisting
+ * them is the 9.15b fast-follow.
  */
 import { http, HttpResponse } from 'msw';
 import {
   ALL_PLANS,
   IC_1,
   RCDO_TREE,
-  commandCenterPage,
   commentsForTarget,
   drilldownForCell,
   heatmapResponse,
   isManagerPersona,
   meForPersona,
-  planById,
-  planForPersona,
   syncRecordsForPlan,
 } from './fixtures';
+import {
+  MockDbError,
+  commandCenterPage,
+  getPlanById,
+  getPlanForPersona,
+  openDispute,
+  resolveDispute,
+  respondDispute,
+} from './db';
 import type {
   CommentDto,
   CreateCommentRequest,
   CreateCommitmentRequest,
   ManagerReviewDto,
+  OpenDisputeRequest,
   OutlookSyncRecordDto,
   PlanState,
+  RespondDisputeRequest,
   WeeklyCommitmentDto,
   WeeklyPlanDto,
 } from '../../shared/lib/dtos';
@@ -56,6 +66,14 @@ function problem(
 
 const NOT_FOUND = () => problem(404, 'This resource is not available.');
 
+/** Map a db mutation rejection to its RFC-7807 problem body (only safe fields). */
+function mapDbError(e: unknown) {
+  if (e instanceof MockDbError) {
+    return problem(e.status, e.safeMessage, { code: e.code });
+  }
+  return problem(500, 'Something went wrong. Please try again.');
+}
+
 /** A plan in a target state with empty write-response allowedActions. */
 function planInState(plan: WeeklyPlanDto, state: PlanState): WeeklyPlanDto {
   return { ...plan, state, allowedActions: [] };
@@ -75,10 +93,10 @@ export const handlers = [
     if (isManagerPersona(me)) {
       return NOT_FOUND();
     }
-    return HttpResponse.json(planForPersona(me));
+    return HttpResponse.json(getPlanForPersona(me));
   }),
   http.get('*/api/plans/:id', ({ request, params }) => {
-    const plan = planById(String(params.id), persona(request));
+    const plan = getPlanById(String(params.id), persona(request));
     return plan ? HttpResponse.json(plan) : NOT_FOUND();
   }),
 
@@ -114,17 +132,17 @@ export const handlers = [
 
   // ── Plan lifecycle mutations (E8/E9/E10) — static coherent transitions ──────
   http.post('*/api/plans/:id/lock', ({ params }) => {
-    const plan = planById(String(params.id));
+    const plan = getPlanById(String(params.id));
     return plan ? HttpResponse.json(planInState(plan, 'LOCKED')) : NOT_FOUND();
   }),
   http.post('*/api/plans/:id/start-reconciliation', ({ params }) => {
-    const plan = planById(String(params.id));
+    const plan = getPlanById(String(params.id));
     return plan
       ? HttpResponse.json(planInState(plan, 'RECONCILING'))
       : NOT_FOUND();
   }),
   http.post('*/api/plans/:id/close-reconciliation', ({ params }) => {
-    const plan = planById(String(params.id));
+    const plan = getPlanById(String(params.id));
     return plan
       ? HttpResponse.json(planInState(plan, 'RECONCILED'))
       : NOT_FOUND();
@@ -175,6 +193,38 @@ export const handlers = [
       },
       { status: 201 },
     );
+  }),
+
+  // ── Alignment disputes (E17/E18/E19) — write THROUGH the mutable db (9.15) ──
+  // The live loop: manager opens → IC responds → manager resolves; the plan
+  // re-reads nest/clear the dispute (B.6) + re-derive the review (§3). Rejections
+  // (§3 single-unresolved, ≥1-field, not-found) surface as RFC-7807 problems.
+  http.post('*/api/commitments/:id/disputes', async ({ request, params }) => {
+    const body = (await request.json()) as OpenDisputeRequest;
+    try {
+      return HttpResponse.json(
+        openDispute(String(params.id), body, persona(request)),
+        { status: 201 },
+      );
+    } catch (e) {
+      return mapDbError(e);
+    }
+  }),
+  http.post('*/api/disputes/:id/respond', async ({ request, params }) => {
+    const body = (await request.json()) as RespondDisputeRequest;
+    try {
+      return HttpResponse.json(respondDispute(String(params.id), body));
+    } catch (e) {
+      return mapDbError(e);
+    }
+  }),
+  http.post('*/api/disputes/:id/resolve', ({ params }) => {
+    // The optional `resolutionNote` body is discarded (audit-only, not on the DTO).
+    try {
+      return HttpResponse.json(resolveDispute(String(params.id)));
+    } catch (e) {
+      return mapDbError(e);
+    }
   }),
 
   // ── Manager review (E16) ───────────────────────────────────────────────────

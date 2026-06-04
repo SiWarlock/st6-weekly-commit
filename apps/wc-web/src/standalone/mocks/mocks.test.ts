@@ -1,12 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { handlers } from './handlers';
-import {
-  meForPersona,
-  planForPersona,
-  commandCenterPage,
-  heatmapResponse,
-  ALL_PLANS,
-} from './fixtures';
+import { meForPersona, heatmapResponse, ALL_PLANS } from './fixtures';
+import { getPlanForPersona, commandCenterPage } from './db';
 import type {
   Priority,
   WorkType,
@@ -37,7 +32,7 @@ describe('ST.7a MSW mock layer — handlers + contract-typed fixtures', () => {
     });
 
     // WeeklyPlanDto (B.5) — nested commitments[] + allowedActions[]
-    const plan = planForPersona('demo-employee-ic-1');
+    const plan = getPlanForPersona('demo-employee-ic-1');
     expect(plan).toMatchObject({
       id: expect.any(String),
       employeeId: expect.any(String),
