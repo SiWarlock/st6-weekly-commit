@@ -47,4 +47,11 @@ describe('RcdoBreadcrumb (read-only RC › DO › SO chip, §5)', () => {
     // The linked variant is NOT rendered.
     expect(container.querySelector('[data-cy="rcdo-breadcrumb"]')).toBeNull();
   });
+
+  it('so_text_not_monospace: the SO/objective text renders in the regular body weight, not font-mono (§C.3)', () => {
+    const { container } = render(<RcdoBreadcrumb breadcrumb={bc()} />);
+    const so = container.querySelector('[data-cy="rcdo-so"]');
+    expect(so).not.toBeNull();
+    expect(so!.className).not.toMatch(/font-mono/);
+  });
 });

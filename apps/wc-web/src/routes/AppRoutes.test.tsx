@@ -135,7 +135,7 @@ describe('AppRoutes — lazy route tree + real-role gating (9.5 / REQ-NF-005 / R
       phrase: RegExp;
       manager: boolean;
     }> = [
-      { path: '/weekly-commit', phrase: /weekly commitments/i, manager: false },
+      { path: '/weekly-commit', phrase: /my weekly commit/i, manager: false },
       {
         path: '/weekly-commit/history/abc-123',
         phrase: /coming in 9\.8/i,
@@ -173,7 +173,7 @@ describe('AppRoutes — lazy route tree + real-role gating (9.5 / REQ-NF-005 / R
     // IC → /weekly-commit
     mockCurrentUser({ isManager: false, role: 'IC' });
     const ic = renderAt('/');
-    expect(await screen.findByText(/weekly commitments/i)).toBeInTheDocument();
+    expect(await screen.findByText(/my weekly commit/i)).toBeInTheDocument();
     ic.unmount();
 
     // Pending → LoadingState (no premature redirect)
@@ -196,7 +196,7 @@ describe('AppRoutes — lazy route tree + real-role gating (9.5 / REQ-NF-005 / R
     const { container } = renderAt('/manager/command-center');
 
     // Manager route is not registered for an IC → catch-all → '/' → IC default.
-    expect(await screen.findByText(/weekly commitments/i)).toBeInTheDocument();
+    expect(await screen.findByText(/my weekly commit/i)).toBeInTheDocument();
     expect(screen.queryByText(/alignment command center/i)).toBeNull();
     expect(container.querySelector('a[href*="/manager"]')).toBeNull();
   });
@@ -251,9 +251,9 @@ describe('AppRoutes — lazy route tree + real-role gating (9.5 / REQ-NF-005 / R
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText(/weekly commitments/i)).toBeInTheDocument();
+    expect(await screen.findByText(/my weekly commit/i)).toBeInTheDocument();
     await user.click(screen.getByRole('link', { name: /history/i }));
     expect(await screen.findByText(/coming in 9\.8/i)).toBeInTheDocument();
-    expect(screen.queryByText(/weekly commitments/i)).toBeNull();
+    expect(screen.queryByText(/my weekly commit/i)).toBeNull();
   });
 });

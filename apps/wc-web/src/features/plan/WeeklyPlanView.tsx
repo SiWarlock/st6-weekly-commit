@@ -3,7 +3,6 @@ import { useGetCurrentPlanQuery } from './plansApi';
 import { LoadingState } from '../../shared/components/LoadingState';
 import { ErrorState } from '../../shared/components/ErrorState';
 import { EmptyState } from '../../shared/components/EmptyState';
-import { StatusBadge } from '../../shared/components/StatusBadge';
 import { CommitmentList } from '../commitment/CommitmentList';
 import { CommitmentForm } from '../commitment/CommitmentForm';
 import { PlanLifecycleBar } from './PlanLifecycleBar';
@@ -52,16 +51,13 @@ export function WeeklyPlanView() {
       data-cy="weekly-plan-view"
       className="mx-auto max-w-reading-col p-6"
     >
-      <header className="mb-4 flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-h2 font-semibold text-ink-primary">
-            Weekly commitments
-          </h1>
-          <p className="text-meta text-ink-secondary">
-            {plan.weekStartDate} – {plan.weekEndDate}
-          </p>
-        </div>
-        <StatusBadge kind="plan" value={plan.state} />
+      <header className="mb-4">
+        {/* The page title; the week + plan status pill + counts + owner moved
+            into the PlanLifecycleBar header card (ST.8c, canon). The global
+            breadcrumb ("My Weekly Commit › Week of …") is the ST.8a app-shell. */}
+        <h1 className="text-h2 font-semibold text-ink-primary">
+          My Weekly Commit
+        </h1>
       </header>
 
       <PlanLifecycleBar
@@ -74,13 +70,52 @@ export function WeeklyPlanView() {
           title="No commitments yet"
           message="Add your first weekly commitment to start planning your week."
         />
+      ) : plan.state === 'RECONCILING' ? (
+        // Canon: split the locked baseline from the after-lock unplanned work.
+        <div className="space-y-4">
+          {plan.commitments.some((c) => c.commitmentKind === 'PLANNED') ? (
+            <section className="space-y-2">
+              <h2 className="text-label font-semibold uppercase tracking-wide text-ink-muted">
+                Planned · locked baseline
+              </h2>
+              <CommitmentList
+                commitments={plan.commitments.filter(
+                  (c) => c.commitmentKind === 'PLANNED',
+                )}
+                planState={plan.state}
+                planId={plan.id}
+                onEdit={(c) => setEditingCommitmentId(c.id)}
+              />
+            </section>
+          ) : null}
+          {plan.commitments.some((c) => c.commitmentKind === 'UNPLANNED') ? (
+            <section className="space-y-2">
+              <h2 className="text-label font-semibold uppercase tracking-wide text-ink-muted">
+                Unplanned · added after lock
+              </h2>
+              <CommitmentList
+                commitments={plan.commitments.filter(
+                  (c) => c.commitmentKind === 'UNPLANNED',
+                )}
+                planState={plan.state}
+                planId={plan.id}
+                onEdit={(c) => setEditingCommitmentId(c.id)}
+              />
+            </section>
+          ) : null}
+        </div>
       ) : (
-        <CommitmentList
-          commitments={plan.commitments}
-          planState={plan.state}
-          planId={plan.id}
-          onEdit={(c) => setEditingCommitmentId(c.id)}
-        />
+        <section className="space-y-2">
+          <h2 className="text-label font-semibold uppercase tracking-wide text-ink-muted">
+            Commitments
+          </h2>
+          <CommitmentList
+            commitments={plan.commitments}
+            planState={plan.state}
+            planId={plan.id}
+            onEdit={(c) => setEditingCommitmentId(c.id)}
+          />
+        </section>
       )}
 
       {/* Plan-level comment thread (9.11b) — COMMENT-gated + lazy; renders

@@ -102,7 +102,7 @@ describe('WeeklyCommitApp (exposed remote module)', () => {
     );
     // The persona-aware '/' redirect resolves to the IC weekly workspace chunk,
     // rendered inside the host MemoryRouter (no BrowserRouter created by the remote).
-    expect(await screen.findByText(/weekly commitments/i)).toBeInTheDocument();
+    expect(await screen.findByText(/my weekly commit/i)).toBeInTheDocument();
   });
 
   it('remote_registers_host_accessor_into_seam: a host getAccessToken is wired into the 9.1 seam (auth0 Bearer uses the host token)', async () => {
@@ -132,6 +132,6 @@ describe('WeeklyCommitApp (exposed remote module)', () => {
     // The WeeklyCommitApp ready-guard renders before <AppRoutes/>, so no route
     // content is reached when the host provided no accessor.
     expect(screen.getByRole('alert')).toBeInTheDocument();
-    expect(screen.queryByText(/weekly commitments/i)).toBeNull();
+    expect(screen.queryByText(/my weekly commit/i)).toBeNull();
   });
 });

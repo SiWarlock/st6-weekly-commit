@@ -60,10 +60,8 @@ describe('PlanLifecycleBar (state display + allowedActions-driven lifecycle affo
 
     const { container } = render(<PlanLifecycleBar plan={plan()} />);
 
-    // ST.7c: state is conveyed by the stepper's ACTIVE node (DRAFT), not an
-    // in-bar StatusBadge — that redundant badge was dropped (the canonical text
-    // indicator lives in WeeklyPlanView's header). No status-badge inside the bar.
-    expect(container.querySelector('[data-cy="status-badge"]')).toBeNull();
+    // State is conveyed by the stepper's ACTIVE node (DRAFT) + the header-card
+    // status pill (ST.8c moved the canonical pill into the bar's top row).
     const active = container.querySelector(
       '[data-cy="stepper-node"][data-status="active"]',
     );
@@ -231,12 +229,12 @@ describe('PlanLifecycleBar → lifecycle stepper (ST.5a)', () => {
 // ST.7c — QA visual fixes: drop the redundant in-bar StatusBadge + constrain the
 // stepper width (the "Draft ×3" redundancy + sparse-bars findings).
 describe('PlanLifecycleBar → ST.7c QA visual fixes', () => {
-  it('lifecycle_bar_drops_inbar_status_badge: the bar renders NO in-bar StatusBadge — state is conveyed by the stepper active node; the canonical text badge lives in WeeklyPlanView header (Draft ×3 → ×2)', () => {
+  it('lifecycle_bar_header_card_has_status_pill: ST.8c moves the canonical plan status pill INTO the header-card top row (canon-driven reversal of the ST.7c in-bar drop); the stepper still conveys state', () => {
     mockHooks();
     const { container } = render(<PlanLifecycleBar plan={plan()} />);
 
-    // The in-bar StatusBadge is gone.
-    expect(container.querySelector('[data-cy="status-badge"]')).toBeNull();
+    // The plan status pill lives in the header card now (mockup plan-head top row).
+    expect(container.querySelector('[data-cy="status-badge"]')).not.toBeNull();
     // The stepper still conveys state via its active node.
     const active = container.querySelector(
       '[data-cy="stepper-node"][data-status="active"]',
@@ -251,5 +249,119 @@ describe('PlanLifecycleBar → ST.7c QA visual fixes', () => {
     const stepper = container.querySelector('[data-cy="lifecycle-stepper"]');
     expect(stepper).not.toBeNull();
     expect(stepper!.className).toMatch(/\bmax-w-/);
+  });
+});
+
+describe('PlanLifecycleBar → ST.8c plan-header card (mockup §C.2)', () => {
+  const review: WeeklyPlanDto['managerReview'] = {
+    id: 'rev-1',
+    weeklyPlanId: 'plan-1',
+    managerEmployeeId: 'mgr-1',
+    status: 'NOT_REVIEWED',
+    reviewDueAt: '2026-06-09T17:00:00Z',
+    isOverdue: false,
+    unresolvedDisputeCount: 0,
+    allowedActions: [],
+    version: 1,
+  };
+
+  it('start_reconciliation_is_gold_and_gated: the Start-reconciliation button uses the warning/gold tone (not bg-brand-600), renders RIGHT of "Add unplanned", and only when START_RECONCILIATION is allowed (§C.2 + LESSONS §11)', () => {
+    mockHooks();
+    const { rerender } = render(
+      <PlanLifecycleBar
+        plan={plan({
+          state: 'LOCKED',
+          allowedActions: ['ADD_UNPLANNED', 'START_RECONCILIATION'],
+        })}
+        onAddUnplanned={vi.fn()}
+      />,
+    );
+
+    const start = screen.getByRole('button', { name: /start reconciliation/i });
+    expect(start.className).toMatch(/tone-warning/);
+    expect(start.className).not.toMatch(/bg-brand-600/);
+
+    // "Add unplanned" sits LEFT of the gold primary.
+    const add = screen.getByRole('button', { name: /add unplanned/i });
+    expect(
+      add.compareDocumentPosition(start) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    // Gating preserved: no START_RECONCILIATION → no button (server-authoritative).
+    rerender(
+      <PlanLifecycleBar
+        plan={plan({ state: 'LOCKED', allowedActions: ['ADD_UNPLANNED'] })}
+        onAddUnplanned={vi.fn()}
+      />,
+    );
+    expect(
+      screen.queryByRole('button', { name: /start reconciliation/i }),
+    ).toBeNull();
+  });
+
+  it('close_reconciliation_is_success_and_gated: in RECONCILING with CLOSE_RECONCILIATION allowed, the Close button uses the success tone (not bg-brand-600); absent when the action isn’t allowed (§11)', () => {
+    mockHooks();
+    const { rerender } = render(
+      <PlanLifecycleBar
+        plan={plan({
+          state: 'RECONCILING',
+          allowedActions: ['ADD_UNPLANNED', 'CLOSE_RECONCILIATION'],
+        })}
+        onAddUnplanned={vi.fn()}
+      />,
+    );
+
+    const close = screen.getByRole('button', {
+      name: /close reconciliation/i,
+    });
+    expect(close.className).toMatch(/tone-success/);
+    expect(close.className).not.toMatch(/bg-brand-600/);
+
+    rerender(
+      <PlanLifecycleBar
+        plan={plan({ state: 'RECONCILING', allowedActions: ['ADD_UNPLANNED'] })}
+        onAddUnplanned={vi.fn()}
+      />,
+    );
+    expect(
+      screen.queryByRole('button', { name: /close reconciliation/i }),
+    ).toBeNull();
+  });
+
+  it('plan_header_card_composition: the header-card top row renders the week label + plan status pill + "N planned · M unplanned" counts + the review badge (when present) + the owner; the stepper sits below', () => {
+    mockHooks();
+    const { container } = render(
+      <PlanLifecycleBar
+        plan={plan({
+          state: 'LOCKED',
+          plannedCount: 3,
+          unplannedCount: 1,
+          employeeDisplayName: 'Ivy Chen',
+          managerReview: review,
+          allowedActions: ['ADD_UNPLANNED', 'START_RECONCILIATION'],
+        })}
+        onAddUnplanned={vi.fn()}
+      />,
+    );
+
+    // The canonical plan status pill now lives IN the header card (ST.8c).
+    expect(container.querySelector('[data-cy="status-badge"]')).not.toBeNull();
+    expect(screen.getByText('3 planned · 1 unplanned')).toBeInTheDocument();
+    expect(screen.getByText(/Week of/i)).toBeInTheDocument();
+    expect(screen.getByText('Ivy Chen')).toBeInTheDocument();
+    // The stepper still conveys lifecycle progress (bottom row).
+    expect(
+      container.querySelector('[data-cy="lifecycle-stepper"]'),
+    ).not.toBeNull();
+  });
+
+  it('week_label_is_friendly: the header card renders the friendly week label (via WeekRangeLabel), not the raw ISO', () => {
+    mockHooks();
+    const { container } = render(
+      <PlanLifecycleBar plan={plan({ weekStartDate: '2026-06-01' })} />,
+    );
+    expect(container.querySelector('[data-cy="week-range"]')).not.toBeNull();
+    expect(screen.getByText(/Week of/i)).toBeInTheDocument();
+    expect(container).not.toHaveTextContent('2026-06-01');
   });
 });

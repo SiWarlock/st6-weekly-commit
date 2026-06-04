@@ -66,6 +66,9 @@ describe('StandaloneShell (full standalone provider tree)', () => {
     ).toBeInTheDocument();
 
     // The full path resolves: store → getMe(IC) → '/' redirect → WeeklyPlanView.
-    expect(await screen.findByText(/weekly commitments/i)).toBeInTheDocument();
+    // (ST.8c renamed the h1 to "My Weekly Commit", which also appears in the
+    // app-shell breadcrumb/nav — so assert on the empty-plan EmptyState, which is
+    // unique to the rendered WeeklyPlanView for this no-commitments fixture.)
+    expect(await screen.findByText(/no commitments yet/i)).toBeInTheDocument();
   });
 });

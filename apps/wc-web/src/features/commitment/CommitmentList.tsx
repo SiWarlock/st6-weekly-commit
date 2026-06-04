@@ -137,12 +137,23 @@ export function CommitmentList({
                 ) : null}
               </div>
             </div>
-            {/* Read-only RC→DO→SO breadcrumb (ST.5b) — DO › SO when linked, or
-                the missing-SO warning when unlinked. */}
-            <RcdoBreadcrumb breadcrumb={c.supportingOutcomeBreadcrumb} />
+            {/* Plain description line (ST.8c, §C.3) — React-escaped; below the
+                title, above the chips. Omitted cleanly when empty. */}
+            {c.description ? (
+              <p
+                data-cy="commitment-desc"
+                className="text-meta text-ink-secondary"
+              >
+                {c.description}
+              </p>
+            ) : null}
             {/* Chess-layer atoms (ST.3) — priority / workType / confidence /
-                alignment, skinned per the Cadence enum→tone maps. */}
-            <div className="flex flex-wrap items-center gap-2">
+                alignment, skinned per the Cadence enum→tone maps. ST.8c: above
+                the SO box (canon order). */}
+            <div
+              data-cy="chess-chips"
+              className="flex flex-wrap items-center gap-2"
+            >
               <PriorityTag value={c.priority} />
               {/* Suppress the WorkTypeTag for UNPLANNED — the accent kind-badge
                   above already carries "Unplanned" (ST.5a redundancy fix). */}
@@ -152,6 +163,9 @@ export function CommitmentList({
               <ConfidenceMeter value={c.confidence} />
               <AlignmentChip value={c.alignmentStatus} />
             </div>
+            {/* Read-only RC→DO→SO breadcrumb (ST.5b → ST.8c: moved BELOW the chips,
+                canon order) — DO › SO when linked, or the missing-SO warning. */}
+            <RcdoBreadcrumb breadcrumb={c.supportingOutcomeBreadcrumb} />
             {/* Reconciliation note (ST.5b) — React-escaped free text when present. */}
             {c.outcomeNote ? (
               <p

@@ -549,3 +549,59 @@ describe('CommitmentList → disputes (9.11a)', () => {
     ).not.toBeNull();
   });
 });
+
+describe('CommitmentList → ST.8c card fidelity (description + chips-above-SO)', () => {
+  const linked: WeeklyCommitmentDto['supportingOutcomeBreadcrumb'] = {
+    rallyCryId: 'rc-1',
+    rallyCryTitle: 'Win the quarter',
+    definingObjectiveId: 'do-1',
+    definingObjectiveTitle: 'Ship v2',
+    supportingOutcomeId: 'so-1',
+    supportingOutcomeTitle: 'Onboarding flow',
+  };
+
+  it('commitment_card_renders_description: a commitment WITH a description renders the plain description line (React-escaped, below the title)', () => {
+    render(
+      <CommitmentList
+        planState="DRAFT"
+        planId="plan-1"
+        commitments={[
+          commitment({ id: 'c-1', description: 'Cut time-to-first-value below a week.' }),
+        ]}
+      />,
+    );
+    expect(
+      screen.getByText('Cut time-to-first-value below a week.'),
+    ).toBeInTheDocument();
+  });
+
+  it('commitment_card_omits_empty_description: a commitment WITHOUT a description renders no description line (clean omit)', () => {
+    const { container } = render(
+      <CommitmentList
+        planState="DRAFT"
+        planId="plan-1"
+        commitments={[commitment({ id: 'c-1' })]}
+      />,
+    );
+    expect(container.querySelector('[data-cy="commitment-desc"]')).toBeNull();
+  });
+
+  it('chips_render_above_so_box: the chess-chips row precedes the RcdoBreadcrumb SO box in the card DOM (§C.3 — the prior order was reversed)', () => {
+    const { container } = render(
+      <CommitmentList
+        planState="DRAFT"
+        planId="plan-1"
+        commitments={[
+          commitment({ id: 'c-1', supportingOutcomeBreadcrumb: linked }),
+        ]}
+      />,
+    );
+    const chips = container.querySelector('[data-cy="chess-chips"]');
+    const so = container.querySelector('[data-cy="rcdo-breadcrumb"]');
+    expect(chips).not.toBeNull();
+    expect(so).not.toBeNull();
+    expect(
+      chips!.compareDocumentPosition(so!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+});

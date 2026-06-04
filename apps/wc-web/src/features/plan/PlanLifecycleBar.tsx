@@ -1,10 +1,14 @@
 import { Fragment, useState } from 'react';
+import { HiCheck } from 'react-icons/hi';
 import { LockButton } from './LockButton';
 import {
   useStartReconciliationMutation,
   useCloseReconciliationMutation,
 } from './plansApi';
 import { can } from '../../shared/lib/allowedActions';
+import { StatusBadge } from '../../shared/components/StatusBadge';
+import { Avatar } from '../../shared/components/Avatar';
+import { WeekRangeLabel } from '../../shared/components/WeekRangeLabel';
 import type { PlanState, WeeklyPlanDto } from '../../shared/lib/dtos';
 import type { ParsedProblem } from '../../shared/lib/problemDetails';
 
@@ -96,59 +100,77 @@ export function PlanLifecycleBar({
   return (
     <div
       data-cy="plan-lifecycle-bar"
-      className="mb-4 flex flex-col gap-2 rounded-lg border border-border bg-surface-raised px-4 py-3"
+      className="mb-4 flex flex-col gap-3 rounded-lg border border-border bg-surface-raised px-4 py-3"
     >
-      {/* Forward-only lifecycle stepper (ST.5a) — derived display off plan.state,
-          non-interactive; the server-gated action buttons below own the actions. */}
-      <div
-        data-cy="lifecycle-stepper"
-        role="group"
-        aria-label="Plan lifecycle progress"
-        className="flex max-w-md items-center gap-1"
-      >
-        {stepperNodes(plan.state).map((n, i, arr) => (
-          <Fragment key={n.state}>
-            <div
-              data-cy="stepper-node"
-              data-state={n.state}
-              data-status={n.status}
-              className="flex flex-col items-center gap-1"
-            >
-              <span
-                aria-hidden
-                className={`h-4 w-4 rounded-full border-2 ${DOT_CLASS[n.status]}`}
-              />
-              <span className={`text-meta ${LABEL_CLASS[n.status]}`}>
-                {n.label}
-              </span>
-            </div>
-            {i < arr.length - 1 ? (
-              <span
-                aria-hidden
-                data-cy="stepper-bar"
-                className={`h-0.5 flex-1 ${n.status === 'done' ? 'bg-brand-600' : 'bg-border-strong'}`}
-              />
-            ) : null}
-          </Fragment>
-        ))}
+      {/* Top row (ST.8c plan-header card): week label + plan status pill +
+          planned/unplanned counts + manager-review badge (when present) + owner. */}
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-meta text-ink-secondary">
+          Week of <WeekRangeLabel weekStart={plan.weekStartDate} />
+        </span>
+        <StatusBadge kind="plan" value={plan.state} />
+        <span className="text-meta text-ink-secondary">
+          {`${plan.plannedCount} planned · ${plan.unplannedCount} unplanned`}
+        </span>
+        {plan.managerReview ? (
+          <StatusBadge
+            kind="review"
+            value={plan.managerReview.status}
+            derivedOverdue={plan.managerReview.isOverdue}
+          />
+        ) : null}
+        <span className="ml-auto inline-flex items-center gap-2">
+          <Avatar name={plan.employeeDisplayName} />
+          <span className="text-label text-ink-primary">
+            {plan.employeeDisplayName}
+          </span>
+        </span>
       </div>
 
-      {/* State is conveyed by the stepper's active node (above) + the canonical
-          plan StatusBadge in the WeeklyPlanView header — the redundant in-bar
-          badge was dropped (ST.7c). This row holds only the server-gated actions. */}
-      <div className="flex items-center justify-end gap-3">
-        <div className="flex flex-wrap items-center justify-end gap-2">
+      {/* Bottom row: the forward-only lifecycle stepper (ST.5a — derived display
+          off plan.state, non-interactive; done nodes carry a check glyph) + the
+          server-gated primary actions (driven ONLY by plan.allowedActions[]). */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div
+          data-cy="lifecycle-stepper"
+          role="group"
+          aria-label="Plan lifecycle progress"
+          className="flex max-w-md items-center gap-1"
+        >
+          {stepperNodes(plan.state).map((n, i, arr) => (
+            <Fragment key={n.state}>
+              <div
+                data-cy="stepper-node"
+                data-state={n.state}
+                data-status={n.status}
+                className="flex flex-col items-center gap-1"
+              >
+                <span
+                  aria-hidden
+                  className={`flex h-4 w-4 items-center justify-center rounded-full border-2 ${DOT_CLASS[n.status]}`}
+                >
+                  {n.status === 'done' ? (
+                    <HiCheck aria-hidden className="h-2.5 w-2.5 text-white" />
+                  ) : null}
+                </span>
+                <span className={`text-meta ${LABEL_CLASS[n.status]}`}>
+                  {n.label}
+                </span>
+              </div>
+              {i < arr.length - 1 ? (
+                <span
+                  aria-hidden
+                  data-cy="stepper-bar"
+                  className={`h-0.5 flex-1 ${n.status === 'done' ? 'bg-brand-600' : 'bg-border-strong'}`}
+                />
+              ) : null}
+            </Fragment>
+          ))}
+        </div>
+
+        {/* "Add unplanned work" sits LEFT of the gold/success primary (canon). */}
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
           <LockButton plan={plan} />
-          {canStart ? (
-            <button
-              type="button"
-              disabled={starting}
-              onClick={handleStart}
-              className="rounded-md bg-brand-600 px-4 py-2 text-label font-semibold text-white hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-ring disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Start reconciliation
-            </button>
-          ) : null}
           {canAddUnplanned && onAddUnplanned ? (
             <button
               type="button"
@@ -158,12 +180,26 @@ export function PlanLifecycleBar({
               Add unplanned
             </button>
           ) : null}
+          {/* GOLD Start-reconciliation — the warning tone token (canon
+              variant="warning"), NOT brand blue. Still gated on the server's
+              START_RECONCILIATION (LESSONS §11 — no client re-derivation). */}
+          {canStart ? (
+            <button
+              type="button"
+              disabled={starting}
+              onClick={handleStart}
+              className="rounded-md bg-tone-warning-solid px-4 py-2 text-label font-semibold text-white hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-brand-ring disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Start reconciliation
+            </button>
+          ) : null}
+          {/* Close week — the success tone token (canon variant="success"). Gated. */}
           {canClose ? (
             <button
               type="button"
               disabled={closing}
               onClick={handleClose}
-              className="rounded-md bg-brand-600 px-4 py-2 text-label font-semibold text-white hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-ring disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md bg-tone-success-solid px-4 py-2 text-label font-semibold text-white hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-brand-ring disabled:cursor-not-allowed disabled:opacity-50"
             >
               Close reconciliation
             </button>

@@ -36,10 +36,7 @@ export function RcdoBreadcrumb({
       <span aria-hidden className="text-ink-muted">
         ›
       </span>
-      <span
-        data-cy="rcdo-so"
-        className="font-mono font-medium text-ink-primary"
-      >
+      <span data-cy="rcdo-so" className="font-medium text-ink-primary">
         {breadcrumb.supportingOutcomeTitle}
       </span>
     </div>
