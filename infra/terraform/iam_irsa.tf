@@ -58,7 +58,7 @@ resource "aws_iam_role_policy" "irsa_api" {
   })
 }
 
-# ---- worker: sqs Receive/Delete/GetQueueAttributes (queue+DLQ) + graph secret ----
+# ---- worker: sqs Receive/Delete/GetQueueAttributes (queue+DLQ) + db + graph secrets ----
 resource "aws_iam_role" "irsa_worker" {
   name                 = "${local.cluster_name}-irsa-worker"
   permissions_boundary = aws_iam_policy.ci_boundary.arn # 12.7c — every TF-created role is bounded
@@ -93,10 +93,13 @@ resource "aws_iam_role_policy" "irsa_worker" {
         ]
       },
       {
-        Sid      = "ReadGraphSecret"
-        Effect   = "Allow"
-        Action   = "secretsmanager:GetSecretValue"
-        Resource = aws_secretsmanager_secret.graph.arn # graph ONLY (no db/auth0/demo)
+        Sid    = "ReadWorkerSecrets"
+        Effect = "Allow"
+        Action = "secretsmanager:GetSecretValue"
+        Resource = [
+          aws_secretsmanager_secret.db.arn,    # datasource — the worker reloads OutlookCalendarSyncRecord by id (Wave-2 s8)
+          aws_secretsmanager_secret.graph.arn, # Graph app-only creds (Wave-2 s9)
+        ]                                      # db + graph ONLY (NOT auth0/demo, NOT *)
       },
     ]
   })
