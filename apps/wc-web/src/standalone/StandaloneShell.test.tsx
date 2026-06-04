@@ -57,10 +57,12 @@ describe('StandaloneShell (full standalone provider tree)', () => {
 
     render(<StandaloneShell />);
 
-    // Standalone-only chrome is present (renders immediately).
+    // Standalone-only app-shell chrome is present (renders immediately). ST.8a
+    // restyled the persona switcher from a <select> into the app-bar identity
+    // dropdown (a button trigger), so it's queried as a button now.
     expect(screen.getByRole('button', { name: /theme/i })).toBeInTheDocument();
     expect(
-      screen.getByRole('combobox', { name: /persona/i }),
+      screen.getByRole('button', { name: /persona/i }),
     ).toBeInTheDocument();
 
     // The full path resolves: store → getMe(IC) → '/' redirect → WeeklyPlanView.

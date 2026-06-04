@@ -7,15 +7,16 @@ import { store } from '../app/store';
 import WeeklyCommitApp from '../remote/WeeklyCommitApp';
 import { DemoIdentityProvider } from './DemoIdentityProvider';
 import { FlowbiteThemeSync } from './FlowbiteThemeSync';
-import { PersonaSwitcher } from './PersonaSwitcher';
-import { ThemeToggle } from './ThemeToggle';
+import { AppShell } from './shell/AppShell';
 
 /**
  * Full STANDALONE shell — owns the router, the Redux store, the dark/light
- * ThemeProvider, the demo identity provider, and the persona/theme chrome, and
- * mounts the exposed `WeeklyCommitApp`. All of this (router ownership +
+ * ThemeProvider, the demo identity provider, and the demo app-shell chrome
+ * (`AppShell`: top app-bar + persona-gated WC sub-nav + breadcrumb), and mounts
+ * the exposed `WeeklyCommitApp` inside it. All of this (router ownership +
  * demo/persona + chrome) is standalone-only and tree-shaken out of the exposed
- * remote build (REQ-I-008); the remote consumes the host's router + accessor.
+ * remote build (REQ-I-008); the remote consumes the host's router + accessor and
+ * the production host owns the equivalent chrome (§7).
  */
 export function StandaloneShell() {
   return (
@@ -29,11 +30,9 @@ export function StandaloneShell() {
               {/* Keep Flowbite's own theme-mode in sync with our [data-theme]
                   single source (#6, ST.7d) — must be inside <Flowbite>. */}
               <FlowbiteThemeSync />
-              <header className="flex items-center justify-end gap-4 border-b border-border px-6 py-3">
-                <PersonaSwitcher />
-                <ThemeToggle />
-              </header>
-              <WeeklyCommitApp />
+              <AppShell>
+                <WeeklyCommitApp />
+              </AppShell>
             </Flowbite>
           </DemoIdentityProvider>
         </ThemeProvider>

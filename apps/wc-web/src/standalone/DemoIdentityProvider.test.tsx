@@ -1,8 +1,9 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import type { ReactElement } from 'react';
 import { Provider } from 'react-redux';
+import { MemoryRouter } from 'react-router-dom';
 import { DemoIdentityProvider } from './DemoIdentityProvider';
 import { PersonaSwitcher } from './PersonaSwitcher';
 import { useDemoIdentity } from './demoIdentity';
@@ -29,12 +30,17 @@ function demoHeaderValue(): string | null {
 }
 
 /**
- * Render within the Redux store — `DemoIdentityProvider` now `useDispatch`es to
- * reset the RTK cache on persona change (ST.7d), so it requires a `<Provider>`
- * (always present in production via `StandaloneShell`).
+ * Render within the Redux store + a router — `DemoIdentityProvider` `useDispatch`es
+ * to reset the RTK cache on persona change (ST.7d, needs `<Provider>`), and the
+ * ST.8a-restyled `PersonaSwitcher` `useNavigate`s to `/` on pick (needs a Router).
+ * Both are always present in production via `StandaloneShell`.
  */
 function renderWithStore(ui: ReactElement) {
-  return render(<Provider store={store}>{ui}</Provider>);
+  return render(
+    <Provider store={store}>
+      <MemoryRouter>{ui}</MemoryRouter>
+    </Provider>,
+  );
 }
 
 describe('DemoIdentityProvider + PersonaSwitcher (standalone-only demo identity)', () => {
@@ -60,16 +66,12 @@ describe('DemoIdentityProvider + PersonaSwitcher (standalone-only demo identity)
     const before = demoHeaderValue();
     expect(before).toBeTruthy();
 
-    const select = screen.getByRole('combobox', { name: /persona/i });
-    const options = within(select)
-      .getAllByRole('option')
-      .map((o) => (o as HTMLOptionElement).value);
-    const other = options.find((v) => v !== before);
-    expect(other).toBeTruthy();
+    // ST.8a — the switcher is now an app-bar dropdown: open it + pick a different
+    // persona item (the default is ic-1 / Ivy Chen, so pick the manager).
+    await user.click(screen.getByRole('button', { name: /persona/i }));
+    await user.click(screen.getByRole('button', { name: /Morgan Lee/i }));
 
-    await user.selectOptions(select, other as string);
-
-    expect(demoHeaderValue()).toBe(other);
+    expect(demoHeaderValue()).toBe('demo-employee-mgr-1');
     expect(demoHeaderValue()).not.toBe(before);
   });
 

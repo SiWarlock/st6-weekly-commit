@@ -23,6 +23,14 @@ const TOUCHED_SURFACES = [
   'features/commitment/CommitmentList.tsx',
   'features/commitment/RcdoBreadcrumb.tsx', // ST.5b
   'features/commitment/OutcomePill.tsx', // ST.5b
+  // ST.8a — standalone demo app-shell chrome (token-native, no hex even in the
+  // brand mark — currentColor + text-white).
+  'standalone/shell/AppShell.tsx',
+  'standalone/shell/AppBar.tsx',
+  'standalone/shell/PrimaryNav.tsx',
+  'standalone/shell/Breadcrumb.tsx',
+  'standalone/PersonaSwitcher.tsx',
+  'standalone/ThemeToggle.tsx',
 ];
 
 describe('ST.4 surface skin — token wiring + structural guard', () => {
