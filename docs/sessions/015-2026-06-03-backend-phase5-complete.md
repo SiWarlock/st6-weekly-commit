@@ -4,7 +4,7 @@
 - **Phase:** Phase 5 (manager review / SLA / disputes) — close-out.
 - **Role:** implementer `st6-main-wc-api-implementer` (`0095db66`, the fresh post-5.4 impl) — **session doc authored by `st6-main-orchestrator` (`4570249c`)**, which reviewed every Step-2.5 + Step-9 this round. The impl is healthy (not cycled); this is the orch's Phase-5-close continuity record (the impl continues to Phase 6 unless the lead cycles).
 - **Predecessor:** [013](013-2026-06-03-backend-phase5-disputes-respond.md) (4.6/E5/5.2/5.3/5.3b/5.4) + the post-5.4 impl cycle.
-- **Successor:** _(Phase 6 — manager command-center / projection-completeness.)_
+- **Successor:** [016](016-2026-06-03-backend-phase6-projection-derivation.md) (Phase 6 opens — §9 projection derivation completion 6.2 + ProjectionRefresher extraction 6.3a; impl cycle).
 
 ## Why this session existed
 
