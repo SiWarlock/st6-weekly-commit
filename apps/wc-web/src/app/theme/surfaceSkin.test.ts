@@ -18,6 +18,9 @@ const TOUCHED_SURFACES = [
   'features/plan/PlanLifecycleBar.tsx', // ST.5a stepper
   'features/manager/CommandCenter.tsx',
   'features/manager/CommandCenterFilters.tsx', // ST.6b
+  'features/manager/CommandCenterSummary.tsx', // ST.8b at-a-glance strip
+  'features/manager/RiskChips.tsx', // ST.8b risk chips
+  'shared/components/Avatar.tsx', // ST.8b initials avatar
   'features/manager/HeatmapGrid.tsx',
   'features/manager/HeatmapCellDrilldown.tsx', // ST.6c (drilldown Drawer body)
   'features/commitment/CommitmentList.tsx',

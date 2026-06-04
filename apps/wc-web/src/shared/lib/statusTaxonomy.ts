@@ -9,6 +9,7 @@ import {
   HiExclamationCircle,
   HiClock,
   HiExclamation,
+  HiFlag,
   HiBan,
   HiQuestionMarkCircle,
   HiArrowNarrowRight,
@@ -84,6 +85,40 @@ export const RISK_TAXONOMY: Record<string, TaxonomyEntry> = {
     ring: true,
   },
   UNREVIEWED: { tone: 'neutral', icon: HiOutlineEye, label: 'Unreviewed' },
+};
+
+/**
+ * ST.8b — the manager command-center RISK-CHIP vocab (the `CommandCenter.jsx`
+ * CANON `riskChips()` map). A DISTINCT atom from the heatmap's `RISK_TAXONOMY`
+ * badges: the mockup tones the compact count-chips differently (misaligned=accent,
+ * needs-review=info) — a per-surface canon difference, not an inconsistency. Kept
+ * as its own named map here (the single visual-truth file; consumed once by
+ * `RiskChips`, never re-mapped inline, §7/LESSONS-7) so `RISK_TAXONOMY` (the
+ * heatmap) is untouched. `label` is the lowercase chip word; `RiskChips` prefixes
+ * the count ("3 misaligned"). NOTE: `resolved`/`unlinked` have no B.11 count field
+ * yet (a backend follow-up) — they're in the vocab but unrendered until the data exists.
+ */
+export const CC_RISK_CHIP_TAXONOMY: Record<string, TaxonomyEntry> = {
+  misaligned: { tone: 'accent', icon: HiExclamation, label: 'misaligned' },
+  needsReview: {
+    tone: 'info',
+    icon: HiQuestionMarkCircle,
+    label: 'needs-review',
+  },
+  blocked: { tone: 'failure', icon: HiBan, label: 'blocked', ring: true },
+  carryForward: {
+    tone: 'warning',
+    icon: HiArrowNarrowRight,
+    label: 'carry-fwd',
+    ring: true,
+  },
+  dispute: { tone: 'failure', icon: HiFlag, label: 'dispute' },
+  resolved: { tone: 'neutral', icon: HiCheckCircle, label: 'resolved' },
+  unlinked: {
+    tone: 'warning',
+    icon: HiExclamationCircle,
+    label: 'unlinked',
+  },
 };
 
 /**

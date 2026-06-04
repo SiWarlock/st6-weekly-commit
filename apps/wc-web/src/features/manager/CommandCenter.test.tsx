@@ -131,18 +131,23 @@ describe('CommandCenter (E13 roll-up — rows, view-states, pagination, mark-rev
     // Exact strings: /locked/i would also match the "Blocked" count label.
     expect(within(r).getByText('Locked')).toBeInTheDocument();
     expect(within(r).getByText('Overdue')).toBeInTheDocument();
-    // The 5 alignment counts, each mapped to its own slot.
-    expect(r.querySelector('[data-cy="cc-misaligned"]')).toHaveTextContent('2');
-    expect(r.querySelector('[data-cy="cc-needsReview"]')).toHaveTextContent(
-      '1',
+    // The 5 alignment risk chips (ST.8b RiskChips — labeled, hide-zero; all
+    // nonzero here so all render), each mapped to its own data-cy slot.
+    expect(r.querySelector('[data-cy="risk-misaligned"]')).toHaveTextContent(
+      '2 misaligned',
     );
-    expect(r.querySelector('[data-cy="cc-blocked"]')).toHaveTextContent('3');
-    expect(r.querySelector('[data-cy="cc-carryForward"]')).toHaveTextContent(
-      '4',
+    expect(r.querySelector('[data-cy="risk-needsReview"]')).toHaveTextContent(
+      '1 needs-review',
     );
-    expect(
-      r.querySelector('[data-cy="cc-unresolvedDispute"]'),
-    ).toHaveTextContent('5');
+    expect(r.querySelector('[data-cy="risk-blocked"]')).toHaveTextContent(
+      '3 blocked',
+    );
+    expect(r.querySelector('[data-cy="risk-carryForward"]')).toHaveTextContent(
+      '4 carry-fwd',
+    );
+    expect(r.querySelector('[data-cy="risk-dispute"]')).toHaveTextContent(
+      '5 dispute',
+    );
   });
 
   it('renders_loading_empty_error_states: loading → LoadingState; zero content → EmptyState; query error → ErrorState(safeMessage) (§7)', () => {
@@ -307,24 +312,22 @@ describe('CommandCenter → dense table (ST.6b)', () => {
     render(<CommandCenter />);
 
     const pill = (kind: string) =>
-      document.querySelector(`[data-cy="cc-${kind}"]`) as HTMLElement;
+      document.querySelector(`[data-cy="risk-${kind}"]`) as HTMLElement;
 
-    // Reuses the §7 RISK tones (verbatim): misaligned→failure, needsReview→
-    // warning, blocked→failure, carryForward→WARNING (the actual RISK value).
-    expect(pill('misaligned')).toHaveAttribute('data-tone', 'failure');
-    expect(pill('needsReview')).toHaveAttribute('data-tone', 'warning');
-    expect(pill('blocked')).toHaveAttribute('data-tone', 'failure');
+    // ST.8b — the CC risk chips use CC_RISK_CHIP_TAXONOMY (the CommandCenter.jsx
+    // CANON), distinct from the heatmap's RISK_TAXONOMY: misaligned→accent,
+    // needs-review→info, carry-fwd→warning(ring), dispute→failure.
+    expect(pill('misaligned')).toHaveAttribute('data-tone', 'accent');
+    expect(pill('needsReview')).toHaveAttribute('data-tone', 'info');
     expect(pill('carryForward')).toHaveAttribute('data-tone', 'warning');
-    // Dispute count has no RISK entry → pinned to failure (urgent; glyph + label
-    // disambiguate it from misaligned/blocked).
-    expect(pill('unresolvedDispute')).toHaveAttribute('data-tone', 'failure');
+    expect(pill('dispute')).toHaveAttribute('data-tone', 'failure');
 
-    // Glyph + count + accessible label (not color-alone).
+    // Glyph + count + label (never color-alone, REQ-S-005).
     expect(pill('misaligned').querySelector('svg')).not.toBeNull();
-    expect(pill('misaligned')).toHaveTextContent('2');
-    expect(pill('misaligned')).toHaveAttribute('title', 'Misaligned: 2');
-    // Zero counts still show (muted) so the manager sees the full set.
-    expect(pill('blocked')).toHaveTextContent('0');
+    expect(pill('misaligned')).toHaveTextContent('2 misaligned');
+
+    // Hide-zero: a zero count renders NO chip (blocked:0 omitted).
+    expect(document.querySelector('[data-cy="risk-blocked"]')).toBeNull();
   });
 });
 

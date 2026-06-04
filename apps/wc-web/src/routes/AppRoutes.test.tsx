@@ -138,7 +138,7 @@ describe('AppRoutes — lazy route tree + real-role gating (9.5 / REQ-NF-005 / R
       },
       {
         path: '/manager/command-center',
-        phrase: /direct-report alignment/i,
+        phrase: /alignment command center/i,
         manager: true,
       },
       {
@@ -161,7 +161,7 @@ describe('AppRoutes — lazy route tree + real-role gating (9.5 / REQ-NF-005 / R
     mockCurrentUser({ isManager: true, role: 'MANAGER' });
     const mgr = renderAt('/');
     expect(
-      await screen.findByText(/direct-report alignment/i),
+      await screen.findByText(/alignment command center/i),
     ).toBeInTheDocument();
     mgr.unmount();
 
@@ -192,7 +192,7 @@ describe('AppRoutes — lazy route tree + real-role gating (9.5 / REQ-NF-005 / R
 
     // Manager route is not registered for an IC → catch-all → '/' → IC default.
     expect(await screen.findByText(/weekly commitments/i)).toBeInTheDocument();
-    expect(screen.queryByText(/direct-report alignment/i)).toBeNull();
+    expect(screen.queryByText(/alignment command center/i)).toBeNull();
     expect(container.querySelector('a[href*="/manager"]')).toBeNull();
   });
 
@@ -200,7 +200,7 @@ describe('AppRoutes — lazy route tree + real-role gating (9.5 / REQ-NF-005 / R
     mockCurrentUser({ isManager: true, role: 'MANAGER' });
     const cc = renderAt('/manager/command-center');
     expect(
-      await screen.findByText(/direct-report alignment/i),
+      await screen.findByText(/alignment command center/i),
     ).toBeInTheDocument();
     cc.unmount();
 
@@ -213,7 +213,7 @@ describe('AppRoutes — lazy route tree + real-role gating (9.5 / REQ-NF-005 / R
     renderAt('/manager/command-center');
     // useIsManager false while pending → route unregistered → '/' → LoadingState.
     expect(screen.getByRole('status')).toBeInTheDocument();
-    expect(screen.queryByText(/direct-report alignment/i)).toBeNull();
+    expect(screen.queryByText(/alignment command center/i)).toBeNull();
   });
 
   it('failed_lazy_import_renders_errorstate: a rejected dynamic import surfaces the shared ErrorState (generic, leak-free), never a blank screen', async () => {
