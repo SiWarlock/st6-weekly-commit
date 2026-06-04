@@ -12,6 +12,15 @@ spring:
   flyway:
     # API does NOT migrate — the Migration Job (flyway-migrate profile) is the sole schema owner (§12/D.2).
     enabled: false
+  cloud:
+    aws:
+      region:
+        # spring-cloud-aws (Wave-2 s7 SNS starter) auto-configures an SnsClient in EVERY profile and
+        # needs a boot-resolvable region. Real AWS_REGION in aws; a fallback so a CLEAN CI runner (no
+        # ~/.aws/config, AWS_REGION unset) still boots — without it the region provider chain can fail
+        # at SnsClient creation. Credentials stay lazy (no boot-time AWS call); the logging stub
+        # gateway means no real publish outside aws.
+        static: ${AWS_REGION:us-east-1}
   security:
     oauth2:
       resourceserver:

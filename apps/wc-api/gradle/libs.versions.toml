@@ -4,6 +4,9 @@
 
 [versions]
 springBoot = "3.3.5"
+# spring-cloud-aws 3.2.x is the line compatible with Spring Boot 3.3 (the BOM makes the starters
+# version-less); the 3.4.x line targets Boot 3.5. Wave-2 s7 (real SNS gateway).
+springCloudAws = "3.2.1"
 lombok = "1.18.34"
 junit = "5.11.3"
 junitPlatform = "1.11.3"

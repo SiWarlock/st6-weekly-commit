@@ -6,11 +6,17 @@ plugins {
 // (shared<-api); NO dependency on :worker (REQ-O-016). No domain/auth/CORS/SNS yet.
 dependencies {
   implementation platform("org.springframework.boot:spring-boot-dependencies:${libs.versions.springBoot.get()}")
+  // Spring Cloud AWS BOM (Wave-2 s7) — version-manages the SNS starter + AWS SDK v2 for the real
+  // LifecycleSnsGateway. 3.2.x line is Boot-3.3-compatible (libs.versions.toml).
+  implementation platform("io.awspring.cloud:spring-cloud-aws-dependencies:${libs.versions.springCloudAws.get()}")
 
   implementation project(':shared')
 
   implementation 'org.springframework.boot:spring-boot-starter-web'
   implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
+  // SNS publish for the lifecycle pointer (Wave-2 s7, §10) — SnsTemplate auto-config + AWS SDK v2.
+  implementation 'io.awspring.cloud:spring-cloud-aws-starter-sns'
 
   // Auth0 JWT validation (task 2.1): OAuth2 Resource Server brings spring-security-oauth2-jose +
   // nimbus-jose-jwt (the JwtDecoder/validators). NOTE: this activates Spring Security's default

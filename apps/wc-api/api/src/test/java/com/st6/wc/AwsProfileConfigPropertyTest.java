@@ -85,4 +85,17 @@ class AwsProfileConfigPropertyTest {
         .as("no deploy config remains on the dead `prod` profile")
         .isNull();
   }
+
+  @Test
+  void awsProfile_setsAppEnvToAws() {
+    // app.env feeds the SyncJobPointer's `env` field (SnsLifecyclePublisher
+    // @Value("${app.env:local}"))
+    // — under aws it must be "aws" so the published pointer is correct end-to-end (Wave-2 s7).
+    assertThat(propertyUnder("app.env", "aws"))
+        .as("aws sets the pointer env to aws")
+        .isEqualTo("aws");
+    // base/local/demo leave it unset → the publisher's :local default applies.
+    assertThat(propertyUnder("app.env")).as("no app.env outside aws").isNull();
+    assertThat(propertyUnder("app.env", "local")).as("no app.env in local").isNull();
+  }
 }

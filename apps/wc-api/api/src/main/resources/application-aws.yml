@@ -29,9 +29,18 @@ spring:
 auth0:
   audience: https://api.wc.${ROOT_DOMAIN}
 
-# Prod CORS allow-list: the deployed SPA origin only (exact, no wildcard, no dev origin — §16). An
-# explicit CORS_ALLOWED_ORIGINS env still wins (multi-origin via comma-separated).
 app:
+  # The deployment env — feeds the SyncJobPointer.env field (SnsLifecyclePublisher reads
+  # ${app.env:local}); "aws" so the published pointer is correct end-to-end (Wave-2 s7). Single-env
+  # demo, so the literal is correct; local/demo/test leave it unset → the :local default applies.
+  env: aws
+  # Real SNS lifecycle publish (Wave-2 s7, §10): the topic ARN gates the real AwsSnsLifecycleGateway
+  # (the logging stub is the bean when this is absent). Bound from the deployment env (deployment-api
+  # .yaml SNS_TOPIC_ARN); the AWS region resolves from AWS_REGION (base spring.cloud.aws.region.static).
+  sns:
+    topic-arn: ${SNS_TOPIC_ARN}
+  # Prod CORS allow-list: the deployed SPA origin only (exact, no wildcard, no dev origin — §16). An
+  # explicit CORS_ALLOWED_ORIGINS env still wins (multi-origin via comma-separated).
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:https://wc.${ROOT_DOMAIN}}
 
