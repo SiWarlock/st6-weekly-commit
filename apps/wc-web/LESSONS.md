@@ -334,3 +334,89 @@ The manager needed a surface to open/resolve disputes on a direct-report's commi
 - **Caveat:** the shared component must be presentation + gating only (no actor assumptions in its own logic). `CommitmentList` qualified because 9.7/9.11a kept it purely `allowedActions`-driven.
 
 **Rule:** Render one `allowedActions`-gated component for every actor role instead of forking per role — the server's per-actor `allowedActions` make it role-correct with zero client-side role branching (the §11 dividend). The read endpoint differentiates the actor (E3 own vs E4 report), not the component.
+
+## <a id="21"></a>21. The standalone MSW mutable-db pattern — deep-clone-from-fixtures seed + write-through mutations + live read-selectors (the §15 mutable extension)
+
+**Date:** 2026-06-04.
+**Source slice:** 9.15 (stateful MSW — live dispute loop + demo interactivity).
+
+§15 shipped the static-coherent MSW layer (fixtures typed as Appendix-B DTOs, persona-routed, tree-shaken). The static layer can't transition state — a resolve POST `404`s — so the live dispute loop (open→respond→resolve) couldn't be QA'd or demoed. 9.15 makes the layer **mutable** without breaking any of §15's guarantees:
+
+- **A mutable in-memory `db`** (`src/standalone/mocks/db.ts`) seeded once at module init by a **deep clone** (`structuredClone`) of the canonical fixtures — **never alias the exported fixtures** (a write must not mutate `ALL_PLANS`; pin it with a `seed_is_deep_cloned_not_aliased` test).
+- **Write-through mutations** (E17/E18/E19) mutate the db; a `MockDbError{status, code}` maps to an RFC-7807 body, mirroring the backend's named codes (`SECOND_OPEN_DISPUTE` 409, ≥1-field 400, unknown-id 404-never-leak). The read selectors (`getPlanForPersona`/`getPlanById`/`getCommitment`/`findDispute`) read the **live db** so re-reads reflect the mutation — the B.6 dispute nest, the §3 review re-derivation (REVIEWED↔REVIEWED_WITH_DISPUTES, and the NOT_REVIEWED-guard so resolve never falsely promotes an unreviewed plan), and the per-actor affordances over live state (incl. the IC_RESPONDED middle state).
+- **Persist across persona switches, seed once** — the db is the shared demo world (a manager's open is visible when you switch to the IC = the whole point of the loop). `resetDb()` re-clones the seed for **test isolation only**.
+- **Targeted overlay, not a full rollup** — when a read surface needs to reflect a mutation (here the command-center row's `unresolvedDisputeCount`/`reviewStatus`), overlay **only** the affected derived fields from the db; keep hand-tuned styling counts seeded. A full recompute perturbs the styling-coverage fixtures + balloons scope — defer the full rollup (and the non-dispute mutations) to a follow-up (9.15b).
+- **REQ-I-008 stays green** — db/handlers/boot-helper stay in `src/standalone/`; the `dtos` import is **type-only** (erased — no runtime edge into the remote graph), so the boundary import-graph + literal-scan guards still pass.
+
+**Rule:** Take a standalone MSW layer mutable via a deep-cloned-from-fixtures in-memory `db` (persist + seed-once + `resetDb()` for tests) with write-through mutations (`MockDbError`→RFC-7807, backend codes mirrored) + live read-selectors behind the existing handlers; overlay only the affected derived fields on read surfaces (never a full rollup mid-slice); keep it standalone-only with a type-only `dtos` import so REQ-I-008 holds. (Extends [[15]]; the gated affordances ride [[19]]/[[20]].)
+
+## <a id="22"></a>22. MSW cold-install boot — await SW *control* before the first query, with a timeout backstop (real-browser SW timing)
+
+**Date:** 2026-06-04.
+**Source slice:** 9.15 (real-browser QA Finding #1).
+
+In a **fresh** browser the standalone hung on a loading skeleton: the app's first RTK Query requests fired before the Service Worker **controlled** the page, so they bypassed MSW, hung, and didn't recover (a fresh tab with a warm SW cleared it). The trap: `worker.start()` resolves when the SW is **registered**, not when it **controls** the page — §15's "await `worker.start()` before render" is necessary but not sufficient on a cold install.
+
+- **Await SW control before the first query** — after `worker.start()`, `await waitForServiceWorkerControl(navigator.serviceWorker)` before `createRoot().render()`. The helper resolves **immediately** if a controller is already present (warm), else on the `controllerchange` event (cold).
+- **Timeout backstop** — the helper also resolves after a timeout, so a missing/never-controlling SW can **never deadlock** the boot forever (degrade to rendering rather than hang).
+- **Extract the await as a pure helper** (`swControl.ts`, **no `msw/browser` import**) so it's unit-testable in jsdom (jsdom can't run `setupWorker`) — pin warm-resolves-immediately / cold-resolves-on-`controllerchange` / never-deadlocks-on-timeout (fake timers). The deterministic boot ordering is the testable core; the live cold-install behavior is confirmed in the real browser ([[18]] — real-browser SW timing is invisible to jsdom).
+- **The config half (Finding #2):** the demo must use a **relative** base URL — an absolute `VITE_API_BASE_URL` makes requests cross-origin → bypasses the same-origin SW → hang. Default the demo to relative; only a real-backend dev sets the env (`.env.example` config/docs, REQ-I-008-safe).
+
+**Rule:** A standalone MSW boot must await SW *control* (not just `worker.start()`'s registration) before the first query — `waitForServiceWorkerControl()` (resolve-now-if-controlling / on-`controllerchange` / on-timeout-backstop), extracted as a pure helper for jsdom unit-testing; and the demo must use a relative base URL (an absolute base bypasses the same-origin SW). (Adjacent to [[18]] real-browser SW timing; extends [[15]]'s boot ordering.)
+
+## <a id="23"></a>23. The standalone demo app-shell mirrors the production host chrome — tree-shaken from the remote (the §7/REQ-I-008 corollary)
+
+**Date:** 2026-06-04.
+**Source slice:** ST.8a (the missing global chrome — doc 024 §A/S1).
+
+Per §7 (the MFE boundary), the production **host** owns `BrowserRouter` + the app-bar / nav / identity chrome; the exposed remote (`WeeklyCommitApp`) renders only the routed subtree. So in standalone mode there is **no chrome** — the demo rendered bare (a thin "PERSONA / Light mode" header, no app-bar/nav/breadcrumb) against the composed-app mockup, which depicts the **host + remote** together. The user's mockup-vs-as-built QA flagged this as the biggest gap.
+
+- **Don't add chrome to the exposed remote** (that leaks host responsibilities + breaks REQ-I-008). **Simulate the host chrome in the standalone shell** instead: build the app-bar + persona-gated sub-nav + breadcrumb as **standalone-only** components (`src/standalone/shell/*`), mounted by `StandaloneShell` around `<WeeklyCommitApp/>`. The nav drives the **existing `AppRoutes`** via the standalone-owned `BrowserRouter` — **no new routes**, no router in the remote.
+- **Tree-shaken automatically** — `boundary.test.ts`'s import-graph walk covers `shell/*` via the existing "no `src/standalone/` module reachable from the remote" assertion (a standalone module is only a violation if a *remote-reachable* module imports it; the shell is mounted by `StandaloneShell` only). **No new boundary test needed.**
+- **Keep role-differentiation server-authoritative** — the sub-nav gates on `useIsManager` (the `/api/me` read), and the persona-switch reroutes through **`navigate('/')` → `RootRedirect`** (the existing persona-aware redirect) rather than reading a persona's role in the switcher to pick a landing route. This avoids the transient-`isManager`-false `*`-bounce AND keeps the route guards the single source of role-landing (the §11 spirit — don't re-derive role client-side, even for nav).
+- **Token-native even in demo chrome** — no hex (the brand mark uses `currentColor` + `text-white`); add the shell files to `surfaceSkin.test.ts`'s `TOUCHED_SURFACES` scan. Pixel fidelity vs the mockup is a real-browser gate (gstack canon-compare), not a unit concern ([[18]]).
+
+**Rule:** When the production host owns the chrome (§7 MFE), DON'T add chrome to the exposed remote — simulate the host chrome in a standalone-only app-shell (`src/standalone/shell/*`) mounted around the remote, driving the EXISTING routes via the standalone-owned router; it's tree-shaken automatically (`boundary.test.ts` covers it via the standalone-dir assertion). Keep role-landing server-authoritative (gate nav on `useIsManager`; reroute via `'/'`→`RootRedirect`, no role read in the switcher) + token-native (no hex). (The §7/REQ-I-008 corollary; extends [[6]]/[[15]] the standalone-only boundary.)
+
+## <a id="24"></a>24. Client-computed "at a glance" summary — a pure unit-tested derivation over the loaded rows, backend field as the production follow-up (the D-1 pattern)
+
+**Date:** 2026-06-04.
+**Source slice:** ST.8b (the command-center "At a glance" summary strip).
+
+The command-center mockup shows a summary strip (reports / review-overdue / open-disputes / reconciling / not-locked / reviewed-clean counts). The **production-correct** source is a backend §9 `summary` field — accurate under server-pagination, where a client roll-up sees only the current page. But for the **demo** (the MSW returns all reports on one page), the strip is computable client-side, giving full mockup fidelity now without blocking on the backend. The lead/user-approved resolution (**decision D-1**):
+
+- **A pure `summarizeRows(rows): GlanceCounts` function** (no component, no hooks) is the testable core — counts derived over the **full loaded `data.content`** (not a sliced view). Unit-test the derivation directly, including the **load-bearing discrimination edges**: e.g. a `REVIEWED_WITH_DISPUTES` row is NOT "reviewed clean" but DOES feed the open-disputes total (the exact green-vs-amber distinction the strip visualizes; the 9.15 mutable-db overlay makes that state reachable on a live row).
+- **The strip renders from the derivation; the backend field stays the queued production follow-up.** This is the D-1 shape: client-compute now for demo fidelity, queue the backend field for production accuracy. Don't compute the roll-up inline in the component (keep it a pure, testable module).
+
+**Rule:** For a roll-up/summary that's backend-field-correct but demo-computable, build a PURE unit-tested derivation over the full loaded rows now (D-1) — pin the discrimination edges (e.g. reviewed-clean vs reviewed-with-disputes) — and queue the backend field as the production follow-up; never compute the roll-up inline in the component. (Pairs with [[21]] the live mutable-db that feeds it.)
+
+## <a id="25"></a>25. Per-surface tone divergence → a distinct named map in the single-source file, NOT an inline re-map (the §7 clarification)
+
+**Date:** 2026-06-04.
+**Source slice:** ST.8b (`CC_RISK_CHIP_TAXONOMY`).
+
+The command-center risk chips tone the risk kinds per the CANON mockup — **misaligned=accent, needs-review=info** (+ dispute=failure, blocked=failure-ring, carry-fwd=warning-ring, resolved=neutral, unlinked=warning) — which **diverges** from the heatmap's `RISK_TAXONOMY` (misaligned=failure, needs-review=warning). §7 says "never re-map an enum inline; one source of visual truth." The resolution when two surfaces genuinely tone the same kinds differently **per canon**:
+
+- **Add a SECOND named map** (`CC_RISK_CHIP_TAXONOMY`) in the single-source file (`statusTaxonomy.ts`), consumed once by the surface's component — NOT an inline hand-toning, and NOT a mutation of the shared `RISK_TAXONOMY` (which would regress the heatmap). Zero blast radius on the other surface.
+- **"Single source of visual truth" (§7) means the FILE, not one map per enum** — distinct visual atoms (CC count-chips vs heatmap badges) are distinct maps that coexist in the one file, the same way `PRIORITY_TAXONOMY`/`WORKTYPE_TAXONOMY` do.
+- **Confirm the divergence is intentional CANON** (the per-surface mockups tone it differently on purpose), not a mockup inconsistency to harmonize — if the mockups agree, use one map; if they diverge, two. (The heatmap's own tones vs ITS mockup is a separate canon-compare check — ST.8d.)
+
+**Rule:** When two surfaces tone the same enum differently per the canon mockups, add a DISTINCT named map in the single-source `statusTaxonomy.ts` (consumed once by the surface) — NOT an inline re-map and NOT a mutation of the shared map; "single source of visual truth" (§7) is the file, not one-map-per-enum. Confirm the divergence is intentional canon first. (Refines [[7]].)
+
+## <a id="26"></a>26. The standalone demo needs a gitignored `.env.local` (`VITE_AUTH_MODE=demo`) — an undefined mode hangs the app, and inline env doesn't reach Vite
+
+**Date:** 2026-06-04.
+**Source slice:** ST.8d (QA finding F1).
+
+A fresh automated QA browser hung on the loading skeleton with no surfaced error. Root cause: `prepareHeaders` (`baseApi.ts`) reads `import.meta.env.VITE_AUTH_MODE` and **throws `Unsupported VITE_AUTH_MODE` when it's undefined** → no RTK Query request ever fires → the app hangs on the skeleton (the throw is swallowed in the header builder, not rendered). Vite only exposes env from `.env*` files (+ the shell at process start), so an **inline `VITE_AUTH_MODE=demo yarn dev`** passed at the wrong layer / to an already-running dev server does NOT reach `import.meta.env`. The standalone demo therefore needs a **gitignored `.env.local` with `VITE_AUTH_MODE=demo`** — the predecessor session had one (gitignored → absent from the shared tree → it bit the fresh QA session). Documented in `.env.example` (ST.8d).
+
+**Rule:** The standalone demo requires a gitignored `.env.local` with `VITE_AUTH_MODE=demo` — an undefined `VITE_AUTH_MODE` makes `prepareHeaders` throw → the app hangs on the loading skeleton with no surfaced error; inline `yarn dev` env doesn't reach `import.meta.env`. Documented in `.env.example`. (Demo/dev-only — the exposed remote gets its mode from the host.)
+
+## <a id="27"></a>27. Solo headless `agent-browser` QA now drives the persona switch + drawers — the §18 native-`<select>` constraint is obsolete
+
+**Date:** 2026-06-04.
+**Source slice:** ST.8d (the gstack canon-compare, driven solo/headless).
+
+§18 held that real-browser persona-switch QA needed a **headed** browser (gstack `/connect-chrome`) because the persona switcher was a native `<select>` that headless synthetic events couldn't drive (and historically wanted a user present). **ST.8a replaced the native `<select>` with a clickable custom dropdown** (the identity-slot PersonaSwitcher). Consequence: the gstack **`agent-browser` (headless)** now drives the persona switch + the manager drawers + the theme toggle **directly, no user-present** — the entire ST.8d canon-compare AND the live open→respond→resolve disputes loop were driven solo/headless. The deferred "connected-browser both-persona QA (pending user availability)" carry-forward is **discharged**: solo headless QA is the path for persona/drawer/theme interaction flows going forward.
+
+**Rule:** Solo headless gstack `agent-browser` now drives the persona switch + drawers + theme toggle (ST.8a's custom dropdown replaced the native `<select>`) — the §18 "headed-only / user-present to drive the persona `<select>`" constraint is obsolete; drive persona/drawer/theme interaction QA solo + headless. (A real-browser spot-check still warrants §18's computed-position caveat, but the interaction-driving blocker is gone. Updates [[18]].)

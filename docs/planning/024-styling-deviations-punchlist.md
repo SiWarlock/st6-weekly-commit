@@ -61,3 +61,19 @@
 
 ## Sequencing note
 All render-only / standalone-demo-shell; no enum/Appendix-A change. REQ-I-008 must stay green (the demo shell is standalone-only, tree-shaken from the remote). Pairs with the stateful-MSW build (9.15) — both are the demo-fidelity reactivation of the frontend track. Final gstack `/connect-chrome` QA re-checks every surface against these mockups + runs the live disputes loop.
+
+---
+
+## Decisions resolved (2026-06-04)
+
+> **D-1 / D-2 (original, user-approved 2026-06-04 via the lead):** D-1 = build the client-computed "At a glance" summary strip now for demo fidelity + queue the backend §9 `summary` field as the production follow-up → **shipped (ST.8b)**. D-2 = the ~2–4-slice scope is a go → **realized as ST.8a (app-shell) · ST.8b + ST.8b-2 (command-center) · ST.8c (IC card) · ST.8d (canon-compare QA gate)**, all shipped; 9.15 (stateful MSW) shipped alongside.
+
+> **⚠️ Lead away-mode calls (2026-06-04 — user delegated these to the lead while away; AskUserQuestion off the table; documented here for the user's review/redirect on return).** These resolve the **ST.8d canon-compare findings** — substantial deviations on two surfaces (heatmap, review drawer) that were NOT enumerated in §A/§B/§C above but surfaced under the user's "mockup-is-canon + NON-EXHAUSTIVE" directive:
+
+- **Decision 1 — ST.8e: GO.** Close the **heatmap (~8 gaps)** + **review-drawer (~5 gaps)** canon **visual** deviations as a new slice **ST.8e**, including the deterministic bits (per-cell **volume bars**, the **Row-total column**, **no-coverage 0-cell** styling — all computable from the existing MSW counts; demo-only, **no backend dep**). Render-only / token-native / REQ-I-008 green otherwise. *Rationale: the directive is emphatic + general about canon fidelity, these are real demo surfaces, and it's moderate (not large) effort.*
+  - **CARVE-OUT:** **KEEP** the existing inline per-commitment flag UX in the review drawer (functional + passed the disputes QA) rather than reworking to the canon's `FlagModal` — that's an **interaction-pattern preference, not a visual-fidelity defect**. Documented divergence.
+  - **BOUND IT:** if any single gap balloons into real structural/feature work beyond a reasonable fidelity fix, **DEFER that item + flag the lead** (no silent scope expansion).
+- **Decision 2 — command-center filters: KEEP the 7th (Alignment-status) chip.** The canon shows 6 (omits it); a canon-omission of a **working** filter ≠ remove functionality. "Mockup is canon" governs **visual fidelity**, not feature removal; the filter styling already matches canon (ST.8b-2). No action.
+- **Decision 3 — gold/green button a11y: dark ink (not white) on the amber (Start-reconciliation) + green (Close-week) solid tones, AA-verified in BOTH themes.** Folded into ST.8d. *Rationale: accessibility is a non-negotiable best-practice (the user wants best-practices).* If the canon mockup itself uses white-on-tone (non-AA), this is a **deliberate documented a11y deviation** from canon.
+
+> **2 env findings → Carry-forward (no user action):** **F1** — the standalone demo needs a gitignored `.env.local` with `VITE_AUTH_MODE=demo` (inline `yarn dev` env doesn't reach Vite → `prepareHeaders` throws → the app hangs); documented in `.env.example` (ST.8d). **F2** — a 9.15 cold-install residual: the SW-control timeout backstop can fire before SW control in a slow fresh automated browser → the first `/api/me` bypasses the worker + never retries → `/` (RootRedirect) hangs; `pushState`-to-route workaround; the proper fix (retry-the-first-query-on-`controllerchange` / reload-on-cold-install) refines wc-web LESSONS §22. Both **demo/headless-only** (the remote doesn't use MSW).
