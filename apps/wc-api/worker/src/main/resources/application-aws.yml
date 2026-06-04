@@ -1,0 +1,8 @@
+# aws (deployed): the profile the worker Deployment runs (SPRING_PROFILES_ACTIVE=aws —
+# deployment-worker.yaml). Wave-1 is DB-less + has no real SQS/Graph yet: the worker excludes the
+# JPA/datasource auto-config on its app class (it mounts graph-only secrets — no datasource), and the
+# real SQS listener + Graph adapter + datasource land in Wave-2. flyway stays off (the migration Job
+# owns the schema — forbidden-#3). No auth0/cors/timezone (D.3 — SYSTEM principal, no user request).
+logging:
+  level:
+    com.st6.wc.worker: INFO

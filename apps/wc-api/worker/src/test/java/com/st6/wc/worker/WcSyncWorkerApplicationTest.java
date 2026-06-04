@@ -15,20 +15,14 @@ import org.springframework.test.context.ActiveProfiles;
  * Boots {@code WcSyncWorkerApplication} (the separate deployable) under {@code local} with NO SQS
  * listener / Graph adapter / SQS-Graph env, and asserts the k8s probes are UP and the {@code
  * :shared} {@code Clock} bean is present (flag 6 — for §10 time transitions). REQ-O-014.
+ *
+ * <p>No {@code spring.autoconfigure.exclude} test property: the JPA/datasource exclude that keeps
+ * the DB-less worker booting is now realized in <em>production</em> on {@code
+ * WcSyncWorkerApplication} itself (task 092 — the test-only property previously masked a deployed
+ * crashloop, LESSONS §9). A green boot here with no test property proves the production exclude is
+ * sufficient.
  */
-@SpringBootTest(
-    webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-    // task 1.5: :shared gained spring-boot-starter-data-jpa (the JPA entity layer), which
-    // propagates
-    // transitively to :worker (worker -> shared) and would activate DataSourceAutoConfiguration.
-    // This
-    // skeleton test boots DB-less (probes + Clock, no persistence), so JPA/DataSource autoconfig is
-    // excluded here; the worker wires a real datasource when it consumes the sync-record repo
-    // (§10).
-    properties =
-        "spring.autoconfigure.exclude="
-            + "org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration,"
-            + "org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration")
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("local")
 class WcSyncWorkerApplicationTest {
 
