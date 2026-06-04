@@ -2,18 +2,28 @@ package com.st6.wc.manager;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.st6.wc.commitment.WeeklyCommitment;
+import com.st6.wc.commitment.repo.WeeklyCommitmentRepository;
 import com.st6.wc.employee.Employee;
 import com.st6.wc.employee.repo.EmployeeRepository;
+import com.st6.wc.enums.AlignmentStatus;
+import com.st6.wc.enums.CommitmentKind;
+import com.st6.wc.enums.Confidence;
 import com.st6.wc.enums.PlanState;
+import com.st6.wc.enums.Priority;
 import com.st6.wc.enums.ReviewStatus;
 import com.st6.wc.enums.RoleType;
+import com.st6.wc.enums.WorkType;
 import com.st6.wc.manager.dto.ManagerCommandCenterRowDto;
 import com.st6.wc.manager.query.CommandCenterFilters;
 import com.st6.wc.manager.query.ManagerCommandCenterQuery;
 import com.st6.wc.plan.WeeklyPlan;
 import com.st6.wc.plan.repo.WeeklyPlanRepository;
+import com.st6.wc.projection.ManagerHeatmapCell;
 import com.st6.wc.projection.ManagerPlanSummary;
+import com.st6.wc.projection.repo.ManagerHeatmapCellRepository;
 import com.st6.wc.projection.repo.ManagerPlanSummaryRepository;
+import com.st6.wc.rcdo.repo.DefiningObjectiveRepository;
 import com.st6.wc.support.AbstractAppBootTest;
 import jakarta.persistence.EntityManagerFactory;
 import java.time.Instant;
@@ -51,10 +61,15 @@ class ManagerCommandCenterQueryCountTest extends AbstractAppBootTest {
   @Autowired private WeeklyPlanRepository plans;
   @Autowired private ManagerPlanSummaryRepository summaries;
   @Autowired private ManagerCommandCenterQuery query;
+  @Autowired private WeeklyCommitmentRepository commitments;
+  @Autowired private ManagerHeatmapCellRepository heatmapCells;
+  @Autowired private DefiningObjectiveRepository definingObjectives;
 
   @AfterEach
   void cleanup() {
+    commitments.deleteAll(); // FK → weekly_plan: delete before plans (§38 teardown FK-order)
     summaries.deleteAll();
+    heatmapCells.deleteAll(); // FK → employee + defining_objective: delete before employees
     plans.deleteAll();
     employees.deleteAll();
   }
@@ -69,7 +84,7 @@ class ManagerCommandCenterQueryCountTest extends AbstractAppBootTest {
     return employees.saveAndFlush(e);
   }
 
-  private void saveSummary(UUID managerId, UUID reportId) {
+  private UUID saveSummary(UUID managerId, UUID reportId) {
     WeeklyPlan p = new WeeklyPlan();
     p.setId(UUID.randomUUID());
     p.setEmployeeId(reportId);
@@ -89,6 +104,32 @@ class ManagerCommandCenterQueryCountTest extends AbstractAppBootTest {
     s.setReviewOverdue(false);
     s.setUpdatedAt(Instant.parse("2026-06-03T12:00:00Z"));
     summaries.saveAndFlush(s);
+    return p.getId();
+  }
+
+  private void saveCommitment(
+      UUID planId, Priority priority, WorkType workType, AlignmentStatus alignmentStatus) {
+    WeeklyCommitment c = new WeeklyCommitment();
+    c.setId(UUID.randomUUID());
+    c.setWeeklyPlanId(planId);
+    c.setCommitmentKind(CommitmentKind.PLANNED);
+    c.setTitle("commitment");
+    c.setPriority(priority);
+    c.setWorkType(workType);
+    c.setConfidence(Confidence.MEDIUM);
+    c.setAlignmentStatus(alignmentStatus);
+    commitments.saveAndFlush(c);
+  }
+
+  private void saveHeatmapCell(UUID managerId, UUID reportId, UUID definingObjectiveId) {
+    ManagerHeatmapCell h = new ManagerHeatmapCell();
+    h.setId(UUID.randomUUID());
+    h.setManagerEmployeeId(managerId);
+    h.setEmployeeId(reportId);
+    h.setWeekStartDate(WEEK);
+    h.setDefiningObjectiveId(definingObjectiveId);
+    h.setUpdatedAt(Instant.parse("2026-06-03T12:00:00Z"));
+    heatmapCells.saveAndFlush(h);
   }
 
   @Test
@@ -106,7 +147,7 @@ class ManagerCommandCenterQueryCountTest extends AbstractAppBootTest {
         query.findCommandCenter(
             mgr.getId(),
             WEEK,
-            new CommandCenterFilters(null, null, null, null),
+            new CommandCenterFilters(null, null, null, null, null, null, null, null),
             PageRequest.of(
                 0,
                 25,
@@ -114,6 +155,54 @@ class ManagerCommandCenterQueryCountTest extends AbstractAppBootTest {
 
     assertThat(page.getContent()).hasSize(3); // sanity: all 3 reports, names joined
     // exactly the page query + the count query — does NOT grow with the 3 rows (no per-row lookup)
+    assertThat(stats.getPrepareStatementCount()).isEqualTo(2);
+  }
+
+  /**
+   * The 6.5a-2 cross-table EXISTS filters stay IN the page + count statements (still a fixed two),
+   * never a per-row lookup. Seeds 3 reports matching all the cross-table predicates + 1 that
+   * matches none (different DO + priority/workType/alignmentStatus); with the DO + priority +
+   * workType + alignmentStatus + planState filters all set, the result is the 3 matching rows and
+   * the JDBC statement count is still exactly 2.
+   */
+  @Test
+  void commandCenter_crossTableFilters_isNPlusOneFree() {
+    Employee mgr = saveEmployee("Manager", RoleType.MANAGER);
+    UUID do1 = definingObjectives.findAllByOrderByIdAsc().get(0).getId();
+    UUID do2 = definingObjectives.findAllByOrderByIdAsc().get(1).getId();
+    for (String n : new String[] {"Alice", "Bob", "Carol"}) {
+      UUID report = saveEmployee(n, RoleType.IC).getId();
+      UUID plan = saveSummary(mgr.getId(), report);
+      saveHeatmapCell(mgr.getId(), report, do1);
+      saveCommitment(plan, Priority.P0, WorkType.STRATEGIC, AlignmentStatus.MISALIGNED);
+    }
+    // a 4th report matching NONE of the cross-table values (different DO + attrs)
+    UUID dave = saveEmployee("Dave", RoleType.IC).getId();
+    UUID davePlan = saveSummary(mgr.getId(), dave);
+    saveHeatmapCell(mgr.getId(), dave, do2);
+    saveCommitment(davePlan, Priority.P1, WorkType.MAINTENANCE, AlignmentStatus.ALIGNED);
+
+    Statistics stats = emf.unwrap(SessionFactory.class).getStatistics();
+    stats.setStatisticsEnabled(true);
+    stats.clear(); // count ONLY the read below, not the seeding
+
+    Page<ManagerCommandCenterRowDto> page =
+        query.findCommandCenter(
+            mgr.getId(),
+            WEEK,
+            new CommandCenterFilters(
+                null,
+                PlanState.LOCKED,
+                null,
+                null,
+                do1,
+                Priority.P0,
+                WorkType.STRATEGIC,
+                AlignmentStatus.MISALIGNED),
+            PageRequest.of(0, 25, Sort.by(Sort.Order.asc("employeeDisplayName"))));
+
+    assertThat(page.getContent()).hasSize(3); // Dave excluded by the cross-table EXISTS predicates
+    // page + count only — the EXISTS subqueries are IN those two statements, not per-row
     assertThat(stats.getPrepareStatementCount()).isEqualTo(2);
   }
 }

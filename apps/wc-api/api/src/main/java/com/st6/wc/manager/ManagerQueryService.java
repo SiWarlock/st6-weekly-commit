@@ -1,8 +1,11 @@
 package com.st6.wc.manager;
 
 import com.st6.wc.auth.DomainAuthorizationService;
+import com.st6.wc.enums.AlignmentStatus;
 import com.st6.wc.enums.PlanState;
+import com.st6.wc.enums.Priority;
 import com.st6.wc.enums.ReviewStatus;
+import com.st6.wc.enums.WorkType;
 import com.st6.wc.identity.UserPrincipal;
 import com.st6.wc.manager.dto.ManagerCommandCenterRowDto;
 import com.st6.wc.manager.dto.PageEnvelope;
@@ -49,10 +52,22 @@ public class ManagerQueryService {
       UUID employeeId,
       PlanState planState,
       ReviewStateFilter reviewState,
+      UUID definingObjectiveId,
+      Priority priority,
+      WorkType workType,
+      AlignmentStatus alignmentStatus,
       Pageable pageable) {
     authz.authorizeTeamHeatmapAccess(principal); // coarse: non-manager → 403 MANAGER_ROLE_REQUIRED
 
-    CommandCenterFilters filters = toFilters(employeeId, planState, reviewState);
+    CommandCenterFilters filters =
+        toFilters(
+            employeeId,
+            planState,
+            reviewState,
+            definingObjectiveId,
+            priority,
+            workType,
+            alignmentStatus);
     int size = Math.min(pageable.getPageSize(), MAX_PAGE_SIZE);
     Sort sort = pageable.getSort().isSorted() ? pageable.getSort() : DEFAULT_SORT;
     Pageable effective = PageRequest.of(pageable.getPageNumber(), size, sort);
@@ -64,7 +79,13 @@ public class ManagerQueryService {
   }
 
   private static CommandCenterFilters toFilters(
-      UUID employeeId, PlanState planState, ReviewStateFilter reviewState) {
+      UUID employeeId,
+      PlanState planState,
+      ReviewStateFilter reviewState,
+      UUID definingObjectiveId,
+      Priority priority,
+      WorkType workType,
+      AlignmentStatus alignmentStatus) {
     ReviewStatus reviewStatus = null;
     Boolean overdue = null;
     if (reviewState == ReviewStateFilter.OVERDUE) {
@@ -72,6 +93,14 @@ public class ManagerQueryService {
     } else if (reviewState != null) {
       reviewStatus = ReviewStatus.valueOf(reviewState.name());
     }
-    return new CommandCenterFilters(employeeId, planState, reviewStatus, overdue);
+    return new CommandCenterFilters(
+        employeeId,
+        planState,
+        reviewStatus,
+        overdue,
+        definingObjectiveId,
+        priority,
+        workType,
+        alignmentStatus);
   }
 }

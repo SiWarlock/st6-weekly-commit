@@ -1,8 +1,10 @@
 package com.st6.wc.manager.query;
 
+import com.st6.wc.commitment.WeeklyCommitment;
 import com.st6.wc.employee.Employee;
 import com.st6.wc.manager.dto.ManagerCommandCenterRowDto;
 import com.st6.wc.manager.mapper.ManagerProjectionMapper;
+import com.st6.wc.projection.ManagerHeatmapCell;
 import com.st6.wc.projection.ManagerPlanSummary;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
@@ -13,6 +15,7 @@ import jakarta.persistence.criteria.Order;
 import jakarta.persistence.criteria.Path;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
+import jakarta.persistence.criteria.Subquery;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -73,6 +76,7 @@ public class ManagerCommandCenterQuery {
     List<Predicate> where = new ArrayList<>();
     where.add(cb.equal(e.get("id"), s.get("employeeId"))); // display-name cross-join (1:1 via FK)
     where.addAll(summaryPredicates(cb, s, managerEmployeeId, weekStart, filters));
+    where.addAll(crossTablePredicates(cb, cq, s, filters));
     cq.where(where.toArray(new Predicate[0]));
     cq.orderBy(orders(cb, s, e, pageable.getSort()));
 
@@ -84,14 +88,15 @@ public class ManagerCommandCenterQuery {
             .map(t -> mapper.toRowDto(t.get(0, ManagerPlanSummary.class), t.get(1, String.class)))
             .toList();
 
-    // count is summary-only (the cross-join is 1:1 via the employee FK → no row multiplication).
+    // count is summary-only (the cross-join is 1:1 via the employee FK → no row multiplication);
+    // the
+    // cross-table EXISTS narrow it identically to the page query so the total stays consistent.
     CriteriaQuery<Long> countQ = cb.createQuery(Long.class);
     Root<ManagerPlanSummary> cs = countQ.from(ManagerPlanSummary.class);
-    countQ
-        .select(cb.count(cs))
-        .where(
-            summaryPredicates(cb, cs, managerEmployeeId, weekStart, filters)
-                .toArray(new Predicate[0]));
+    List<Predicate> countWhere =
+        new ArrayList<>(summaryPredicates(cb, cs, managerEmployeeId, weekStart, filters));
+    countWhere.addAll(crossTablePredicates(cb, countQ, cs, filters));
+    countQ.select(cb.count(cs)).where(countWhere.toArray(new Predicate[0]));
     long total = em.createQuery(countQ).getSingleResult();
 
     return new PageImpl<>(rows, pageable, total);
@@ -120,6 +125,62 @@ public class ManagerCommandCenterQuery {
       p.add(cb.equal(s.get("reviewOverdue"), f.overdue()));
     }
     return p;
+  }
+
+  /**
+   * The 6.5a-2 cross-table EXISTS predicates — each NARROWS the manager-scoped result; the IDOR
+   * scope (set in {@link #summaryPredicates}) is never touched. {@code definingObjectiveId} is an
+   * EXISTS over {@code manager_heatmap_cell} correlated to the outer summary at the full grain
+   * (manager/report/week/DO); {@code priority}/{@code workType}/{@code alignmentStatus} are each an
+   * EXISTS over {@code weekly_commitment} correlated on the outer plan id (so they can't reach a
+   * commitment outside the manager's already-scoped report). The enclosing {@code query} supplies
+   * the subquery factory, so the same helper serves both the page and count queries.
+   */
+  private static List<Predicate> crossTablePredicates(
+      CriteriaBuilder cb,
+      CriteriaQuery<?> query,
+      Root<ManagerPlanSummary> s,
+      CommandCenterFilters f) {
+    List<Predicate> p = new ArrayList<>();
+    if (f.definingObjectiveId() != null) {
+      Subquery<UUID> sub = query.subquery(UUID.class);
+      Root<ManagerHeatmapCell> h = sub.from(ManagerHeatmapCell.class);
+      sub.select(h.get("id"));
+      sub.where(
+          cb.equal(h.get("managerEmployeeId"), s.get("managerEmployeeId")),
+          cb.equal(h.get("employeeId"), s.get("employeeId")),
+          cb.equal(h.get("weekStartDate"), s.get("weekStartDate")),
+          cb.equal(h.get("definingObjectiveId"), f.definingObjectiveId()));
+      p.add(cb.exists(sub));
+    }
+    if (f.priority() != null) {
+      p.add(cb.exists(commitmentExists(cb, query, s, "priority", f.priority())));
+    }
+    if (f.workType() != null) {
+      p.add(cb.exists(commitmentExists(cb, query, s, "workType", f.workType())));
+    }
+    if (f.alignmentStatus() != null) {
+      p.add(cb.exists(commitmentExists(cb, query, s, "alignmentStatus", f.alignmentStatus())));
+    }
+    return p;
+  }
+
+  /**
+   * A correlated EXISTS over {@code weekly_commitment} on the outer plan id + an attribute equals.
+   */
+  private static Subquery<UUID> commitmentExists(
+      CriteriaBuilder cb,
+      CriteriaQuery<?> query,
+      Root<ManagerPlanSummary> s,
+      String attribute,
+      Object value) {
+    Subquery<UUID> sub = query.subquery(UUID.class);
+    Root<WeeklyCommitment> wc = sub.from(WeeklyCommitment.class);
+    sub.select(wc.get("id"));
+    sub.where(
+        cb.equal(wc.get("weeklyPlanId"), s.get("weeklyPlanId")),
+        cb.equal(wc.get(attribute), value));
+    return sub;
   }
 
   private static List<Order> orders(

@@ -5,20 +5,32 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.st6.wc.audit.repo.AuditEventRepository;
+import com.st6.wc.commitment.WeeklyCommitment;
+import com.st6.wc.commitment.repo.WeeklyCommitmentRepository;
 import com.st6.wc.employee.Employee;
 import com.st6.wc.employee.repo.EmployeeRepository;
+import com.st6.wc.enums.AlignmentStatus;
+import com.st6.wc.enums.CommitmentKind;
+import com.st6.wc.enums.Confidence;
 import com.st6.wc.enums.PlanState;
+import com.st6.wc.enums.Priority;
 import com.st6.wc.enums.ReviewStatus;
 import com.st6.wc.enums.RoleType;
+import com.st6.wc.enums.WorkType;
 import com.st6.wc.plan.WeeklyPlan;
 import com.st6.wc.plan.repo.WeeklyPlanRepository;
+import com.st6.wc.projection.ManagerHeatmapCell;
 import com.st6.wc.projection.ManagerPlanSummary;
+import com.st6.wc.projection.repo.ManagerHeatmapCellRepository;
 import com.st6.wc.projection.repo.ManagerPlanSummaryRepository;
+import com.st6.wc.rcdo.DefiningObjective;
+import com.st6.wc.rcdo.repo.DefiningObjectiveRepository;
 import com.st6.wc.relationship.ManagerRelationship;
 import com.st6.wc.relationship.repo.ManagerRelationshipRepository;
 import com.st6.wc.support.AbstractAppBootTest;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -54,12 +66,17 @@ class ManagerCommandCenterEndpointTest extends AbstractAppBootTest {
   @Autowired private ManagerRelationshipRepository relationships;
   @Autowired private ManagerPlanSummaryRepository summaries;
   @Autowired private AuditEventRepository auditEvents;
+  @Autowired private WeeklyCommitmentRepository commitments;
+  @Autowired private ManagerHeatmapCellRepository heatmapCells;
+  @Autowired private DefiningObjectiveRepository definingObjectives;
 
   @AfterEach
   void cleanup() {
     auditEvents
         .deleteAll(); // the IC-denial test writes an authorization-denial audit (FK→employee)
+    commitments.deleteAll(); // FK → weekly_plan: delete before plans (§38 teardown FK-order)
     summaries.deleteAll();
+    heatmapCells.deleteAll(); // FK → employee + defining_objective: delete before employees
     plans.deleteAll();
     relationships.deleteAll();
     employees.deleteAll();
@@ -94,18 +111,22 @@ class ManagerCommandCenterEndpointTest extends AbstractAppBootTest {
     return plans.saveAndFlush(p).getId();
   }
 
-  /** Seed a manager_plan_summary for (manager, report) with the fields the filters/sort assert. */
-  private void saveSummary(
+  /**
+   * Seed a manager_plan_summary for (manager, report) with the fields the filters/sort assert.
+   * Returns the backing weekly_plan id so cross-table commitment fixtures can attach to it.
+   */
+  private UUID saveSummary(
       UUID managerId,
       UUID reportId,
       PlanState planState,
       ReviewStatus reviewStatus,
       boolean overdue) {
+    UUID planId = savePlan(reportId, planState);
     ManagerPlanSummary s = new ManagerPlanSummary();
     s.setId(UUID.randomUUID());
     s.setManagerEmployeeId(managerId);
     s.setEmployeeId(reportId);
-    s.setWeeklyPlanId(savePlan(reportId, planState));
+    s.setWeeklyPlanId(planId);
     s.setWeekStartDate(WEEK);
     s.setPlanState(planState);
     s.setReviewStatus(reviewStatus);
@@ -120,6 +141,34 @@ class ManagerCommandCenterEndpointTest extends AbstractAppBootTest {
     s.setUnresolvedDisputeCount(0);
     s.setUpdatedAt(Instant.parse("2026-06-03T12:00:00Z"));
     summaries.saveAndFlush(s);
+    return planId;
+  }
+
+  /** Seed a commitment on a plan — the source for the priority/workType/alignmentStatus EXISTS. */
+  private void saveCommitment(
+      UUID planId, Priority priority, WorkType workType, AlignmentStatus alignmentStatus) {
+    WeeklyCommitment c = new WeeklyCommitment();
+    c.setId(UUID.randomUUID());
+    c.setWeeklyPlanId(planId);
+    c.setCommitmentKind(CommitmentKind.PLANNED);
+    c.setTitle("commitment");
+    c.setPriority(priority);
+    c.setWorkType(workType);
+    c.setConfidence(Confidence.MEDIUM);
+    c.setAlignmentStatus(alignmentStatus);
+    commitments.saveAndFlush(c);
+  }
+
+  /** Seed a heatmap cell at the full grain — the source for the definingObjectiveId EXISTS. */
+  private void saveHeatmapCell(UUID managerId, UUID reportId, UUID definingObjectiveId) {
+    ManagerHeatmapCell h = new ManagerHeatmapCell();
+    h.setId(UUID.randomUUID());
+    h.setManagerEmployeeId(managerId);
+    h.setEmployeeId(reportId);
+    h.setWeekStartDate(WEEK);
+    h.setDefiningObjectiveId(definingObjectiveId);
+    h.setUpdatedAt(Instant.parse("2026-06-03T12:00:00Z"));
+    heatmapCells.saveAndFlush(h);
   }
 
   // --- scoping + B.20 envelope: a manager sees ONLY their own reports' rows for the week ----
@@ -322,5 +371,188 @@ class ManagerCommandCenterEndpointTest extends AbstractAppBootTest {
         .andExpect(jsonPath("$.content[0].employeeId").value(r1.getId().toString()))
         .andExpect(jsonPath("$.content[0].misalignedCount").value(1))
         .andExpect(jsonPath("$.content[0].updatedAt").exists());
+  }
+
+  // === 6.5a-2 cross-table EXISTS filters (REQ-F-023) ====================================
+
+  // --- definingObjectiveId: EXISTS over manager_heatmap_cell at the full grain ----
+  @Test
+  void commandCenter_filterByDefiningObjective() throws Exception {
+    Employee mgr = saveEmployee("Manager", RoleType.MANAGER);
+    Employee alice = saveEmployee("Alice", RoleType.IC); // touches DO-1
+    Employee bob = saveEmployee("Bob", RoleType.IC); // touches DO-2
+    saveActiveRelationship(mgr.getId(), alice.getId());
+    saveActiveRelationship(mgr.getId(), bob.getId());
+    saveSummary(mgr.getId(), alice.getId(), PlanState.LOCKED, ReviewStatus.NOT_REVIEWED, false);
+    saveSummary(mgr.getId(), bob.getId(), PlanState.LOCKED, ReviewStatus.NOT_REVIEWED, false);
+    List<DefiningObjective> dos = definingObjectives.findAllByOrderByIdAsc();
+    UUID do1 = dos.get(0).getId();
+    UUID do2 = dos.get(1).getId();
+    saveHeatmapCell(mgr.getId(), alice.getId(), do1);
+    saveHeatmapCell(mgr.getId(), bob.getId(), do2);
+
+    mvc.perform(
+            get(URL)
+                .param("weekStart", WEEK.toString())
+                .param("definingObjectiveId", do1.toString())
+                .header(HEADER, mgr.getId().toString()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.content.length()").value(1))
+        .andExpect(jsonPath("$.content[0].employeeDisplayName").value("Alice"))
+        .andExpect(jsonPath("$.page.totalElements").value(1));
+  }
+
+  // --- priority / workType / alignmentStatus: EXISTS over weekly_commitment (s.weeklyPlanId) ----
+  @Test
+  void commandCenter_filterByCommitmentAttributes() throws Exception {
+    Employee mgr = saveEmployee("Manager", RoleType.MANAGER);
+    Employee alice = saveEmployee("Alice", RoleType.IC); // P0 / STRATEGIC / MISALIGNED
+    Employee bob = saveEmployee("Bob", RoleType.IC); // P1 / MAINTENANCE / ALIGNED
+    saveActiveRelationship(mgr.getId(), alice.getId());
+    saveActiveRelationship(mgr.getId(), bob.getId());
+    UUID alicePlan =
+        saveSummary(mgr.getId(), alice.getId(), PlanState.LOCKED, ReviewStatus.NOT_REVIEWED, false);
+    UUID bobPlan =
+        saveSummary(mgr.getId(), bob.getId(), PlanState.LOCKED, ReviewStatus.NOT_REVIEWED, false);
+    saveCommitment(alicePlan, Priority.P0, WorkType.STRATEGIC, AlignmentStatus.MISALIGNED);
+    saveCommitment(bobPlan, Priority.P1, WorkType.MAINTENANCE, AlignmentStatus.ALIGNED);
+    String mgrId = mgr.getId().toString();
+
+    mvc.perform(
+            get(URL)
+                .param("weekStart", WEEK.toString())
+                .param("priority", "P0")
+                .header(HEADER, mgrId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.content.length()").value(1))
+        .andExpect(jsonPath("$.content[0].employeeDisplayName").value("Alice"));
+    mvc.perform(
+            get(URL)
+                .param("weekStart", WEEK.toString())
+                .param("workType", "STRATEGIC")
+                .header(HEADER, mgrId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.content.length()").value(1))
+        .andExpect(jsonPath("$.content[0].employeeDisplayName").value("Alice"));
+    mvc.perform(
+            get(URL)
+                .param("weekStart", WEEK.toString())
+                .param("alignmentStatus", "MISALIGNED")
+                .header(HEADER, mgrId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.content.length()").value(1))
+        .andExpect(jsonPath("$.content[0].employeeDisplayName").value("Alice"));
+  }
+
+  // --- cross-table filters AND-combine with the summary-level filters ----
+  @Test
+  void commandCenter_crossTableFiltersCombineWithSummaryFilters() throws Exception {
+    Employee mgr = saveEmployee("Manager", RoleType.MANAGER);
+    Employee alice = saveEmployee("Alice", RoleType.IC); // LOCKED + P0 + DO-1 → matches all
+    Employee bob = saveEmployee("Bob", RoleType.IC); // RECONCILING + P0 + DO-1 → fails planState
+    Employee carol = saveEmployee("Carol", RoleType.IC); // LOCKED + P1 + DO-1 → fails priority
+    saveActiveRelationship(mgr.getId(), alice.getId());
+    saveActiveRelationship(mgr.getId(), bob.getId());
+    saveActiveRelationship(mgr.getId(), carol.getId());
+    UUID alicePlan =
+        saveSummary(mgr.getId(), alice.getId(), PlanState.LOCKED, ReviewStatus.NOT_REVIEWED, false);
+    UUID bobPlan =
+        saveSummary(
+            mgr.getId(), bob.getId(), PlanState.RECONCILING, ReviewStatus.NOT_REVIEWED, false);
+    UUID carolPlan =
+        saveSummary(mgr.getId(), carol.getId(), PlanState.LOCKED, ReviewStatus.NOT_REVIEWED, false);
+    UUID do1 = definingObjectives.findAllByOrderByIdAsc().get(0).getId();
+    saveHeatmapCell(mgr.getId(), alice.getId(), do1);
+    saveHeatmapCell(mgr.getId(), bob.getId(), do1);
+    saveHeatmapCell(mgr.getId(), carol.getId(), do1);
+    saveCommitment(alicePlan, Priority.P0, WorkType.STRATEGIC, AlignmentStatus.MISALIGNED);
+    saveCommitment(bobPlan, Priority.P0, WorkType.STRATEGIC, AlignmentStatus.MISALIGNED);
+    saveCommitment(carolPlan, Priority.P1, WorkType.STRATEGIC, AlignmentStatus.MISALIGNED);
+    String mgrId = mgr.getId().toString();
+
+    // planState=LOCKED AND priority=P0 AND definingObjectiveId=DO-1 → only Alice
+    mvc.perform(
+            get(URL)
+                .param("weekStart", WEEK.toString())
+                .param("planState", "LOCKED")
+                .param("priority", "P0")
+                .param("definingObjectiveId", do1.toString())
+                .header(HEADER, mgrId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.content.length()").value(1))
+        .andExpect(jsonPath("$.content[0].employeeDisplayName").value("Alice"));
+
+    // a combination matching nobody → empty content, totalElements=0
+    mvc.perform(
+            get(URL)
+                .param("weekStart", WEEK.toString())
+                .param("planState", "LOCKED")
+                .param("priority", "P2") // nobody has a P2 commitment
+                .header(HEADER, mgrId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.content.length()").value(0))
+        .andExpect(jsonPath("$.page.totalElements").value(0));
+  }
+
+  // --- the IDOR re-pin: cross-table filters NEVER widen the manager scope ----
+  @Test
+  void commandCenter_crossTableFilters_idorScopeHolds() throws Exception {
+    Employee mgr = saveEmployee("Manager", RoleType.MANAGER);
+    Employee alice = saveEmployee("Alice", RoleType.IC);
+    saveActiveRelationship(mgr.getId(), alice.getId());
+    UUID alicePlan =
+        saveSummary(mgr.getId(), alice.getId(), PlanState.LOCKED, ReviewStatus.NOT_REVIEWED, false);
+    UUID do1 = definingObjectives.findAllByOrderByIdAsc().get(0).getId();
+    saveHeatmapCell(mgr.getId(), alice.getId(), do1);
+    saveCommitment(alicePlan, Priority.P0, WorkType.STRATEGIC, AlignmentStatus.MISALIGNED);
+
+    // another manager's report that ALSO matches the SAME cross-table filter values
+    Employee other = saveEmployee("OtherMgr", RoleType.MANAGER);
+    Employee zara = saveEmployee("Zara", RoleType.IC);
+    saveActiveRelationship(other.getId(), zara.getId());
+    UUID zaraPlan =
+        saveSummary(
+            other.getId(), zara.getId(), PlanState.LOCKED, ReviewStatus.NOT_REVIEWED, false);
+    saveHeatmapCell(other.getId(), zara.getId(), do1);
+    saveCommitment(zaraPlan, Priority.P0, WorkType.STRATEGIC, AlignmentStatus.MISALIGNED);
+
+    // mgr applies the cross-table filters → still ONLY Alice; Zara stays unreachable (not hidden)
+    mvc.perform(
+            get(URL)
+                .param("weekStart", WEEK.toString())
+                .param("definingObjectiveId", do1.toString())
+                .param("priority", "P0")
+                .header(HEADER, mgr.getId().toString()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.content.length()").value(1))
+        .andExpect(jsonPath("$.content[0].employeeDisplayName").value("Alice"))
+        // totalElements==1 pins the COUNT query scope too — Zara is excluded from the total, not
+        // just the page (a count-scope leak would expose a cross-manager row's existence).
+        .andExpect(jsonPath("$.page.totalElements").value(1))
+        .andExpect(
+            jsonPath("$.content[*].employeeDisplayName")
+                .value(org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasItem("Zara"))));
+  }
+
+  // --- a plan with no matching commitment is excluded by a commitment-EXISTS filter ----
+  // (manager_plan_summary.weekly_plan_id is NOT NULL, so a summary always has a plan; the
+  // realizable
+  //  exclusion case is "plan exists but has no commitment matching the filter" — no plan → no
+  // match.)
+  @Test
+  void commandCenter_planWithNoMatchingCommitment_excludedByCommitmentFilter() throws Exception {
+    Employee mgr = saveEmployee("Manager", RoleType.MANAGER);
+    Employee alice = saveEmployee("Alice", RoleType.IC); // plan seeded, but NO commitments
+    saveActiveRelationship(mgr.getId(), alice.getId());
+    saveSummary(mgr.getId(), alice.getId(), PlanState.LOCKED, ReviewStatus.NOT_REVIEWED, false);
+
+    mvc.perform(
+            get(URL)
+                .param("weekStart", WEEK.toString())
+                .param("priority", "P0")
+                .header(HEADER, mgr.getId().toString()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.content.length()").value(0))
+        .andExpect(jsonPath("$.page.totalElements").value(0));
   }
 }
