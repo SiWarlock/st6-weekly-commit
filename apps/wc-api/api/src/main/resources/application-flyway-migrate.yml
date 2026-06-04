@@ -1,7 +1,11 @@
 # Migration Job profile (D.5): the ONLY workload where flyway runs. No web server (one-shot Job, no probes).
-# No migrations exist yet (Phase 1 adds V1..); this profile only flips the property.
+# Loads BOTH the schema + read-only reference migrations (db/migration: V1-V3 schema, V4 RCDO) AND
+# the demo-persona seed (db/demo-seed: V5 personas/relationships, V6 fixtures — task 10.2 Opt-1).
+# The demo seed lives in its own location so the deploy Job seeds it while the shared integration-test
+# harness (which re-enables Flyway on the default db/migration only) never does.
 spring:
   flyway:
     enabled: true
+    locations: classpath:db/migration,classpath:db/demo-seed
   main:
     web-application-type: none
