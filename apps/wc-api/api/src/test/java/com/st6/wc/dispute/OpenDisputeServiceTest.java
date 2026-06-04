@@ -207,6 +207,10 @@ class OpenDisputeServiceTest {
     assertThatThrownBy(() -> service.open(manager(), COMMITMENT_ID, request()))
         .isInstanceOf(IllegalStateTransitionException.class);
     verify(disputes, never()).saveAndFlush(any());
+    // 5.6 REQ-F-010 (Q1): a DRAFT-state rejection is a workflow 409, NOT an authorization denial —
+    // the manager IS authorized; no audit_event is written (§15/§17/§25; denials audit, state-409s
+    // do not).
+    verify(auditService, never()).record(any(), any(), any(), any(), any(), any());
   }
 
   // --- review re-derivation: an already-REVIEWED review flips to REVIEWED_WITH_DISPUTES ----

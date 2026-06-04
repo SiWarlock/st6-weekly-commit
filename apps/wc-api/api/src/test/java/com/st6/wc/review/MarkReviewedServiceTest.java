@@ -142,6 +142,10 @@ class MarkReviewedServiceTest {
     assertThatThrownBy(() -> service.markReviewed(manager(), REVIEW_ID, null))
         .isInstanceOf(IllegalStateTransitionException.class);
     verify(reviews, never()).save(any());
+    // 5.6 REQ-F-010 (Q1): a DRAFT-state rejection is a workflow 409, NOT an authorization denial —
+    // the manager IS authorized; no audit_event is written (§15/§17/§25; denials audit, state-409s
+    // do not).
+    verify(auditService, never()).record(any(), any(), any(), any(), any(), any());
   }
 
   // --- null request body (no summaryNote) → status still derived, note untouched ----

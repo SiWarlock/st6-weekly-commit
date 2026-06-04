@@ -126,8 +126,24 @@ class PlanByIdEndpointTest extends AbstractAppBootTest {
     return plans.saveAndFlush(p);
   }
 
+  private static final UUID SO = UUID.fromString("c0000000-0000-0000-0000-000000000001");
+
   private void savePlannedCommitment(UUID planId) {
     saveCommitmentReturning(planId);
+  }
+
+  private WeeklyCommitment saveCommitmentWithOutcome(UUID planId, UUID soId) {
+    WeeklyCommitment c = new WeeklyCommitment();
+    c.setId(UUID.randomUUID());
+    c.setWeeklyPlanId(planId);
+    c.setCommitmentKind(CommitmentKind.PLANNED);
+    c.setTitle("Ship it");
+    c.setSupportingOutcomeId(soId);
+    c.setPriority(Priority.P1);
+    c.setWorkType(WorkType.STRATEGIC);
+    c.setConfidence(Confidence.MEDIUM);
+    c.setAlignmentStatus(AlignmentStatus.ALIGNED);
+    return commitments.saveAndFlush(c);
   }
 
   private WeeklyCommitment saveCommitmentReturning(UUID planId) {
@@ -152,6 +168,35 @@ class PlanByIdEndpointTest extends AbstractAppBootTest {
     d.setFlagType(FlagType.MISALIGNED);
     d.setManagerNote("please re-scope to the SO");
     return disputes.saveAndFlush(d);
+  }
+
+  // --- 5.6 REQ-F-009: an active direct manager reads a direct report's DRAFT plan → 200 with the
+  // draft commitment details (title + chess fields + SO breadcrumb); REQ-F-010: managerReview null
+  // +
+  // NO manager affordances (formal review/dispute begin only post-lock). ----
+  @Test
+  void managerReadsDirectReportDraftPlan_200_withDetailsNoReviewNoManagerAffordances()
+      throws Exception {
+    Employee ic = saveEmployee(RoleType.IC, "ada@x.test");
+    Employee mgr = saveEmployee(RoleType.MANAGER, "boss@x.test");
+    saveRelationship(mgr.getId(), ic.getId());
+    WeeklyPlan plan = savePlan(ic.getId()); // DRAFT
+    saveCommitmentWithOutcome(plan.getId(), SO);
+
+    mvc.perform(get("/api/plans/" + plan.getId()).header(HEADER, mgr.getId().toString()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.state").value("DRAFT"))
+        // REQ-F-009: the draft commitment details are visible to the direct manager
+        .andExpect(jsonPath("$.commitments[0].title").value("Ship it"))
+        .andExpect(jsonPath("$.commitments[0].priority").value("P1"))
+        .andExpect(jsonPath("$.commitments[0].workType").value("STRATEGIC"))
+        .andExpect(jsonPath("$.commitments[0].confidence").value("MEDIUM"))
+        .andExpect(jsonPath("$.commitments[0].supportingOutcomeBreadcrumb").exists())
+        // REQ-F-010: no formal review before lock — managerReview null + no manager affordances
+        .andExpect(jsonPath("$.managerReview").doesNotExist())
+        .andExpect(jsonPath("$.commitments[0].allowedActions[?(@ == 'OPEN_DISPUTE')]").isEmpty())
+        .andExpect(jsonPath("$.commitments[0].allowedActions[?(@ == 'MARK_REVIEWED')]").isEmpty());
+    assertThat(auditEvents.count()).as("an authorized manager read writes no audit").isZero();
   }
 
   // --- 5.3b (the 9.11a unblock proof): a commitment with an OPEN dispute nests `dispute` in the
