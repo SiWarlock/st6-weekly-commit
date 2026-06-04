@@ -4,7 +4,7 @@
 - **Phase:** Phase 6 (manager projections, command center & heatmap) — entry.
 - **Role:** implementer `st6-main-wc-api-implementer` (`0095db66`) — **session doc authored by `st6-main-orchestrator` (`98bd8384`)**, which reviewed every Step-2.5 + Step-9 this round. **The implementer's `/session-end` was SKIPPED by lead decision** (the impl was at 74% after a deep 6-slice session — a full session-end audit+write risked crossing ~80% into the confabulation edge); the orchestrator (healthy, reviewed every slice) writes this continuity record in its place, then the impl is cycled.
 - **Predecessor:** [015](015-2026-06-03-backend-phase5-complete.md) (Phase 5 COMPLETE — 5.5/5.5b/5.6/5.7).
-- **Successor:** _(Phase 6 6.3b — brief 069: the 4 dispute/mark-reviewed trigger wirings + RISK-003 rollback + §17 integration — fresh impl.)_
+- **Successor:** [017](017-2026-06-04-backend-phase6-triggers-badges-command-center.md) (Phase 6 — §9 trigger set complete 6.3b + RiskBadgeDeriver 6.4 + E13 command center 6.5a; impl cycle).
 
 ## Why this session existed
 
