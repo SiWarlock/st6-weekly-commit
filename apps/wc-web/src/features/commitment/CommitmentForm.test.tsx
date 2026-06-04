@@ -70,7 +70,6 @@ function editable(
     workType: 'STRATEGIC',
     confidence: 'HIGH',
     alignmentStatus: 'NEEDS_REVIEW',
-    hasUnresolvedDispute: false,
     allowedActions: [],
     version: 0,
     ...overrides,

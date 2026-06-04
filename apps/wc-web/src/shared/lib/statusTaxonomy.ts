@@ -110,6 +110,30 @@ export const SYNC_STATUS_TAXONOMY: Record<string, TaxonomyEntry> = {
   },
 };
 
+/**
+ * The §3 alignment-dispute status taxonomy (B.1 `DisputeStatus`) — the SINGLE
+ * SOURCE OF VISUAL TRUTH for the dispute status pill (glyph+text+tone, never
+ * color alone, §7/REQ-S-005). `OPEN` = manager flag pending IC (failure);
+ * `IC_RESPONDED` = ball back with the manager (warning); `RESOLVED` = closed
+ * (success — though a RESOLVED dispute is null on the wire, B.6, so this is the
+ * stepper's terminal label, not a live pill). 9.11a. Unknown → undefined.
+ */
+export const DISPUTE_STATUS_TAXONOMY: Record<string, TaxonomyEntry> = {
+  OPEN: { tone: 'failure', icon: HiExclamationCircle, label: 'Open' },
+  IC_RESPONDED: {
+    tone: 'warning',
+    icon: HiArrowNarrowRight,
+    label: 'IC responded',
+  },
+  RESOLVED: { tone: 'success', icon: HiCheckCircle, label: 'Resolved' },
+};
+
+/** The §3 dispute `FlagType` labels (B.1) — the manager's flag reason. */
+export const FLAG_TYPE_LABEL: Record<string, string> = {
+  NEEDS_REVISION: 'Needs revision',
+  MISALIGNED: 'Misaligned',
+};
+
 // ── ST.3 chess-layer atom taxonomies (Cadence atoms.jsx maps) ────────────────
 
 /**

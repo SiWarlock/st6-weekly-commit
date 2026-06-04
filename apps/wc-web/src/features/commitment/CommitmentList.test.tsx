@@ -26,6 +26,11 @@ vi.mock('./DeleteCommitmentButton', () => ({
     commitment: WeeklyCommitmentDto;
   }) => <div data-testid="delete-stub" data-id={commitment.id} />,
 }));
+vi.mock('../dispute/DisputePanel', () => ({
+  DisputePanel: ({ commitment }: { commitment: WeeklyCommitmentDto }) => (
+    <div data-testid="dispute-panel-stub" data-id={commitment.id} />
+  ),
+}));
 
 function commitment(
   overrides: Partial<WeeklyCommitmentDto> & { id: string },
@@ -38,7 +43,6 @@ function commitment(
     workType: 'STRATEGIC',
     confidence: 'HIGH',
     alignmentStatus: 'ALIGNED',
-    hasUnresolvedDispute: false,
     allowedActions: [],
     version: 0,
     ...overrides,
@@ -465,5 +469,83 @@ describe('CommitmentList → ST.5b card display (RcdoBreadcrumb, OutcomePill, mu
     const draftCard = rowOf('Draft work');
     expect(draftCard.querySelector('[data-cy="outcome-pill"]')).toBeNull();
     expect(draftCard).not.toHaveAttribute('data-readonly');
+  });
+});
+
+// 9.11a — disputes: the failure left-accent + the per-row DisputePanel mount.
+describe('CommitmentList → disputes (9.11a)', () => {
+  const rowOf = (title: string) =>
+    screen
+      .getByText(title)
+      .closest('[data-cy="commitment-row"]') as HTMLElement;
+
+  function disputed(
+    overrides: Partial<WeeklyCommitmentDto> & { id: string },
+  ): WeeklyCommitmentDto {
+    return commitment({
+      ...overrides,
+      dispute: {
+        id: `disp-${overrides.id}`,
+        commitmentId: overrides.id,
+        managerEmployeeId: 'mgr-1',
+        status: 'OPEN',
+        flagType: 'MISALIGNED',
+        managerNote: 'Off-strategy.',
+        allowedActions: [],
+        version: 0,
+      },
+    });
+  }
+
+  it('disputed_row_gets_failure_left_accent: a commitment WITH a dispute renders the failure left-accent; precedence — dispute (failure) wins over UNPLANNED (accent)', () => {
+    render(
+      <CommitmentList
+        planState="LOCKED"
+        planId="plan-1"
+        commitments={[
+          disputed({ id: 'c-1', title: 'Disputed planned' }),
+          disputed({
+            id: 'c-2',
+            title: 'Disputed unplanned',
+            commitmentKind: 'UNPLANNED',
+            workType: 'UNPLANNED',
+          }),
+          commitment({ id: 'c-3', title: 'Plain planned' }),
+        ]}
+      />,
+    );
+    // dispute → failure left-accent.
+    expect(rowOf('Disputed planned').className).toContain(
+      'border-l-tone-failure-solid',
+    );
+    // dispute wins over unplanned (the disputed-unplanned row is failure, not accent).
+    expect(rowOf('Disputed unplanned').className).toContain(
+      'border-l-tone-failure-solid',
+    );
+    expect(rowOf('Disputed unplanned').className).not.toContain(
+      'border-l-tone-accent-solid',
+    );
+    // no dispute, planned → no left-accent.
+    expect(rowOf('Plain planned').className).not.toContain('border-l-');
+  });
+
+  it('dispute_panel_mounts_per_row: every row mounts the DisputePanel (the open-form/stepper container, server-gated within)', () => {
+    render(
+      <CommitmentList
+        planState="LOCKED"
+        planId="plan-1"
+        commitments={[
+          commitment({ id: 'c-1', title: 'Row one' }),
+          disputed({ id: 'c-2', title: 'Row two' }),
+        ]}
+      />,
+    );
+    const panels = document.querySelectorAll(
+      '[data-testid="dispute-panel-stub"]',
+    );
+    expect(panels).toHaveLength(2);
+    expect(
+      rowOf('Row two').querySelector('[data-testid="dispute-panel-stub"]'),
+    ).not.toBeNull();
   });
 });

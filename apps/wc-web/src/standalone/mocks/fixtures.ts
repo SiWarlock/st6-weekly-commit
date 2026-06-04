@@ -233,7 +233,7 @@ function commitment(
             partial.carryForwardSourceCommitmentId,
         }
       : {}),
-    hasUnresolvedDispute: partial.hasUnresolvedDispute ?? false,
+    ...(partial.dispute !== undefined ? { dispute: partial.dispute } : {}),
     allowedActions: partial.allowedActions ?? [],
     version: partial.version ?? 1,
   };
@@ -398,7 +398,20 @@ const planIc3: WeeklyPlanDto = {
       confidence: 'MEDIUM',
       alignmentStatus: 'NEEDS_REVIEW',
       reconciliationOutcome: 'CARRIED_FORWARD',
-      hasUnresolvedDispute: true,
+      // An OPEN alignment dispute (9.11a) so the standalone demo shows the
+      // disputed state (failure left-accent + the dispute panel). The dispute's
+      // own allowedActions are empty (dormant until backend 5.5b emits them).
+      dispute: {
+        id: 'dispute-ic-3-soc2',
+        commitmentId: 'commit-ic-3-soc2',
+        managerEmployeeId: MGR_1,
+        status: 'OPEN',
+        flagType: 'MISALIGNED',
+        managerNote:
+          'This reads as a maintenance task — re-link it to the reliability outcome or re-scope.',
+        allowedActions: [],
+        version: 0,
+      },
       // already carried out → no further CARRY_FORWARD affordance.
       allowedActions: [],
     }),

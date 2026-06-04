@@ -71,7 +71,6 @@ function commitment(
     workType: 'STRATEGIC',
     confidence: 'HIGH',
     alignmentStatus: 'ALIGNED',
-    hasUnresolvedDispute: false,
     allowedActions: [],
     version: 0,
     ...overrides,

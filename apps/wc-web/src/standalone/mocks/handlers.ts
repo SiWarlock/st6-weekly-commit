@@ -259,7 +259,6 @@ function newCommitment(
     workType: kind === 'UNPLANNED' ? 'UNPLANNED' : body.workType,
     confidence: body.confidence,
     alignmentStatus: body.alignmentStatus ?? 'NEEDS_REVIEW',
-    hasUnresolvedDispute: false,
     allowedActions: [],
     version: 1,
   };

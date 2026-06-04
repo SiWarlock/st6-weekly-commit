@@ -58,6 +58,10 @@ export type EventKind =
 export type SyncRelatedType = 'WEEKLY_PLAN' | 'MANAGER_REVIEW_WEEK';
 /** Comment target (B.1 / §4 / §11) — flat one-level comments attach to a plan or a commitment. */
 export type CommentTargetType = 'PLAN' | 'COMMITMENT';
+/** Alignment-dispute lifecycle (B.1 / §3) — single-unresolved per commitment; null once RESOLVED. */
+export type DisputeStatus = 'OPEN' | 'IC_RESPONDED' | 'RESOLVED';
+/** Dispute flag kind (B.1 / §3) — why the manager flagged the commitment. */
+export type FlagType = 'NEEDS_REVISION' | 'MISALIGNED';
 
 // ── B.6 — WeeklyCommitmentDto (nested in B.5) ────────────────────────────────
 export interface RcdoBreadcrumbDto {
@@ -85,7 +89,13 @@ export interface WeeklyCommitmentDto {
   reconciliationOutcome?: ReconciliationOutcome;
   outcomeNote?: string;
   carryForwardSourceCommitmentId?: string;
-  hasUnresolvedDispute: boolean;
+  /**
+   * The commitment's current unresolved dispute (B.6 Option-A nest) — present
+   * while OPEN/IC_RESPONDED, `undefined` once RESOLVED (the nested object's
+   * presence + status is the single source of truth; the old `hasUnresolvedDispute`
+   * boolean is dropped). 9.11a.
+   */
+  dispute?: AlignmentDisputeDto;
   allowedActions: AllowedAction[];
   version: number;
 }
@@ -230,6 +240,48 @@ export interface CreateCommentRequest {
   targetType: CommentTargetType;
   targetId: string;
   body: string;
+}
+
+// ── B.8 — AlignmentDisputeDto (E17/E18/E19) + request DTOs ───────────────────
+/**
+ * One alignment dispute (B.8, nested in B.6 as `WeeklyCommitmentDto.dispute`).
+ * `managerEmployeeId` is the opener (the direct manager). `allowedActions` is the
+ * server-authoritative affordance set (§15) — **empty until backend 5.5b emits
+ * OPEN/RESPOND/RESOLVE** (the dormant-until-emitted §11 control). `managerNote`/
+ * `icResponse` render React-escaped (REQ-S-005). `resolvedAt` set once RESOLVED.
+ */
+export interface AlignmentDisputeDto {
+  id: string;
+  commitmentId: string;
+  managerEmployeeId: string;
+  status: DisputeStatus;
+  flagType: FlagType;
+  managerNote: string;
+  icResponse?: string;
+  resolvedAt?: string;
+  allowedActions: AllowedAction[];
+  version: number;
+}
+
+/** E17 `OpenDisputeRequest` (POST /api/commitments/{id}/disputes). */
+export interface OpenDisputeRequest {
+  flagType: FlagType;
+  managerNote: string;
+}
+
+/**
+ * E18 `RespondDisputeRequest` (POST /api/disputes/{id}/respond). ≥1 of the two
+ * is required (server-validated); clearable-optional typing under
+ * `exactOptionalPropertyTypes` (§12).
+ */
+export interface RespondDisputeRequest {
+  icResponse?: string | undefined;
+  newSupportingOutcomeId?: string | undefined;
+}
+
+/** E19 `ResolveDisputeRequest` (POST /api/disputes/{id}/resolve). */
+export interface ResolveDisputeRequest {
+  resolutionNote?: string | undefined;
 }
 
 // ── B.7 — MarkReviewedRequest (E16 request) ──────────────────────────────────

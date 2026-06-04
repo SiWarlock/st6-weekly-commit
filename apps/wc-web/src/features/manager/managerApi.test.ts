@@ -219,7 +219,6 @@ function makeCommitment(id: string): WeeklyCommitmentDto {
     workType: 'STRATEGIC',
     confidence: 'HIGH',
     alignmentStatus: 'MISALIGNED',
-    hasUnresolvedDispute: false,
     allowedActions: [],
     version: 0,
   };

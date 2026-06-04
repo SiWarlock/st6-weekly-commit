@@ -6,6 +6,7 @@ import { CarryForwardButton } from './CarryForwardButton';
 import { ReconciliationOutcomeForm } from './ReconciliationOutcomeForm';
 import { DeleteCommitmentButton } from './DeleteCommitmentButton';
 import { CommentThread } from '../comment/CommentThread';
+import { DisputePanel } from '../dispute/DisputePanel';
 import { PriorityTag } from './PriorityTag';
 import { WorkTypeTag } from './WorkTypeTag';
 import { ConfidenceMeter } from './ConfidenceMeter';
@@ -35,13 +36,15 @@ function alignmentRisk(c: WeeklyCommitmentDto): string | null {
 
 /**
  * The EARNED left-accent for a commitment card (Cadence `.wc-card--accent-*`,
- * ST.4): unplanned → accent (violet). The disputed → failure accent is DEFERRED
- * until `WeeklyCommitmentDto` carries a dispute signal (B.6 Option-A edit, which
- * also unblocks 9.11a) — add the `disputed` branch returning
- * `'border-l-2 border-l-tone-failure-solid'` then. NOT proxied via MISALIGNED
- * (distinct concept; already a RiskBadge). Returns '' when no accent is earned.
+ * ST.4): disputed → failure (red) takes precedence over unplanned → accent
+ * (violet) — a dispute is the higher-priority signal (9.11a). Keyed on the
+ * `dispute` nest's presence, NOT `alignmentStatus=MISALIGNED` (distinct concept;
+ * already a RiskBadge). Returns '' when no accent is earned.
  */
 function cardAccent(c: WeeklyCommitmentDto): string {
+  if (c.dispute) {
+    return 'border-l-2 border-l-tone-failure-solid';
+  }
   if (c.commitmentKind === 'UNPLANNED') {
     return 'border-l-2 border-l-tone-accent-solid';
   }
@@ -161,6 +164,11 @@ export function CommitmentList({
             {showOutcomeForm ? (
               <ReconciliationOutcomeForm commitment={c} planId={planId} />
             ) : null}
+            {/* Alignment-dispute surface (9.11a) — self-gated: the open form,
+                the lifecycle stepper + display, and the respond/resolve controls
+                all render off the server's dispute + allowedActions (dormant
+                until backend 5.5b emits the affordances). */}
+            <DisputePanel commitment={c} />
             {/* COMMENT-gated, lazy comment thread (9.11b) — renders nothing
                 unless the server permits COMMENT on this commitment. */}
             <CommentThread

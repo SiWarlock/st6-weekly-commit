@@ -28,7 +28,6 @@ const PLAN: WeeklyPlanDto = {
       workType: 'STRATEGIC',
       confidence: 'HIGH',
       alignmentStatus: 'NEEDS_REVIEW',
-      hasUnresolvedDispute: false,
       allowedActions: ['COMMENT'],
       version: 0,
     },

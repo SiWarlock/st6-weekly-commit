@@ -17,7 +17,6 @@ function commitment(allowedActions: AllowedAction[]): WeeklyCommitmentDto {
     workType: 'STRATEGIC',
     confidence: 'HIGH',
     alignmentStatus: 'ALIGNED',
-    hasUnresolvedDispute: false,
     allowedActions,
     version: 0,
   };
