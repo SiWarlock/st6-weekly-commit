@@ -23,6 +23,7 @@ import com.st6.wc.review.repo.ManagerReviewRepository;
 import com.st6.wc.web.IllegalStateTransitionException;
 import com.st6.wc.web.SecondOpenDisputeException;
 import com.st6.wc.web.ValidationException;
+import java.time.Clock;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -50,6 +51,7 @@ public class DisputeService {
   private final DisputeMapper disputeMapper;
   private final AuditService auditService;
   private final RcdoReadService rcdoReadService;
+  private final Clock clock;
 
   public DisputeService(
       DomainAuthorizationService authz,
@@ -60,7 +62,8 @@ public class DisputeService {
       ReviewStatusDeriver deriver,
       DisputeMapper disputeMapper,
       AuditService auditService,
-      RcdoReadService rcdoReadService) {
+      RcdoReadService rcdoReadService,
+      Clock clock) {
     this.authz = authz;
     this.disputes = disputes;
     this.commitments = commitments;
@@ -70,6 +73,7 @@ public class DisputeService {
     this.disputeMapper = disputeMapper;
     this.auditService = auditService;
     this.rcdoReadService = rcdoReadService;
+    this.clock = clock;
   }
 
   private static final List<DisputeStatus> UNRESOLVED =
@@ -179,10 +183,54 @@ public class DisputeService {
   }
 
   /**
-   * Re-derive an <strong>already-reviewed</strong> review's status on dispute-open ({@code REVIEWED
-   * → REVIEWED_WITH_DISPUTES}). A {@code NOT_REVIEWED} review is left untouched — opening a dispute
-   * must never mark a review reviewed (the deriver returns {@code REVIEWED}/{@code
-   * REVIEWED_WITH_DISPUTES} only).
+   * The active direct manager resolves an alignment dispute (task 5.5, E19): authorize
+   * manager-of-owner FIRST (the chokepoint — {@link
+   * DomainAuthorizationService#authorizeDisputeResolution}; the IC owner SEES the dispute via the
+   * plan read but cannot resolve it → {@code 403 IC_CANNOT_RESOLVE_DISPUTE}), guard the
+   * already-{@code RESOLVED} state ({@code 409 ILLEGAL_STATE_TRANSITION} — no re-resolve),
+   * transition {@code OPEN|IC_RESPONDED→RESOLVED} and stamp {@code resolvedAt} from the injected
+   * {@code Clock}, re-derive the parent review (an <strong>already-reviewed</strong> one only —
+   * resolving the LAST unresolved dispute flips {@code REVIEWED_WITH_DISPUTES→REVIEWED}; a {@code
+   * NOT_REVIEWED} review is left untouched, the shared {@link #reDeriveReviewStatus} guard), and
+   * emit a note-body-free {@code DISPUTE_RESOLVED} audit (§15). One {@code @Version}-guarded txn
+   * (dispute + the re-derived review; a concurrent double-resolve → {@code OptimisticLockingFailure
+   * → 409}). Body-less (E19 carries no {@code resolutionNote} in MVP); no projection change (the §9
+   * read-model is Phase-6 work).
+   */
+  @Transactional
+  public AlignmentDisputeDto resolve(UserPrincipal actor, UUID disputeId) {
+    authz.authorizeDisputeResolution(actor, disputeId); // chokepoint: manager-of-owner (IC→403)
+    AlignmentDispute dispute =
+        disputes.findById(disputeId).orElseThrow(ResourceNotFoundOrUnauthorizedException::new);
+    if (dispute.getStatus() == DisputeStatus.RESOLVED) {
+      throw new IllegalStateTransitionException(); // one-shot OPEN|IC_RESPONDED→RESOLVED
+    }
+    dispute.setStatus(DisputeStatus.RESOLVED);
+    dispute.setResolvedAt(clock.instant());
+    disputes.saveAndFlush(dispute); // flush BEFORE the re-derive so its count query sees RESOLVED
+
+    WeeklyCommitment commitment =
+        commitments
+            .findById(dispute.getCommitmentId())
+            .orElseThrow(ResourceNotFoundOrUnauthorizedException::new);
+    reDeriveReviewStatus(
+        commitment.getWeeklyPlanId()); // last unresolved cleared → WITH_DISPUTES→REVIEWED
+
+    auditService.record(
+        "DISPUTE_RESOLVED",
+        "AlignmentDispute",
+        dispute.getId(),
+        actor.employeeId(),
+        "Dispute resolved",
+        resolveMetadata(dispute)); // resolved status only — no managerNote/icResponse body (§15)
+    return disputeMapper.toDto(dispute);
+  }
+
+  /**
+   * Re-derive an <strong>already-reviewed</strong> review's status (dispute open {@code REVIEWED →
+   * REVIEWED_WITH_DISPUTES}, resolve {@code REVIEWED_WITH_DISPUTES → REVIEWED}). A {@code
+   * NOT_REVIEWED} review is left untouched — a dispute open/resolve must never mark a review
+   * reviewed (the deriver returns {@code REVIEWED}/{@code REVIEWED_WITH_DISPUTES} only).
    */
   private void reDeriveReviewStatus(UUID planId) {
     reviews
@@ -222,5 +270,16 @@ public class DisputeService {
           .put("supportingOutcomeId", revisedSupportingOutcomeId.toString());
     }
     return node.toString();
+  }
+
+  /**
+   * The {@code DISPUTE_RESOLVED} audit metadata (§18 escaped node): the resolved status only —
+   * never the {@code managerNote}/{@code icResponse} bodies (§15/REQ-S-006).
+   */
+  private static String resolveMetadata(AlignmentDispute dispute) {
+    return JsonNodeFactory.instance
+        .objectNode()
+        .put("status", dispute.getStatus().name())
+        .toString();
   }
 }

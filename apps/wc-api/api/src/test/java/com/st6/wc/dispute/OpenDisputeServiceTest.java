@@ -31,6 +31,7 @@ import com.st6.wc.review.ReviewStatusDeriver;
 import com.st6.wc.review.repo.ManagerReviewRepository;
 import com.st6.wc.web.IllegalStateTransitionException;
 import com.st6.wc.web.SecondOpenDisputeException;
+import java.time.Clock;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -72,7 +73,8 @@ class OpenDisputeServiceTest {
           deriver,
           disputeMapper,
           auditService,
-          rcdoReadService);
+          rcdoReadService,
+          Clock.systemUTC());
 
   private static final UUID COMMITMENT_ID = UUID.fromString("d0000000-0000-0000-0000-000000000001");
   private static final UUID PLAN_ID = UUID.fromString("b0000000-0000-0000-0000-000000000001");

@@ -52,4 +52,19 @@ public class DisputeController {
       @Valid @RequestBody RespondDisputeRequest req) {
     return disputeService.respond(principal, disputeId, req);
   }
+
+  /**
+   * {@code POST /api/disputes/{id}/resolve} (E19, §5 / §6 / §3) — the active direct manager
+   * resolves an alignment dispute ({@code OPEN|IC_RESPONDED→RESOLVED}). Thin: {@link
+   * DisputeService} authorizes manager-of-owner-only first (the chokepoint), so the plan-owning IC
+   * → 403 {@code IC_CANNOT_RESOLVE_DISPUTE} (they can SEE the dispute via the plan read but cannot
+   * resolve it), an unrelated/non-direct/missing actor → codeless 404. <strong>Body-less</strong> —
+   * E19 carries no request payload in MVP (any provided body is ignored). Returns the updated
+   * {@link AlignmentDisputeDto} ({@code RESOLVED}) with {@code 200}.
+   */
+  @PostMapping("/api/disputes/{id}/resolve")
+  public AlignmentDisputeDto resolve(
+      @AuthenticationPrincipal UserPrincipal principal, @PathVariable("id") UUID disputeId) {
+    return disputeService.resolve(principal, disputeId);
+  }
 }
