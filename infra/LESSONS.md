@@ -280,3 +280,45 @@ Two defenses: **(1)** when a boundary/policy scopes by resource-name prefix, **a
 
 **Rule:** A scoped resource-Deny/Allow on a name prefix is only correct if EVERY name in scope — including vendored-module-created roles named from keys/defaults, not your convention — matches the prefix; audit them all, and force module role names into the prefix (`iam_role_name`) rather than widening the scope.
 
+## <a id="20"></a>20. Bootstrap the remote-state backend with a SEPARATE sibling TF root on a LOCAL backend — it can't store its state in the bucket it's creating
+
+**Date:** 2026-06-04.
+**Source slice:** 12.12 (brief 087 — the deployed-demo cold-start root).
+
+The main `infra/terraform` root uses an S3 backend (`backend.tf`, partial config). But the S3 state bucket + DynamoDB lock that backend needs must exist **before** the first `terraform init` — a chicken-and-egg: you can't provision them *with* the main root (its state has nowhere to live yet).
+
+- **Solution = a SEPARATE sibling root `infra/terraform-bootstrap/` with a LOCAL backend** (omit the `backend` block entirely → Terraform defaults to local). It provisions exactly the two backend resources: the versioned + encrypted (AES256 SSE) + public-access-blocked S3 state bucket, and the DynamoDB lock table (`hash_key = "LockID"` type `S`, `PAY_PER_REQUEST` — the S3-backend lock *contract*, the key MUST be `LockID`). Run once by a human with admin creds, before the main root's first `init`.
+- **Deterministic naming, no random provider:** `wc-${env}-tfstate-${account_id}` (account id via `data.aws_caller_identity.current`) — re-apply finds the same name (idempotent); nothing stored in state for a suffix.
+- **The state store is the crown jewels → fail-closed:** `prevent_destroy = true` + `force_destroy = false` on both the bucket + table. A stray `terraform destroy` then fails closed; a real teardown requires commenting `prevent_destroy` out first (a documented one-line caveat — runbook b).
+- **The bootstrap's OWN state** is local + **gitignored** (`*.tfstate*` — the sibling dir is NOT covered by the main root's dir-scoped `.gitignore`, so it needs its own). OPTIONAL: `terraform init -migrate-state` moves it INTO the bucket it just created — but under a **DISTINCT key** (`wc/bootstrap.tfstate`), NEVER the main root's `wc/terraform.tfstate` (collision).
+- **Verify** (infra path): `fmt -check` + `init -backend=false` + `validate` + `tflint` rc=0 on the mini-root, **plus** re-run the main-root gate to prove the `backend.tf` comment pointer is inert (no regression). Real `init`/`apply` is HITL (runbook b, LESSONS §2). Outputs are non-secret resource names only (rule #7) — `state_bucket_name`/`lock_table_name` + a paste-ready `backend_config_hint`.
+
+**Rule:** bootstrap the remote-state backend with a SEPARATE sibling TF root on a LOCAL backend (it cannot store state in the bucket it creates); provision exactly the encrypted/versioned/public-blocked S3 bucket + the `LockID` DynamoDB lock; deterministic `account_id`-suffixed bucket name; `prevent_destroy` on both; gitignore the local state; optional `-migrate-state` under a DISTINCT key. (origin: 12.12)
+
+## <a id="21"></a>21. A no-leak secret-population helper: env → `jq -n env.X` → `--secret-string file:///dev/stdin` (no argv, no disk, no log, no history)
+
+**Date:** 2026-06-04.
+**Source slice:** 12.13 (brief 088 — the Auth0/Graph secret-population helper).
+
+A HITL helper that writes credential VALUES into Secrets Manager (`aws secretsmanager put-secret-value`) must satisfy rule #7 — no secret value reaches process argv (visible in `ps` / `/proc/<pid>/cmdline`), disk (temp files, the repo), a log/stdout, or the operator's shell history. The leak-proof mechanism (security-agent PASS):
+
+- **Build the secret JSON with `jq -n` reading from the ENVIRONMENT** — `env.MY_VALUE`, **NOT `--arg`** (`--arg my "$v"` puts the value in jq's argv → leaked). Pass it as a one-shot command-prefix assignment scoped to the single jq process: `MY_VALUE="$v" jq -n '{"key": env.MY_VALUE}'`.
+- **Pipe the JSON to `aws … put-secret-value --secret-string file:///dev/stdin`** — stdin; NEVER an inline `$VAR` (which hits argv), NEVER a temp file. (`mktemp` + `chmod 600` + `trap`-shred is the documented portable FALLBACK if `/dev/stdin` isn't viable — but the stdin pipe leaves nothing on disk.)
+- **`read -s` only for the TRUE secret** (e.g. a client secret); public OAuth/tenant config (issuer-uri, audience, ids) can use visible `read` so the operator confirms the paste — the uniform no-leak JSON wrap protects everything regardless.
+- **Input is env-or-interactive-`read`, NEVER a CLI arg** (lands in shell history) and NEVER a values file (an on-disk vector).
+- **`set -euo pipefail`, NO `set -x`/`-v`** (which echo values); the only output is secret-ids, key NAMES, and the `VersionId`/`ARN` success signal — never a value. A **`--dry-run`** redacts to `***` and makes ZERO mutating AWS calls (guard the put behind the dry-run check). jq program strings stay single-quoted literals referencing only `env.X` (operator values flow through the env, not string-interpolation) → no JSON-break / command injection.
+
+**Rule:** populate secrets via `env → jq -n env.X → aws put-secret-value --secret-string file:///dev/stdin`; `read -s` the true secret; env-or-prompt input (never a CLI arg / values file); `set -euo pipefail` with no `-x`; output only names + VersionId/ARN; a redacted zero-call `--dry-run`. (origin: 12.13)
+
+## <a id="22"></a>22. An `--app.job` runner-Job terminates ONLY via `--spring.main.web-application-type=none`; without it the Job hangs forever
+
+**Date:** 2026-06-04.
+**Source slice:** 12.14 (brief 089 — the rebuild-projections Job; caught the generation-cronjob gap).
+
+The one-shot `--app.job` runners (`ProjectionRebuildRunner`, `PlanShellGenerationRunner`) deliberately do NOT call `SpringApplication.exit` or close the context — termination relies ENTIRELY on launching with **`--spring.main.web-application-type=none`** (no web server → `main` returns → the JVM exits). A k8s Job/CronJob that launches such a runner **without** the arg starts a web server and **never reaches `Complete`** — it hangs to `backoffLimit`/timeout. (The migration Job avoids this because its `flyway-migrate` profile sets web-type=none; the runner-jobs must pass it as an arg since no profile does.)
+
+- Always `args: ["--app.job=<name>", "--spring.main.web-application-type=none"]` on a runner Job, + **`activeDeadlineSeconds`** as the operational backstop.
+- **Audit:** the generation-cronjob shipped WITHOUT the arg (no `application-generation.yml` set web-type=none) → its Jobs would hang forever. A manifest review of EVERY `--app.job` Job for the exit arg is the durable guard (caught + folded the fix at 12.14).
+
+**Rule:** every k8s `--app.job` runner-Job must launch with `--spring.main.web-application-type=none` (+ `activeDeadlineSeconds`); without it the runner starts a web server + the Job never completes. Audit all runner-Jobs for the arg. (origin: 12.14)
+
