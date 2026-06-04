@@ -23,12 +23,18 @@ import com.st6.wc.enums.DisputeStatus;
 import com.st6.wc.enums.FlagType;
 import com.st6.wc.enums.PlanState;
 import com.st6.wc.enums.Priority;
+import com.st6.wc.enums.ReviewStatus;
 import com.st6.wc.enums.RoleType;
 import com.st6.wc.enums.WorkType;
 import com.st6.wc.plan.repo.WeeklyPlanRepository;
+import com.st6.wc.projection.ProjectionRefresher;
+import com.st6.wc.projection.repo.ManagerPlanSummaryRepository;
 import com.st6.wc.relationship.ManagerRelationship;
 import com.st6.wc.relationship.repo.ManagerRelationshipRepository;
+import com.st6.wc.review.ManagerReview;
+import com.st6.wc.review.repo.ManagerReviewRepository;
 import com.st6.wc.support.AbstractAppBootTest;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -66,12 +72,17 @@ class PlanByIdEndpointTest extends AbstractAppBootTest {
   @Autowired private ManagerRelationshipRepository relationships;
   @Autowired private AlignmentDisputeRepository disputes;
   @Autowired private AuditEventRepository auditEvents;
+  @Autowired private ManagerReviewRepository reviews;
+  @Autowired private ManagerPlanSummaryRepository summaries;
+  @Autowired private ProjectionRefresher refresher;
 
   @AfterEach
   void cleanup() {
     auditEvents.deleteAll();
     disputes.deleteAll();
     commitments.deleteAll();
+    summaries.deleteAll(); // §38 FK-order: projection rows before plans/employees
+    reviews.deleteAll(); // FK → weekly_plan
     plans.deleteAll();
     relationships.deleteAll();
     employees.deleteAll();
@@ -240,6 +251,101 @@ class PlanByIdEndpointTest extends AbstractAppBootTest {
     mvc.perform(get("/api/plans/" + plan.getId()).header(HEADER, ic.getId().toString()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.commitments[0].dispute").doesNotExist());
+  }
+
+  private void saveReview(UUID planId, UUID managerId, ReviewStatus status) {
+    ManagerReview r = new ManagerReview();
+    r.setId(UUID.randomUUID());
+    r.setWeeklyPlanId(planId);
+    r.setManagerEmployeeId(managerId);
+    r.setStatus(status);
+    r.setReviewDueAt(Instant.parse("2026-06-08T22:00:00Z"));
+    reviews.saveAndFlush(r);
+  }
+
+  // === 6.8: MARK_REVIEWED plan-read affordance + real unresolvedDisputeCount ===
+
+  // --- 6.8: the active direct manager reading a report's LOCKED plan with a NOT_REVIEWED review
+  // sees MARK_REVIEWED on managerReview.allowedActions (the affordance MIRRORS E16's precondition).
+  // ---
+  @Test
+  void planRead_directManager_seesMarkReviewedAffordance() throws Exception {
+    Employee mgr = saveEmployee(RoleType.MANAGER, "boss@x.test");
+    Employee ic = saveEmployee(RoleType.IC, "ada@x.test");
+    saveRelationship(mgr.getId(), ic.getId());
+    WeeklyPlan plan = saveLockedPlan(ic.getId());
+    saveReview(plan.getId(), mgr.getId(), ReviewStatus.NOT_REVIEWED);
+
+    mvc.perform(get("/api/plans/" + plan.getId()).header(HEADER, mgr.getId().toString()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.managerReview.allowedActions[?(@ == 'MARK_REVIEWED')]").exists());
+  }
+
+  // --- 6.8 (§35 leak guard, load-bearing): the IC owner viewing their OWN plan sees an EMPTY
+  // managerReview.allowedActions — never MARK_REVIEWED (viewerIsDirectManager=false). ---
+  @Test
+  void planRead_icOwner_noMarkReviewedAffordance() throws Exception {
+    Employee mgr = saveEmployee(RoleType.MANAGER, "boss@x.test");
+    Employee ic = saveEmployee(RoleType.IC, "ada@x.test");
+    saveRelationship(mgr.getId(), ic.getId());
+    WeeklyPlan plan = saveLockedPlan(ic.getId());
+    saveReview(plan.getId(), mgr.getId(), ReviewStatus.NOT_REVIEWED);
+
+    mvc.perform(get("/api/plans/" + plan.getId()).header(HEADER, ic.getId().toString()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.managerReview.allowedActions").isEmpty());
+  }
+
+  // --- 6.8 (§31 subset): a REVIEWED review → no MARK_REVIEWED (already-reviewed; the affordance
+  // narrows to NOT_REVIEWED even though E16 would re-accept). ---
+  @Test
+  void planRead_reviewedReview_noMarkReviewedAffordance() throws Exception {
+    Employee mgr = saveEmployee(RoleType.MANAGER, "boss@x.test");
+    Employee ic = saveEmployee(RoleType.IC, "ada@x.test");
+    saveRelationship(mgr.getId(), ic.getId());
+    WeeklyPlan plan = saveLockedPlan(ic.getId());
+    saveReview(plan.getId(), mgr.getId(), ReviewStatus.REVIEWED);
+
+    mvc.perform(get("/api/plans/" + plan.getId()).header(HEADER, mgr.getId().toString()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.managerReview.allowedActions").isEmpty());
+  }
+
+  // --- 6.8: real unresolvedDisputeCount derived from the loaded nested disputes
+  // (OPEN/IC_RESPONDED),
+  // with parity against the §9 projection's unresolved_dispute_count. ---
+  @Test
+  void planRead_realUnresolvedDisputeCount() throws Exception {
+    Employee mgr = saveEmployee(RoleType.MANAGER, "boss@x.test");
+    Employee ic = saveEmployee(RoleType.IC, "ada@x.test");
+    saveRelationship(mgr.getId(), ic.getId());
+    WeeklyPlan plan = saveLockedPlan(ic.getId());
+    WeeklyCommitment c1 = saveCommitmentReturning(plan.getId());
+    WeeklyCommitment c2 = saveCommitmentReturning(plan.getId());
+    saveCommitmentReturning(plan.getId()); // no dispute
+    saveDispute(c1.getId(), mgr.getId(), DisputeStatus.OPEN);
+    saveDispute(c2.getId(), mgr.getId(), DisputeStatus.IC_RESPONDED);
+    saveReview(plan.getId(), mgr.getId(), ReviewStatus.NOT_REVIEWED);
+
+    mvc.perform(get("/api/plans/" + plan.getId()).header(HEADER, mgr.getId().toString()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.managerReview.unresolvedDisputeCount").value(2));
+
+    // parity: the §9 projection derives the same count from source (both count OPEN/IC_RESPONDED)
+    refresher.recomputeForPlan(plan);
+    assertThat(summaries.findAll().get(0).getUnresolvedDisputeCount()).isEqualTo(2);
+  }
+
+  // --- 6.8 regression: a DRAFT plan still has a null managerReview (no review pre-lock,
+  // unchanged). ---
+  @Test
+  void planRead_draftPlan_nullReview_unchanged() throws Exception {
+    Employee ic = saveEmployee(RoleType.IC, "ada@x.test");
+    WeeklyPlan plan = savePlan(ic.getId()); // DRAFT
+
+    mvc.perform(get("/api/plans/" + plan.getId()).header(HEADER, ic.getId().toString()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.managerReview").doesNotExist());
   }
 
   // --- 4.4b: IC reads OWN RECONCILING plan -> the nested commitment carries CARRY_FORWARD

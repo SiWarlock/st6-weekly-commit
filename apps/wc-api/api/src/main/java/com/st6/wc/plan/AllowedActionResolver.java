@@ -5,6 +5,7 @@ import com.st6.wc.commitment.WeeklyCommitment;
 import com.st6.wc.enums.CommitmentKind;
 import com.st6.wc.enums.PlanState;
 import com.st6.wc.enums.ReconciliationOutcome;
+import com.st6.wc.enums.ReviewStatus;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -111,6 +112,24 @@ public class AllowedActionResolver {
   public boolean canOpenDispute(
       boolean viewerIsDirectManager, WeeklyPlan plan, boolean hasUnresolvedDispute) {
     return viewerIsDirectManager && plan.getState() != PlanState.DRAFT && !hasUnresolvedDispute;
+  }
+
+  /**
+   * The {@code MARK_REVIEWED} affordance predicate (task 6.8) — the active direct manager viewing a
+   * report's <strong>post-lock</strong> plan may mark a still-pending ({@code NOT_REVIEWED})
+   * review. A §31 <strong>UX-narrowed subset</strong> of E16's enforcement: {@code
+   * ReviewService.markReviewed} authorizes manager-of-owner + guards only {@code state != DRAFT}
+   * (it re-derives the status, so it would re-accept an already-reviewed review) — the affordance
+   * hides the button once {@code REVIEWED}/{@code REVIEWED_WITH_DISPUTES}. So {@code
+   * canMarkReviewed}-true ⟹ E16 accepts (§24/§31). MIRRORS — never calls — the void-throw {@code
+   * authorizeReviewMutation} ({@code viewerIsDirectManager} is the boolean parallel, resolved once
+   * in {@code PlanMapper}).
+   */
+  public boolean canMarkReviewed(
+      boolean viewerIsDirectManager, PlanState planState, ReviewStatus reviewStatus) {
+    return viewerIsDirectManager
+        && planState != PlanState.DRAFT
+        && reviewStatus == ReviewStatus.NOT_REVIEWED;
   }
 
   /**

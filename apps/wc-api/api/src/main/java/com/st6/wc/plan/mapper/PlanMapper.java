@@ -77,11 +77,23 @@ public class PlanMapper {
     int unplannedCount = commitments.size() - plannedCount;
 
     // The review exists once the plan is LOCKED+ (3.5); null while DRAFT. unresolvedDisputeCount is
-    // 0 until the disputes slice wires it. RC→DO→SO/review knowledge stays in the review service.
+    // derived from the already-loaded nested disputes (6.8 — count commitments whose
+    // OPEN/IC_RESPONDED
+    // dispute is present, 5.3b; no extra query, §35). MARK_REVIEWED is emitted iff the viewer is
+    // the
+    // active direct manager AND the review is markable (the §31 subset of E16 — canMarkReviewed).
+    int unresolvedDisputeCount =
+        (int) commitmentDtos.stream().filter(d -> d.dispute() != null).count();
     ManagerReviewDto managerReview =
         reviews
             .findByWeeklyPlanId(plan.getId())
-            .map(review -> reviewMapper.toDto(review, 0))
+            .map(
+                review ->
+                    reviewMapper.toDto(
+                        review,
+                        unresolvedDisputeCount,
+                        allowedActionResolver.canMarkReviewed(
+                            viewerIsDirectManager, plan.getState(), review.getStatus())))
             .orElse(null);
 
     return new WeeklyPlanDto(

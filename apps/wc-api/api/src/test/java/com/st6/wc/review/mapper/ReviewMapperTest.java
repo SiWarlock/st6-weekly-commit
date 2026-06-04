@@ -2,6 +2,7 @@ package com.st6.wc.review.mapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.st6.wc.action.AllowedAction;
 import com.st6.wc.enums.ReviewStatus;
 import com.st6.wc.review.ManagerReview;
 import com.st6.wc.review.dto.ManagerReviewDto;
@@ -41,28 +42,29 @@ class ReviewMapperTest {
   @Test
   void notReviewed_pastDue_isOverdue() {
     ReviewMapper mapper = new ReviewMapper(at("2026-06-09T00:00:00Z"));
-    assertThat(mapper.toDto(review(ReviewStatus.NOT_REVIEWED), 0).isOverdue()).isTrue();
+    assertThat(mapper.toDto(review(ReviewStatus.NOT_REVIEWED), 0, false).isOverdue()).isTrue();
   }
 
   // --- NOT_REVIEWED + now BEFORE/AT due → not overdue ----
   @Test
   void notReviewed_beforeDue_notOverdue() {
     ReviewMapper mapper = new ReviewMapper(at("2026-06-08T12:00:00Z"));
-    assertThat(mapper.toDto(review(ReviewStatus.NOT_REVIEWED), 0).isOverdue()).isFalse();
+    assertThat(mapper.toDto(review(ReviewStatus.NOT_REVIEWED), 0, false).isOverdue()).isFalse();
   }
 
   // --- REVIEWED_WITH_DISPUTES is NEVER overdue, even past due (rule #6 / §9) ----
   @Test
   void reviewedWithDisputes_pastDue_notOverdue() {
     ReviewMapper mapper = new ReviewMapper(at("2026-06-09T00:00:00Z"));
-    assertThat(mapper.toDto(review(ReviewStatus.REVIEWED_WITH_DISPUTES), 2).isOverdue()).isFalse();
+    assertThat(mapper.toDto(review(ReviewStatus.REVIEWED_WITH_DISPUTES), 2, false).isOverdue())
+        .isFalse();
   }
 
   // --- REVIEWED is never overdue ----
   @Test
   void reviewed_pastDue_notOverdue() {
     ReviewMapper mapper = new ReviewMapper(at("2026-06-09T00:00:00Z"));
-    assertThat(mapper.toDto(review(ReviewStatus.REVIEWED), 0).isOverdue()).isFalse();
+    assertThat(mapper.toDto(review(ReviewStatus.REVIEWED), 0, false).isOverdue()).isFalse();
   }
 
   // --- maps the entity fields verbatim + empty allowedActions (no IC affordance at 3.5) ----
@@ -72,7 +74,7 @@ class ReviewMapperTest {
     ManagerReview r = review(ReviewStatus.NOT_REVIEWED);
     r.setSummaryNote("note");
 
-    ManagerReviewDto dto = mapper.toDto(r, 3);
+    ManagerReviewDto dto = mapper.toDto(r, 3, false);
 
     assertThat(dto.id()).isEqualTo(r.getId());
     assertThat(dto.weeklyPlanId()).isEqualTo(r.getWeeklyPlanId());
@@ -81,7 +83,17 @@ class ReviewMapperTest {
     assertThat(dto.reviewDueAt()).isEqualTo(DUE);
     assertThat(dto.summaryNote()).isEqualTo("note");
     assertThat(dto.unresolvedDisputeCount()).isEqualTo(3);
-    assertThat(dto.allowedActions()).isEmpty();
+    assertThat(dto.allowedActions()).isEmpty(); // canMarkReviewed=false → no affordance
     assertThat(dto.version()).isZero();
+  }
+
+  // --- 6.8: canMarkReviewed=true → the MARK_REVIEWED affordance is emitted ----
+  @Test
+  void canMarkReviewed_emitsMarkReviewedAffordance() {
+    ReviewMapper mapper = new ReviewMapper(at("2026-06-08T12:00:00Z"));
+
+    ManagerReviewDto dto = mapper.toDto(review(ReviewStatus.NOT_REVIEWED), 0, true);
+
+    assertThat(dto.allowedActions()).containsExactly(AllowedAction.MARK_REVIEWED);
   }
 }

@@ -91,6 +91,9 @@ public class ReviewService {
         actor.employeeId(),
         "Review marked",
         "{}"); // safe metadata only — no summaryNote body (§15 / REQ-S-006)
-    return reviewMapper.toDto(review, unresolvedCount);
+    // The review was just marked (status now REVIEWED/REVIEWED_WITH_DISPUTES, no longer
+    // NOT_REVIEWED) → canMarkReviewed=false: the MARK_REVIEWED affordance correctly disappears from
+    // the response (the §31 subset, 6.8).
+    return reviewMapper.toDto(review, unresolvedCount, false);
   }
 }
