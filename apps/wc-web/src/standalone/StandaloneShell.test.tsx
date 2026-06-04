@@ -1,14 +1,26 @@
 import { render, screen } from '@testing-library/react';
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, vi, type Mock } from 'vitest';
+import { type ReactNode } from 'react';
 import { StandaloneShell } from './StandaloneShell';
 import {
   setAccessTokenProvider,
   setDemoAuthHeaderApplier,
 } from '../app/authAccessor';
 
+// Auth0 mode statically imports the SDK (standalone-only). Mock it so the
+// VITE_AUTH_MODE branch is testable without a live Auth0 tenant; the demo-mode
+// test below never renders the auth0 path, so the mock is inert there.
+vi.mock('@auth0/auth0-react', () => ({
+  Auth0Provider: ({ children }: { children?: ReactNode }) => children,
+  useAuth0: vi.fn(),
+}));
+import { useAuth0 } from '@auth0/auth0-react';
+const mockUseAuth0 = useAuth0 as unknown as Mock;
+
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   setAccessTokenProvider(null);
   setDemoAuthHeaderApplier(null);
 });
@@ -70,5 +82,90 @@ describe('StandaloneShell (full standalone provider tree)', () => {
     // app-shell breadcrumb/nav — so assert on the empty-plan EmptyState, which is
     // unique to the rendered WeeklyPlanView for this no-commitments fixture.)
     expect(await screen.findByText(/no commitments yet/i)).toBeInTheDocument();
+  });
+
+  it('standalone_auth0Mode_gatesWithLoginScreen: VITE_AUTH_MODE=auth0 mounts the Auth0 login path (gate → login screen), and the demo PersonaSwitcher is NOT rendered (retired for the deployed real-OAuth demo)', () => {
+    vi.stubEnv('VITE_AUTH_MODE', 'auth0');
+    vi.stubEnv('VITE_AUTH0_DOMAIN', 'tenant.us.auth0.com');
+    vi.stubEnv('VITE_AUTH0_CLIENT_ID', 'abc123');
+    vi.stubEnv('VITE_AUTH0_AUDIENCE', 'https://api.wc.example.com');
+    mockUseAuth0.mockReturnValue({
+      isLoading: false,
+      isAuthenticated: false,
+      loginWithRedirect: vi.fn(),
+    });
+
+    render(<StandaloneShell />);
+
+    // Auth0 mode, unauthenticated → the branded login screen; no app mount (no
+    // getMe fetch needed). The demo PersonaSwitcher is absent in auth0 mode.
+    expect(
+      screen.getByRole('button', { name: /log in/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /persona/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('standalone_auth0Mode_authenticatedNestResolves: authenticated, the full routing nest (Routes → /* → gate → AppShell → WeeklyCommitApp) renders the app and /callback does NOT shadow / (the deployed-demo critical path)', async () => {
+    vi.stubEnv('VITE_AUTH_MODE', 'auth0');
+    vi.stubEnv('VITE_AUTH0_DOMAIN', 'tenant.us.auth0.com');
+    vi.stubEnv('VITE_AUTH0_CLIENT_ID', 'abc123');
+    vi.stubEnv('VITE_AUTH0_AUDIENCE', 'https://api.wc.example.com');
+    mockUseAuth0.mockReturnValue({
+      isLoading: false,
+      isAuthenticated: true,
+      user: { sub: 'auth0|1', name: 'Dana Okafor', email: 'dana@st6demo.com' },
+      getAccessTokenSilently: vi.fn().mockResolvedValue('jwt-abc'),
+      loginWithRedirect: vi.fn(),
+      logout: vi.fn(),
+    });
+    const json = (body: unknown) =>
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: Request) => {
+        if (input.url.includes('/api/plans/current')) {
+          return json({
+            id: 'plan-1',
+            employeeId: '22222222-2222-2222-2222-222222222222',
+            employeeDisplayName: 'Ivy Chen',
+            weekStartDate: '2026-06-01',
+            weekEndDate: '2026-06-07',
+            state: 'DRAFT',
+            plannedCount: 0,
+            unplannedCount: 0,
+            commitments: [],
+            managerReview: null,
+            allowedActions: [],
+            version: 1,
+          });
+        }
+        return json({
+          employeeId: '22222222-2222-2222-2222-222222222222',
+          email: 'ivy@example.com',
+          displayName: 'Ivy Chen',
+          role: 'IC',
+          persona: 'demo-employee-ic-1',
+          isManager: false,
+        });
+      }),
+    );
+
+    render(<StandaloneShell />);
+
+    // The /* nest resolves at '/': gate (authenticated) → AppShell → WeeklyCommitApp
+    // → AppRoutes → RootRedirect → the IC workspace (empty-plan EmptyState). If
+    // /callback shadowed '/', we'd see the "signing you in" processing state instead.
+    expect(await screen.findByText(/no commitments yet/i)).toBeInTheDocument();
+    expect(screen.queryByText(/signing you in/i)).not.toBeInTheDocument();
+    // The auth0 identity slot (not the demo PersonaSwitcher) is in the app-bar.
+    expect(screen.getByText(/Dana Okafor/)).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /persona/i }),
+    ).not.toBeInTheDocument();
   });
 });

@@ -92,4 +92,35 @@ describe('REQ-I-008 — exposed remote excludes demo/persona/chrome (frontend mi
       expect(code).not.toMatch(/mockServiceWorker/);
     }
   });
+
+  it('auth0_sdk_absent_from_remote_build: the Auth0 OAuth-login SDK (9.17) is standalone-only — reachable from the standalone entry (positive control) but NEVER from the exposed remote (fail-open import-graph + fail-closed literal scan)', () => {
+    const remoteFiles = [...importGraph(remoteEntry)];
+    const standaloneFiles = [...importGraph(standaloneEntry)];
+
+    // POSITIVE CONTROL — the auth0 SDK literal is live in the standalone closure
+    // (the standalone shell statically imports Auth0IdentityProvider). Without
+    // this the fail-closed scan below could pass vacuously.
+    expect(
+      standaloneFiles.some((f) =>
+        /@auth0\/auth0-react/.test(readFileSync(f, 'utf8')),
+      ),
+    ).toBe(true);
+
+    // FAIL-OPEN import-graph: no standalone-only module carrying the SDK is
+    // relative-reachable from the remote (the standalone dir exclusion above
+    // already covers this; restated for the auth0 surface).
+    expect(
+      remoteFiles.filter((f) => f.startsWith(standaloneDir)),
+    ).toEqual([]);
+
+    // FAIL-CLOSED literal scan: no @auth0/auth0-react import nor login markers
+    // anywhere in the remote closure (REQ-I-008 — the OAuth login producer ships
+    // only in the standalone demo build, never the federation-exposed remote).
+    for (const f of remoteFiles) {
+      const code = stripComments(readFileSync(f, 'utf8'));
+      expect(code).not.toMatch(/@auth0\/auth0-react/);
+      expect(code).not.toMatch(/loginWithRedirect/);
+      expect(code).not.toMatch(/getAccessTokenSilently/);
+    }
+  });
 });
