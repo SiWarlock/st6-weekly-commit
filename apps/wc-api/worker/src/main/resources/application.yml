@@ -1,11 +1,28 @@
-# wc-sync-worker base config (task 0.5). No Auth0/SNS/CORS/timezone (D.3 — SYSTEM principal, no user request).
-# SQS/Graph/datasource land in a later phase.
+# wc-sync-worker base config (task 0.5; Wave-2 s8). No Auth0/CORS/timezone (D.3 — SYSTEM principal,
+# no user request).
 spring:
   application:
     name: wc-sync-worker
   flyway:
-    # Worker NEVER migrates (§12/D.3).
+    # Worker NEVER migrates (§12/D.3) — the migration Job owns the schema.
     enabled: false
+  jpa:
+    hibernate:
+      # The worker reloads OutlookCalendarSyncRecord (Wave-2 s8); validate the entity view against
+      # the migration-owned schema at boot, never migrate (forbidden-#3).
+      ddl-auto: validate
+  cloud:
+    aws:
+      region:
+        # The SQS starter auto-configures an SqsClient in every profile and needs a boot-resolvable
+        # region. Real AWS_REGION in aws; a fallback so a clean CI runner boots (LESSONS §43).
+        static: ${AWS_REGION:us-east-1}
+
+app:
+  graph:
+    # Calendar dispatch mode — demo-success activates the no-op GraphCalendarPort stub (Wave-2 s8);
+    # the real MS Graph adapter (s9) gates on a distinct mode. deployment-worker.yaml sets GRAPH_MODE.
+    mode: ${GRAPH_MODE:demo-success}
 
 management:
   endpoints:

@@ -2,19 +2,38 @@ plugins {
   alias(libs.plugins.spring.boot)
 }
 
-// :worker — separate Spring Boot 3.3 deployable (WcSyncWorkerApplication + actuator probes).
-// Depends on :shared (shared<-worker); NO dependency on :api (REQ-O-016). web+actuator only —
-// the servlet server exists solely for the k8s probes (D.3, no user request). No SQS/Graph yet.
+// :worker — separate Spring Boot 3.3 deployable (WcSyncWorkerApplication + actuator probes + the
+// Wave-2 s8 SQS consumer). Depends on :shared (shared<-worker); NO dependency on :api (REQ-O-016).
 dependencies {
   implementation platform("org.springframework.boot:spring-boot-dependencies:${libs.versions.springBoot.get()}")
+  // Spring Cloud AWS BOM (Wave-2 s8) — version-manages the SQS starter + AWS SDK v2 (reuses the
+  // springCloudAws 3.2.x pin from s7). The SQS @SqsListener consumes the wc-sync queue.
+  implementation platform("io.awspring.cloud:spring-cloud-aws-dependencies:${libs.versions.springCloudAws.get()}")
 
   implementation project(':shared')
 
   implementation 'org.springframework.boot:spring-boot-starter-web'
   implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
+  // SQS consume (Wave-2 s8, §10) — @SqsListener + SqsClient auto-config.
+  implementation 'io.awspring.cloud:spring-cloud-aws-starter-sqs'
+
+  // JPA runtime (Wave-2 s8) — the worker reloads OutlookCalendarSyncRecord by id. The data-jpa
+  // starter was transitive-runtime via :shared; the worker now uses it directly (@EnableJpaRepositories
+  // in WorkerSharedConfig + the sync repo), so depend on it explicitly (compile + runtime).
+  implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+
   compileOnly libs.lombok
   annotationProcessor libs.lombok
 
   testImplementation 'org.springframework.boot:spring-boot-starter-test'
+
+  // Worker JPA boot fidelity (Wave-2 s8): real PG16 via Testcontainers + Flyway V1-V4 +
+  // ddl-auto=validate — never H2 (§17), mirroring the :api persistence harness (LESSONS §5/§9).
+  testImplementation platform('org.testcontainers:testcontainers-bom:1.21.4')
+  testImplementation 'org.flywaydb:flyway-core'
+  testImplementation 'org.flywaydb:flyway-database-postgresql'
+  testImplementation 'org.postgresql:postgresql'
+  testImplementation 'org.testcontainers:postgresql'
+  testImplementation 'org.testcontainers:junit-jupiter'
 }

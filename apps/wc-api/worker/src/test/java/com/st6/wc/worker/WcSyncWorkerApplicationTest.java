@@ -2,6 +2,7 @@ package com.st6.wc.worker;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.st6.wc.worker.support.WorkerPostgresSupport;
 import java.time.Clock;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,19 +13,19 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.ActiveProfiles;
 
 /**
- * Boots {@code WcSyncWorkerApplication} (the separate deployable) under {@code local} with NO SQS
- * listener / Graph adapter / SQS-Graph env, and asserts the k8s probes are UP and the {@code
- * :shared} {@code Clock} bean is present (flag 6 — for §10 time transitions). REQ-O-014.
+ * Boots {@code WcSyncWorkerApplication} (the separate deployable) under {@code local} and asserts
+ * the k8s probes are UP and the {@code :shared} {@code Clock} bean is present (flag 6 — for §10
+ * time transitions). REQ-O-014.
  *
- * <p>No {@code spring.autoconfigure.exclude} test property: the JPA/datasource exclude that keeps
- * the DB-less worker booting is now realized in <em>production</em> on {@code
- * WcSyncWorkerApplication} itself (task 092 — the test-only property previously masked a deployed
- * crashloop, LESSONS §9). A green boot here with no test property proves the production exclude is
- * sufficient.
+ * <p>Wave-2 s8: the worker is now JPA-active (the 092 exclude is gone — it reloads {@code
+ * OutlookCalendarSyncRecord}), so the boot needs a datasource — supplied by the Testcontainers
+ * {@link WorkerPostgresSupport} harness (real PG16, never H2). No {@code app.sqs.queue-url} is set,
+ * so the {@code @ConditionalOnProperty}-gated {@code SyncMessageListener} stays inactive (no queue
+ * poll).
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("local")
-class WcSyncWorkerApplicationTest {
+class WcSyncWorkerApplicationTest extends WorkerPostgresSupport {
 
   @Autowired TestRestTemplate rest;
   @Autowired Clock clock;

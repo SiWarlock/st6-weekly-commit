@@ -1,15 +1,28 @@
 package com.st6.wc.worker.config;
 
 import com.st6.wc.config.ClockConfig;
+import org.springframework.boot.autoconfigure.domain.EntityScan;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 
 /**
  * Wires cross-module {@code :shared} beans into the worker context. {@code WcSyncWorkerApplication}
- * lives in {@code com.st6.wc.worker}, so the sibling {@code com.st6.wc.config.ClockConfig} is
- * outside its default component scan — import it explicitly so the injectable {@code Clock} (§17 /
- * §10 time-based sync transitions) is present in the worker (flag 6).
+ * lives in {@code com.st6.wc.worker}, so the {@code :shared} packages (under {@code com.st6.wc.*})
+ * are outside its default component scan and must be wired explicitly:
+ *
+ * <ul>
+ *   <li>{@link Import @Import}({@code ClockConfig}) — the injectable {@code Clock} (§17 / §10
+ *       time-based sync transitions).
+ *   <li>{@link EntityScan @EntityScan}({@code com.st6.wc}) — the JPA entities, so {@code
+ *       ddl-auto=validate} validates the worker's full view against the migration-owned schema
+ *       (Wave-2 s8 — the worker reloads {@code OutlookCalendarSyncRecord}).
+ *   <li>{@link EnableJpaRepositories @EnableJpaRepositories}({@code com.st6.wc.sync.repo}) — only
+ *       the sync repo the worker actually uses (not every domain repo).
+ * </ul>
  */
 @Configuration
 @Import(ClockConfig.class)
+@EntityScan("com.st6.wc")
+@EnableJpaRepositories("com.st6.wc.sync.repo")
 public class WorkerSharedConfig {}

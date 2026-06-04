@@ -2,57 +2,60 @@ package com.st6.wc.worker;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.time.Clock;
+import com.st6.wc.sync.repo.OutlookCalendarSyncRecordRepository;
+import com.st6.wc.worker.support.WorkerPostgresSupport;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.context.ApplicationContext;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.ActiveProfiles;
 
 /**
- * Deployment-fidelity boot test (task 092): boots {@code WcSyncWorkerApplication} under
- * {@code @ActiveProfiles("aws")} — the EXACT profile the worker Deployment runs ({@code
- * SPRING_PROFILES_ACTIVE=aws}) — with NO {@code spring.autoconfigure.exclude} test property, and
- * proves the worker is DB-less by construction:
+ * Deployment-fidelity boot test (Wave-2 s8 — inverts the 092 bean-ABSENCE pin): boots {@code
+ * WcSyncWorkerApplication} under {@code @ActiveProfiles("aws")} (the profile the worker Deployment
+ * runs) with a real Testcontainers datasource ({@link WorkerPostgresSupport}) and proves the worker
+ * is now JPA-backed:
  *
  * <ul>
- *   <li>the context loads + the k8s readiness probe is UP (the crashloop path is the boot under
- *       {@code aws} with the graph-only secret mount — no {@code spring.datasource.*});
- *   <li><strong>no {@code DataSource} bean and no {@code EntityManagerFactory} bean</strong> exist
- *       — the JPA/datasource auto-config (transitive via {@code :shared}'s data-jpa starter, task
- *       1.5) is excluded in PRODUCTION on the app class, not by a test property (LESSONS §9). This
- *       bean absence makes the Wave-2 worker-datasource wiring a deliberate, visible change.
+ *   <li>a {@code DataSource} + {@code EntityManagerFactory} bean exist (the 092 exclude is GONE —
+ *       the worker reloads {@code OutlookCalendarSyncRecord});
+ *   <li>the {@code OutlookCalendarSyncRecordRepository} is injectable (the {@code
+ *       WorkerSharedConfig} {@code @EnableJpaRepositories} scan reaches the shared repo).
  * </ul>
+ *
+ * <p>{@code app.sqs.queue-url} is set to a dummy + {@code
+ * spring.cloud.aws.sqs.listener.auto-startup =false} so the {@code @ConditionalOnProperty}-gated
+ * {@code SyncMessageListener} bean wires but never polls a (nonexistent) queue — the test exercises
+ * only the JPA wiring + boot.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+    webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+    properties = {
+      "app.sqs.queue-url=https://sqs.us-east-1.amazonaws.com/000000000000/wc-sync-test",
+      "spring.cloud.aws.sqs.listener.auto-startup=false"
+    })
 @ActiveProfiles("aws")
-class WorkerAwsProfileBootTest {
+class WorkerAwsProfileBootTest extends WorkerPostgresSupport {
 
-  @Autowired TestRestTemplate rest;
   @Autowired ApplicationContext ctx;
-  @Autowired Clock clock;
+  @Autowired OutlookCalendarSyncRecordRepository syncRecords;
 
   @Test
-  void worker_awsProfile_bootsDbLess() {
-    ResponseEntity<String> r = rest.getForEntity("/actuator/health/readiness", String.class);
-    assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
-    assertThat(r.getBody()).contains("UP");
-    assertThat(clock).as(":shared Clock bean present in the aws-profile worker").isNotNull();
+  void worker_awsProfile_hasDataSourceAndJpa() {
+    assertThat(ctx.getBeanNamesForType(DataSource.class))
+        .as("worker now has a DataSource (the 092 exclude is removed — it reloads the SyncRecord)")
+        .isNotEmpty();
+    assertThat(ctx.containsBean("entityManagerFactory"))
+        .as("worker now has an EntityManagerFactory (JPA auto-config active)")
+        .isTrue();
   }
 
   @Test
-  void worker_hasNoDataSourceOrJpaBeans() {
-    assertThat(ctx.getBeanNamesForType(DataSource.class))
-        .as("worker has no DataSource bean (DataSourceAutoConfiguration excluded in production)")
-        .isEmpty();
-    // jakarta.persistence is a runtime-only transitive dep of :shared (not on the worker's compile
-    // classpath), so assert by the conventional autoconfig bean name rather than the type.
-    assertThat(ctx.containsBean("entityManagerFactory"))
-        .as("worker has no EntityManagerFactory bean (HibernateJpaAutoConfiguration excluded)")
-        .isFalse();
+  void worker_syncRecordRepository_isInjectable() {
+    // the @EnableJpaRepositories("com.st6.wc.sync.repo") scan reaches the shared repo + it queries
+    // the migration-created schema (ddl-auto=validate already proved the entity↔schema fidelity).
+    assertThat(syncRecords).isNotNull();
+    assertThat(syncRecords.count()).isZero();
   }
 }
