@@ -1,0 +1,82 @@
+# docker-compose.yml — local full-stack "works locally" story for the ST6 Weekly Commit demo.
+#
+# Brings up the REAL backend + Postgres with the seeded demo data in ONE command:
+#   postgres  → PG16 datastore (volume-persisted)
+#   migrate   → one-shot: the wc-api image in the `flyway-migrate` profile runs V1–V6 (schema + RCDO
+#               reference + the V5/V6 demo personas/fixtures, db/migration + db/demo-seed), then exits
+#   wc-api    → the wc-api image in the `local` profile (demo-header auth, flyway off, IN-PROCESS sync —
+#               no SNS/SQS/Graph), serving on :8080
+#
+# This mirrors the PRODUCTION migrate→roll path (same image, same migrations + demo seed) WITHOUT the
+# SNS/SQS/Secrets/Graph infrastructure the `local` profile is designed to avoid (§13). Real OAuth + RDS
+# + Secrets Manager are the DEPLOYED path — see infra/README.md + docs/runbooks/. This file is NOT for
+# production. The local-only DB password below never leaves the compose network (prod uses Secrets Manager,
+# rule #7); it is a dev convenience, not a secret.
+#
+# ── Run ──────────────────────────────────────────────────────────────────────────────────────────
+#   docker compose up --build           # first run builds wc-api:local; migrate seeds; wc-api serves :8080
+#
+# ── Up-smoke (from the host; the slim JRE image has no curl) ──────────────────────────────────────
+#   curl -fsS localhost:8080/actuator/health/readiness
+#   curl -fsS -H 'X-Demo-Employee-Id: d0000000-0000-0000-0000-000000000001' localhost:8080/api/me   # → Dana
+#   #  (the demo header takes the seeded employee UUID; Dana = …001, the 6 reports = …002–…007)
+#
+# ── Frontend (separate — Vite HMR dockerizes poorly; the frontend owns its dev story) ─────────────
+#   cd apps/wc-web && VITE_AUTH_MODE=demo VITE_USE_MOCKS=false \
+#     VITE_API_BASE_URL=http://localhost:8080 yarn dev          # → http://localhost:5173
+#   #  In demo mode the PersonaSwitcher sends X-Demo-Employee-Id; the local api (demo-auth.enabled=true) accepts it.
+
+name: wc-local
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: wc
+      POSTGRES_USER: wc_app
+      POSTGRES_PASSWORD: wc_local_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - wc-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wc_app -d wc"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # One-shot schema + demo-seed migration (the sole Flyway owner, mirroring the prod migration Job).
+  migrate:
+    image: wc-api:local            # reuses the image built by the wc-api service below
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: flyway-migrate
+      SPRING_FLYWAY_ENABLED: "true"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/wc
+      SPRING_DATASOURCE_USERNAME: wc_app
+      SPRING_DATASOURCE_PASSWORD: wc_local_dev
+    restart: "no"
+
+  # The real backend in the `local` profile (demo-header personas; in-process worker sync, no SNS/SQS).
+  wc-api:
+    build:
+      context: .
+      dockerfile: apps/wc-api/Dockerfile
+    image: wc-api:local
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/wc
+      SPRING_DATASOURCE_USERNAME: wc_app
+      SPRING_DATASOURCE_PASSWORD: wc_local_dev
+    ports:
+      - "8080:8080"
+
+volumes:
+  wc-pgdata:

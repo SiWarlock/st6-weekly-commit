@@ -102,7 +102,11 @@ shellcheck infra/scripts/populate-secrets.sh
 infra/scripts/populate-secrets.sh --dry-run                    # redacted plan, zero AWS calls
 ```
 
-**Running the app stack locally** (the application, not the infra): backend `./gradlew :api:bootRun` (from `apps/wc-api/`), frontend `yarn dev` (from `apps/wc-web/`), against a local PostgreSQL. Ports (F.7): **Vite 5173 · API 8080 · Postgres 5432**. The local/demo profile runs the worker sync logic **in-process** (no live SNS/SQS) — see §13. Backend integration tests use **Testcontainers PostgreSQL** (no H2). _(A full-stack `docker-compose` for the "works locally in one command" story is under assessment — see the infra queue.)_
+**Running the app stack locally** (the application, not the infra) — **one command**:
+```bash
+docker compose up --build      # postgres + migrate (seeds V5/V6) + wc-api (local profile) → :8080
+```
+`docker-compose.yml` (repo root) brings up the **real backend + Postgres with the seeded demo data** — the same image + the same migrate→seed path as prod, in the `local` profile (demo-header personas; worker sync **in-process**, no live SNS/SQS — §13). The **frontend runs separately** (Vite HMR): `cd apps/wc-web && VITE_AUTH_MODE=demo VITE_USE_MOCKS=false VITE_API_BASE_URL=http://localhost:8080 yarn dev`. Ports (F.7): **Vite 5173 · API 8080 · Postgres 5432**. Up-smoke: `curl localhost:8080/actuator/health/readiness` + `curl -H 'X-Demo-Employee-Id: d0000000-0000-0000-0000-000000000001' localhost:8080/api/me` (→ Dana). Backend integration tests use **Testcontainers PostgreSQL** (no H2). _(LocalStack/Graph-mock intentionally omitted — the `local` profile's in-process sync makes them unnecessary for the "works locally" story; they'd only matter for a local Wave-2 live-sync rehearsal.)_
 
 ---
 
