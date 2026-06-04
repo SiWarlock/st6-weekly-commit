@@ -17,6 +17,7 @@ import com.st6.wc.enums.ReviewStatus;
 import com.st6.wc.identity.UserPrincipal;
 import com.st6.wc.plan.WeeklyPlan;
 import com.st6.wc.plan.repo.WeeklyPlanRepository;
+import com.st6.wc.projection.ProjectionRefresher;
 import com.st6.wc.rcdo.RcdoReadService;
 import com.st6.wc.review.ReviewStatusDeriver;
 import com.st6.wc.review.repo.ManagerReviewRepository;
@@ -36,8 +37,10 @@ import org.springframework.transaction.annotation.Transactional;
  * DomainAuthorizationService#authorizeDisputeCreation}; the IC owner cannot dispute their own
  * commitment), guards the plan state, enforces the single-unresolved invariant (service pre-check +
  * the partial-unique DB backstop → {@code 409 SECOND_OPEN_DISPUTE}), persists an {@code OPEN}
- * dispute, re-derives the parent review status (an already-reviewed review only), and emits a
- * note-body-free {@code DISPUTE_OPENED} audit (§15) — all in one {@code @Version}-guarded txn.
+ * dispute, re-derives the parent review status (an already-reviewed review only), synchronously
+ * refreshes the §9 manager projection (task 6.3b — {@code ++unresolved_dispute_count} + the
+ * MISALIGNED union), and emits a note-body-free {@code DISPUTE_OPENED} audit (§15) — all in one
+ * {@code @Version}-guarded txn.
  */
 @Service
 public class DisputeService {
@@ -51,6 +54,7 @@ public class DisputeService {
   private final DisputeMapper disputeMapper;
   private final AuditService auditService;
   private final RcdoReadService rcdoReadService;
+  private final ProjectionRefresher projectionRefresher;
   private final Clock clock;
 
   public DisputeService(
@@ -63,6 +67,7 @@ public class DisputeService {
       DisputeMapper disputeMapper,
       AuditService auditService,
       RcdoReadService rcdoReadService,
+      ProjectionRefresher projectionRefresher,
       Clock clock) {
     this.authz = authz;
     this.disputes = disputes;
@@ -73,6 +78,7 @@ public class DisputeService {
     this.disputeMapper = disputeMapper;
     this.auditService = auditService;
     this.rcdoReadService = rcdoReadService;
+    this.projectionRefresher = projectionRefresher;
     this.clock = clock;
   }
 
@@ -116,6 +122,7 @@ public class DisputeService {
     }
 
     reDeriveReviewStatus(commitment.getWeeklyPlanId());
+    projectionRefresher.recomputeForPlan(plan); // §9 — ++unresolved_dispute_count, MISALIGNED union
     auditService.record(
         "DISPUTE_OPENED",
         "AlignmentDispute",
@@ -134,8 +141,11 @@ public class DisputeService {
    * (the <strong>rule-#2 dispute-gated exception</strong> — that field ONLY, reachable only here),
    * set {@code icResponse}, transition {@code OPEN→IC_RESPONDED}, and emit a note-body-free {@code
    * DISPUTE_RESPONDED} audit (status + the safe SO-revision ids, §15). The dispute stays unresolved
-   * ({@code IC_RESPONDED} ∈ the unresolved bucket) — NO review re-derivation, NO projection change.
-   * One {@code @Version}-guarded txn (dispute + commitment).
+   * ({@code IC_RESPONDED} ∈ the unresolved bucket) — NO review re-derivation. <strong>It DOES
+   * synchronously refresh the §9 manager projection (task 6.3b)</strong>: the rule-#2 SO-revision
+   * remaps the commitment's Defining Objective, so the heatmap-cell grain shifts (the old DO cell
+   * is deleted, the new one created) — superseding the original 5.4 "no projection change". One
+   * {@code @Version}-guarded txn (dispute + commitment + projection).
    */
   @Transactional
   public AlignmentDisputeDto respond(
@@ -172,6 +182,19 @@ public class DisputeService {
     dispute.setStatus(DisputeStatus.IC_RESPONDED);
     disputes.save(dispute);
 
+    // §9 (6.3b) — refresh unconditionally: the rule-#2 SO-revision above remaps the commitment's
+    // Defining Objective, so the heatmap-cell grain shifts (old DO cell stale → deleted, new DO
+    // cell created); the no-revision case is a cheap identical-row no-op.
+    WeeklyCommitment disputed =
+        commitments
+            .findById(dispute.getCommitmentId())
+            .orElseThrow(ResourceNotFoundOrUnauthorizedException::new);
+    WeeklyPlan plan =
+        plans
+            .findById(disputed.getWeeklyPlanId())
+            .orElseThrow(ResourceNotFoundOrUnauthorizedException::new);
+    projectionRefresher.recomputeForPlan(plan);
+
     auditService.record(
         "DISPUTE_RESPONDED",
         "AlignmentDispute",
@@ -194,8 +217,9 @@ public class DisputeService {
    * NOT_REVIEWED} review is left untouched, the shared {@link #reDeriveReviewStatus} guard), and
    * emit a note-body-free {@code DISPUTE_RESOLVED} audit (§15). One {@code @Version}-guarded txn
    * (dispute + the re-derived review; a concurrent double-resolve → {@code OptimisticLockingFailure
-   * → 409}). Body-less (E19 carries no {@code resolutionNote} in MVP); no projection change (the §9
-   * read-model is Phase-6 work).
+   * → 409}). Body-less (E19 carries no {@code resolutionNote} in MVP). Synchronously refreshes the
+   * §9 manager projection (task 6.3b) — decrements {@code unresolved_dispute_count} and drops the
+   * commitment from the MISALIGNED union — in the same txn.
    */
   @Transactional
   public AlignmentDisputeDto resolve(UserPrincipal actor, UUID disputeId) {
@@ -215,6 +239,12 @@ public class DisputeService {
             .orElseThrow(ResourceNotFoundOrUnauthorizedException::new);
     reDeriveReviewStatus(
         commitment.getWeeklyPlanId()); // last unresolved cleared → WITH_DISPUTES→REVIEWED
+    WeeklyPlan plan =
+        plans
+            .findById(commitment.getWeeklyPlanId())
+            .orElseThrow(ResourceNotFoundOrUnauthorizedException::new);
+    projectionRefresher.recomputeForPlan(
+        plan); // §9 (6.3b) — --unresolved_dispute_count, drop the MISALIGNED union
 
     auditService.record(
         "DISPUTE_RESOLVED",

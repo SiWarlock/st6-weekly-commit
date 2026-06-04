@@ -77,6 +77,8 @@ class ResolveDisputeEndpointTest extends AbstractAppBootTest {
   @AfterEach
   void cleanup() {
     auditEvents.deleteAll();
+    planSummaries.deleteAll(); // 6.3b — resolve now refreshes the projection (FK to employee/plan)
+    heatmapCells.deleteAll();
     disputes.deleteAll();
     reviews.deleteAll();
     commitments.deleteAll();

@@ -24,6 +24,8 @@ import com.st6.wc.enums.RoleType;
 import com.st6.wc.enums.WorkType;
 import com.st6.wc.plan.WeeklyPlan;
 import com.st6.wc.plan.repo.WeeklyPlanRepository;
+import com.st6.wc.projection.repo.ManagerHeatmapCellRepository;
+import com.st6.wc.projection.repo.ManagerPlanSummaryRepository;
 import com.st6.wc.relationship.ManagerRelationship;
 import com.st6.wc.relationship.repo.ManagerRelationshipRepository;
 import com.st6.wc.review.repo.ManagerReviewRepository;
@@ -65,10 +67,15 @@ class MarkReviewedEndpointTest extends AbstractAppBootTest {
   @Autowired private ManagerReviewRepository reviews;
   @Autowired private AlignmentDisputeRepository disputes;
   @Autowired private AuditEventRepository auditEvents;
+  @Autowired private ManagerPlanSummaryRepository summaries;
+  @Autowired private ManagerHeatmapCellRepository heatmapCells;
 
   @AfterEach
   void cleanup() {
     auditEvents.deleteAll();
+    summaries
+        .deleteAll(); // 6.3b — mark-reviewed now refreshes the projection (FK to employee/plan)
+    heatmapCells.deleteAll();
     disputes.deleteAll();
     reviews.deleteAll();
     commitments.deleteAll();

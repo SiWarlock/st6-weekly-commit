@@ -23,7 +23,9 @@ import com.st6.wc.enums.FlagType;
 import com.st6.wc.enums.ReviewStatus;
 import com.st6.wc.enums.RoleType;
 import com.st6.wc.identity.UserPrincipal;
+import com.st6.wc.plan.WeeklyPlan;
 import com.st6.wc.plan.repo.WeeklyPlanRepository;
+import com.st6.wc.projection.ProjectionRefresher;
 import com.st6.wc.rcdo.RcdoReadService;
 import com.st6.wc.review.ManagerReview;
 import com.st6.wc.review.ReviewStatusDeriver;
@@ -57,6 +59,7 @@ class ResolveDisputeServiceTest {
   private final DisputeMapper disputeMapper = mock(DisputeMapper.class);
   private final AuditService auditService = mock(AuditService.class);
   private final RcdoReadService rcdoReadService = mock(RcdoReadService.class);
+  private final ProjectionRefresher projectionRefresher = mock(ProjectionRefresher.class);
   private final Clock clock = Clock.fixed(Instant.parse("2026-06-03T15:00:00Z"), ZoneOffset.UTC);
 
   private final DisputeService service =
@@ -70,6 +73,7 @@ class ResolveDisputeServiceTest {
           disputeMapper,
           auditService,
           rcdoReadService,
+          projectionRefresher,
           clock);
 
   private static final UUID DISPUTE_ID = UUID.fromString("e0000000-0000-0000-0000-000000000001");
@@ -101,6 +105,23 @@ class ResolveDisputeServiceTest {
     return c;
   }
 
+  private WeeklyPlan plan() {
+    WeeklyPlan p = new WeeklyPlan();
+    p.setId(PLAN_ID);
+    p.setEmployeeId(IC_ID);
+    return p;
+  }
+
+  /**
+   * Stub the post-resolve plan load (6.3b — resolve now loads {@code commitment.weeklyPlanId} →
+   * plan to feed {@code projectionRefresher.recomputeForPlan}); the commitment carries {@link
+   * #PLAN_ID}.
+   */
+  private void stubCommitmentAndPlan() {
+    when(commitments.findById(COMMITMENT_ID)).thenReturn(Optional.of(commitment()));
+    when(plans.findById(PLAN_ID)).thenReturn(Optional.of(plan()));
+  }
+
   private ManagerReview review(ReviewStatus status) {
     ManagerReview r = new ManagerReview();
     r.setId(UUID.fromString("c0000000-0000-0000-0000-0000000000bb"));
@@ -115,7 +136,7 @@ class ResolveDisputeServiceTest {
   @Test
   void resolve_byDirectManager_openDispute_resolves() {
     when(disputes.findById(DISPUTE_ID)).thenReturn(Optional.of(dispute(DisputeStatus.OPEN)));
-    when(commitments.findById(COMMITMENT_ID)).thenReturn(Optional.of(commitment()));
+    stubCommitmentAndPlan();
     when(reviews.findByWeeklyPlanId(PLAN_ID))
         .thenReturn(Optional.empty()); // isolate the transition
 
@@ -131,12 +152,26 @@ class ResolveDisputeServiceTest {
             eq("DISPUTE_RESOLVED"), eq("AlignmentDispute"), any(), eq(MANAGER_ID), any(), any());
   }
 
+  // --- 6.3b §9 trigger: resolve synchronously refreshes the manager projection (same txn) ----
+  @Test
+  void resolve_refreshesProjection() {
+    when(disputes.findById(DISPUTE_ID)).thenReturn(Optional.of(dispute(DisputeStatus.OPEN)));
+    stubCommitmentAndPlan();
+    when(reviews.findByWeeklyPlanId(PLAN_ID)).thenReturn(Optional.empty());
+
+    service.resolve(manager(), DISPUTE_ID);
+
+    ArgumentCaptor<WeeklyPlan> refreshed = ArgumentCaptor.forClass(WeeklyPlan.class);
+    verify(projectionRefresher).recomputeForPlan(refreshed.capture());
+    assertThat(refreshed.getValue().getId()).isEqualTo(PLAN_ID); // commitment.weeklyPlanId → plan
+  }
+
   // --- an IC_RESPONDED dispute is also resolvable (both unresolved pre-states) ----
   @Test
   void resolve_byDirectManager_icRespondedDispute_resolves() {
     when(disputes.findById(DISPUTE_ID))
         .thenReturn(Optional.of(dispute(DisputeStatus.IC_RESPONDED)));
-    when(commitments.findById(COMMITMENT_ID)).thenReturn(Optional.of(commitment()));
+    stubCommitmentAndPlan();
     when(reviews.findByWeeklyPlanId(PLAN_ID)).thenReturn(Optional.empty());
 
     service.resolve(manager(), DISPUTE_ID);
@@ -151,7 +186,7 @@ class ResolveDisputeServiceTest {
   @Test
   void resolve_lastUnresolved_reDerivesReviewedWithDisputesToReviewed() {
     when(disputes.findById(DISPUTE_ID)).thenReturn(Optional.of(dispute(DisputeStatus.OPEN)));
-    when(commitments.findById(COMMITMENT_ID)).thenReturn(Optional.of(commitment()));
+    stubCommitmentAndPlan();
     when(reviews.findByWeeklyPlanId(PLAN_ID))
         .thenReturn(Optional.of(review(ReviewStatus.REVIEWED_WITH_DISPUTES)));
     when(deriver.derive(PLAN_ID)).thenReturn(ReviewStatus.REVIEWED); // count==0 after this resolve
@@ -168,7 +203,7 @@ class ResolveDisputeServiceTest {
   @Test
   void resolve_nonLastUnresolved_staysReviewedWithDisputes() {
     when(disputes.findById(DISPUTE_ID)).thenReturn(Optional.of(dispute(DisputeStatus.OPEN)));
-    when(commitments.findById(COMMITMENT_ID)).thenReturn(Optional.of(commitment()));
+    stubCommitmentAndPlan();
     when(reviews.findByWeeklyPlanId(PLAN_ID))
         .thenReturn(Optional.of(review(ReviewStatus.REVIEWED_WITH_DISPUTES)));
     when(deriver.derive(PLAN_ID))
@@ -186,7 +221,7 @@ class ResolveDisputeServiceTest {
   @Test
   void resolve_onNotReviewedPlan_staysNotReviewed() {
     when(disputes.findById(DISPUTE_ID)).thenReturn(Optional.of(dispute(DisputeStatus.OPEN)));
-    when(commitments.findById(COMMITMENT_ID)).thenReturn(Optional.of(commitment()));
+    stubCommitmentAndPlan();
     when(reviews.findByWeeklyPlanId(PLAN_ID))
         .thenReturn(Optional.of(review(ReviewStatus.NOT_REVIEWED)));
 
@@ -238,7 +273,7 @@ class ResolveDisputeServiceTest {
   @Test
   void resolve_auditHasNoNoteBodies() {
     when(disputes.findById(DISPUTE_ID)).thenReturn(Optional.of(dispute(DisputeStatus.OPEN)));
-    when(commitments.findById(COMMITMENT_ID)).thenReturn(Optional.of(commitment()));
+    stubCommitmentAndPlan();
     when(reviews.findByWeeklyPlanId(PLAN_ID)).thenReturn(Optional.empty());
 
     service.resolve(manager(), DISPUTE_ID);

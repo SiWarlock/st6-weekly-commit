@@ -19,6 +19,7 @@ import com.st6.wc.enums.RoleType;
 import com.st6.wc.identity.UserPrincipal;
 import com.st6.wc.plan.WeeklyPlan;
 import com.st6.wc.plan.repo.WeeklyPlanRepository;
+import com.st6.wc.projection.ProjectionRefresher;
 import com.st6.wc.review.dto.MarkReviewedRequest;
 import com.st6.wc.review.mapper.ReviewMapper;
 import com.st6.wc.review.repo.ManagerReviewRepository;
@@ -50,10 +51,12 @@ class MarkReviewedServiceTest {
   private final ReviewStatusDeriver deriver = mock(ReviewStatusDeriver.class);
   private final ReviewMapper reviewMapper = mock(ReviewMapper.class);
   private final AuditService auditService = mock(AuditService.class);
+  private final ProjectionRefresher projectionRefresher = mock(ProjectionRefresher.class);
   private final Clock clock = Clock.fixed(Instant.parse("2026-06-03T15:00:00Z"), ZoneOffset.UTC);
 
   private final ReviewService service =
-      new ReviewService(authz, reviews, plans, deriver, reviewMapper, auditService, clock);
+      new ReviewService(
+          authz, reviews, plans, deriver, reviewMapper, auditService, projectionRefresher, clock);
 
   private static final UUID REVIEW_ID = UUID.fromString("a0000000-0000-0000-0000-000000000001");
   private static final UUID PLAN_ID = UUID.fromString("b0000000-0000-0000-0000-000000000001");
@@ -104,6 +107,20 @@ class MarkReviewedServiceTest {
             eq(MANAGER_ID),
             any(),
             eq("{}")); // safe metadata only — no note body (§15)
+  }
+
+  // --- 6.3b §9 trigger: mark-reviewed synchronously refreshes the manager projection (same txn) -
+  @Test
+  void markReviewed_refreshesProjection() {
+    when(reviews.findById(REVIEW_ID)).thenReturn(Optional.of(review()));
+    when(plans.findById(PLAN_ID)).thenReturn(Optional.of(plan(PlanState.LOCKED)));
+    when(deriver.unresolvedDisputeCount(PLAN_ID)).thenReturn(0);
+
+    service.markReviewed(manager(), REVIEW_ID, new MarkReviewedRequest("looks good"));
+
+    ArgumentCaptor<WeeklyPlan> refreshed = ArgumentCaptor.forClass(WeeklyPlan.class);
+    verify(projectionRefresher).recomputeForPlan(refreshed.capture());
+    assertThat(refreshed.getValue().getId()).isEqualTo(PLAN_ID); // the in-scope, loaded plan
   }
 
   // --- rule #3: a denied authorize is the chokepoint — nothing loaded or persisted ----

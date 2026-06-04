@@ -7,6 +7,7 @@ import com.st6.wc.enums.PlanState;
 import com.st6.wc.identity.UserPrincipal;
 import com.st6.wc.plan.WeeklyPlan;
 import com.st6.wc.plan.repo.WeeklyPlanRepository;
+import com.st6.wc.projection.ProjectionRefresher;
 import com.st6.wc.review.dto.ManagerReviewDto;
 import com.st6.wc.review.dto.MarkReviewedRequest;
 import com.st6.wc.review.mapper.ReviewMapper;
@@ -23,8 +24,9 @@ import org.springframework.transaction.annotation.Transactional;
  * DomainAuthorizationService#authorizeReviewMutation}; the IC owner cannot mark their own review),
  * guards the plan state, derives the status server-side via {@link ReviewStatusDeriver} (never
  * client-set), stamps {@code reviewedAt} from the injected {@code Clock}, applies the optional
- * {@code summaryNote}, persists ({@code @Version}-guarded), and emits a note-body-free {@code
- * REVIEW_MARKED} audit (§15).
+ * {@code summaryNote}, persists ({@code @Version}-guarded), synchronously refreshes the §9 manager
+ * projection (task 6.3b — {@code review_status}/{@code is_review_overdue}) in the same txn, and
+ * emits a note-body-free {@code REVIEW_MARKED} audit (§15).
  */
 @Service
 public class ReviewService {
@@ -35,6 +37,7 @@ public class ReviewService {
   private final ReviewStatusDeriver deriver;
   private final ReviewMapper reviewMapper;
   private final AuditService auditService;
+  private final ProjectionRefresher projectionRefresher;
   private final Clock clock;
 
   public ReviewService(
@@ -44,6 +47,7 @@ public class ReviewService {
       ReviewStatusDeriver deriver,
       ReviewMapper reviewMapper,
       AuditService auditService,
+      ProjectionRefresher projectionRefresher,
       Clock clock) {
     this.authz = authz;
     this.reviews = reviews;
@@ -51,6 +55,7 @@ public class ReviewService {
     this.deriver = deriver;
     this.reviewMapper = reviewMapper;
     this.auditService = auditService;
+    this.projectionRefresher = projectionRefresher;
     this.clock = clock;
   }
 
@@ -76,6 +81,8 @@ public class ReviewService {
       review.setSummaryNote(req.summaryNote());
     }
     reviews.save(review); // @Version-guarded — concurrent conflict → 409 at the handler
+    projectionRefresher.recomputeForPlan(
+        plan); // §9 (6.3b) — refresh review_status/is_review_overdue
 
     auditService.record(
         "REVIEW_MARKED",

@@ -191,6 +191,18 @@ public class ProjectionService {
           cell.setUpdatedAt(clock.instant());
           cells.save(cell);
         });
+
+    // 6.3b stale-cell deletion: a Defining Objective no longer touched by any commitment (e.g. a
+    // dispute-respond rule-#2 SO revision remapped a commitment to a different DO) would leave an
+    // orphan cell under the upsert-only path — delete it so a fresh recompute (and the 6.7 rebuild)
+    // never reads a stale heatmap row (RISK-003 drift; rebuild==incremental). Summary rows are
+    // unaffected — the grain (manager,employee,week) is stable; only DO cells go stale.
+    existing.forEach(
+        (definingObjectiveId, cell) -> {
+          if (!byDefiningObjective.containsKey(definingObjectiveId)) {
+            cells.delete(cell);
+          }
+        });
   }
 
   private static List<RiskBadge> riskBadges(

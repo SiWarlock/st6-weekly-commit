@@ -26,6 +26,7 @@ import com.st6.wc.enums.RoleType;
 import com.st6.wc.identity.UserPrincipal;
 import com.st6.wc.plan.WeeklyPlan;
 import com.st6.wc.plan.repo.WeeklyPlanRepository;
+import com.st6.wc.projection.ProjectionRefresher;
 import com.st6.wc.review.ManagerReview;
 import com.st6.wc.review.ReviewStatusDeriver;
 import com.st6.wc.review.repo.ManagerReviewRepository;
@@ -62,6 +63,7 @@ class OpenDisputeServiceTest {
   private final AuditService auditService = mock(AuditService.class);
   private final com.st6.wc.rcdo.RcdoReadService rcdoReadService =
       mock(com.st6.wc.rcdo.RcdoReadService.class);
+  private final ProjectionRefresher projectionRefresher = mock(ProjectionRefresher.class);
 
   private final DisputeService service =
       new DisputeService(
@@ -74,6 +76,7 @@ class OpenDisputeServiceTest {
           disputeMapper,
           auditService,
           rcdoReadService,
+          projectionRefresher,
           Clock.systemUTC());
 
   private static final UUID COMMITMENT_ID = UUID.fromString("d0000000-0000-0000-0000-000000000001");
@@ -143,6 +146,20 @@ class OpenDisputeServiceTest {
             eq(MANAGER_ID),
             any(),
             any()); // safe metadata only — no managerNote body asserted in the endpoint test
+  }
+
+  // --- 6.3b §9 trigger: open synchronously refreshes the manager projection (same txn) ----
+  @Test
+  void open_refreshesProjection() {
+    stubLockedCommitmentNoExistingDispute();
+    when(reviews.findByWeeklyPlanId(PLAN_ID)).thenReturn(Optional.empty());
+
+    service.open(manager(), COMMITMENT_ID, request());
+
+    ArgumentCaptor<WeeklyPlan> refreshed = ArgumentCaptor.forClass(WeeklyPlan.class);
+    verify(projectionRefresher).recomputeForPlan(refreshed.capture());
+    assertThat(refreshed.getValue().getId()).isEqualTo(PLAN_ID); // the in-scope, loaded plan
+    verify(disputes).saveAndFlush(any()); // the dispute still persisted (refresh is additive)
   }
 
   // --- rule #3: a denied authorize is the chokepoint — nothing loaded or persisted ----

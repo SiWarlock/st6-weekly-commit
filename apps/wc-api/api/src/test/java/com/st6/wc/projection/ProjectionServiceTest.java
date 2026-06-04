@@ -120,6 +120,16 @@ class ProjectionServiceTest {
     return r;
   }
 
+  private static ManagerHeatmapCell existingCell(UUID definingObjectiveId) {
+    ManagerHeatmapCell cell = new ManagerHeatmapCell();
+    cell.setId(UUID.randomUUID());
+    cell.setManagerEmployeeId(MGR);
+    cell.setEmployeeId(IC);
+    cell.setWeekStartDate(WEEK);
+    cell.setDefiningObjectiveId(definingObjectiveId);
+    return cell;
+  }
+
   private void stubEmptyProjectionLookups() {
     when(summaries.findByManagerEmployeeIdAndEmployeeIdAndWeekStartDate(MGR, IC, WEEK))
         .thenReturn(Optional.empty());
@@ -291,6 +301,54 @@ class ProjectionServiceTest {
             .orElseThrow();
     assertThat(do2.getBlockedCount()).isZero(); // work_type=BLOCKER no longer fires blocked
     assertThat(do2.getRiskBadges()).doesNotContain(RiskBadge.BLOCKED);
+  }
+
+  // --- 6.3b stale-cell deletion: a DO no longer touched by any commitment has its cell DELETED
+  // (the recompute is no longer upsert-only — a DO remap, e.g. dispute-respond's rule-#2 SO
+  // revision, must not leave an orphan cell); a still-touched DO's cell is kept + updated ----
+  @Test
+  void recompute_deletesStaleCells_keepsLiveCells() {
+    when(summaries.findByManagerEmployeeIdAndEmployeeIdAndWeekStartDate(MGR, IC, WEEK))
+        .thenReturn(Optional.empty());
+    ManagerHeatmapCell liveDo1 = existingCell(DO1); // a DO the new commitment set still touches
+    ManagerHeatmapCell staleDo2 =
+        existingCell(DO2); // a DO the new commitment set no longer touches
+    when(cells.findByManagerEmployeeIdAndEmployeeIdAndWeekStartDate(MGR, IC, WEEK))
+        .thenReturn(List.of(liveDo1, staleDo2));
+    when(rcdo.findSupportingOutcome(SO1)).thenReturn(so(SO1, DO1));
+    WeeklyCommitment onlyDo1 = commitment(SO1, AlignmentStatus.ALIGNED, WorkType.STRATEGIC, null);
+
+    service.recompute(plan(PlanState.LOCKED), MGR, List.of(onlyDo1), review());
+
+    verify(cells).delete(staleDo2); // DO2 orphan removed
+    verify(cells, never()).delete(liveDo1); // DO1 still live → kept
+    ArgumentCaptor<ManagerHeatmapCell> saved = ArgumentCaptor.forClass(ManagerHeatmapCell.class);
+    verify(cells).save(saved.capture());
+    assertThat(saved.getValue().getDefiningObjectiveId()).isEqualTo(DO1); // DO1 cell upserted
+  }
+
+  // --- REQ-F-013 (069 ADD): a REVIEWED_WITH_DISPUTES review stays NOT overdue even when past
+  // reviewDueAt — is_review_overdue + the OVERDUE_REVIEW/UNREVIEWED badges are gated on
+  // status==NOT_REVIEWED, so the not-NOT_REVIEWED branch short-circuits regardless of the Clock
+  // ----
+  @Test
+  void recompute_reviewedWithDisputesPastDue_notOverdueNoBadge() {
+    stubEmptyProjectionLookups();
+    when(rcdo.findSupportingOutcome(SO1)).thenReturn(so(SO1, DO1));
+    ManagerReview withDisputesPastDue = new ManagerReview();
+    withDisputesPastDue.setId(UUID.randomUUID());
+    withDisputesPastDue.setWeeklyPlanId(PLAN);
+    withDisputesPastDue.setManagerEmployeeId(MGR);
+    withDisputesPastDue.setStatus(ReviewStatus.REVIEWED_WITH_DISPUTES);
+    withDisputesPastDue.setReviewDueAt(
+        Instant.parse("2026-06-01T00:00:00Z")); // BEFORE the fixed clock (2026-06-02T12:00Z)
+    WeeklyCommitment c = commitment(SO1, AlignmentStatus.ALIGNED, WorkType.STRATEGIC, null);
+
+    service.recompute(plan(PlanState.RECONCILED), MGR, List.of(c), withDisputesPastDue);
+
+    assertThat(captureSummary().isReviewOverdue()).isFalse(); // not NOT_REVIEWED ⇒ never overdue
+    assertThat(captureCells(1).get(0).getRiskBadges())
+        .doesNotContain(RiskBadge.OVERDUE_REVIEW, RiskBadge.UNREVIEWED);
   }
 
   // --- empty commitment set → no dispute query (empty SQL IN is invalid), zero counts ----

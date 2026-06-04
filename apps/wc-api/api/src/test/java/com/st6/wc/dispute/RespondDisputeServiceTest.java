@@ -27,7 +27,9 @@ import com.st6.wc.enums.Priority;
 import com.st6.wc.enums.RoleType;
 import com.st6.wc.enums.WorkType;
 import com.st6.wc.identity.UserPrincipal;
+import com.st6.wc.plan.WeeklyPlan;
 import com.st6.wc.plan.repo.WeeklyPlanRepository;
+import com.st6.wc.projection.ProjectionRefresher;
 import com.st6.wc.rcdo.RcdoReadService;
 import com.st6.wc.rcdo.SupportingOutcome;
 import com.st6.wc.review.ReviewStatusDeriver;
@@ -60,6 +62,7 @@ class RespondDisputeServiceTest {
   private final DisputeMapper disputeMapper = mock(DisputeMapper.class);
   private final AuditService auditService = mock(AuditService.class);
   private final RcdoReadService rcdoReadService = mock(RcdoReadService.class);
+  private final ProjectionRefresher projectionRefresher = mock(ProjectionRefresher.class);
 
   private final DisputeService service =
       new DisputeService(
@@ -72,10 +75,12 @@ class RespondDisputeServiceTest {
           disputeMapper,
           auditService,
           rcdoReadService,
+          projectionRefresher,
           Clock.systemUTC());
 
   private static final UUID DISPUTE_ID = UUID.fromString("e0000000-0000-0000-0000-000000000001");
   private static final UUID COMMITMENT_ID = UUID.fromString("d0000000-0000-0000-0000-000000000001");
+  private static final UUID PLAN_ID = UUID.fromString("b0000000-0000-0000-0000-000000000001");
   private static final UUID IC_ID = UUID.fromString("a0000000-0000-0000-0000-000000000011");
   private static final UUID SO_OLD = UUID.fromString("c0000000-0000-0000-0000-000000000001");
   private static final UUID SO_NEW = UUID.fromString("c0000000-0000-0000-0000-000000000002");
@@ -98,7 +103,7 @@ class RespondDisputeServiceTest {
   private WeeklyCommitment commitment() {
     WeeklyCommitment c = new WeeklyCommitment();
     c.setId(COMMITMENT_ID);
-    c.setWeeklyPlanId(UUID.randomUUID());
+    c.setWeeklyPlanId(PLAN_ID);
     c.setCommitmentKind(CommitmentKind.PLANNED);
     c.setTitle("Draft the runbook");
     c.setDescription("the runbook detail");
@@ -110,11 +115,30 @@ class RespondDisputeServiceTest {
     return c;
   }
 
+  private WeeklyPlan plan() {
+    WeeklyPlan p = new WeeklyPlan();
+    p.setId(PLAN_ID);
+    p.setEmployeeId(IC_ID);
+    return p;
+  }
+
+  /**
+   * Stub the unconditional end-of-respond load (6.3b — respond now loads {@code
+   * dispute.commitmentId} → commitment → plan to feed {@code projectionRefresher.recomputeForPlan};
+   * the rule-#2 SO-revision remaps the commitment's DO, so the §9 cell grain shifts). The
+   * commitment carries {@link #PLAN_ID}.
+   */
+  private void stubCommitmentAndPlan() {
+    when(commitments.findById(COMMITMENT_ID)).thenReturn(Optional.of(commitment()));
+    when(plans.findById(PLAN_ID)).thenReturn(Optional.of(plan()));
+  }
+
   // --- owning IC responds with rationale → OPEN→IC_RESPONDED, icResponse set, audit; no SO touch
   // --
   @Test
   void respond_byOwningIc_withRationale_transitionsToIcResponded() {
     when(disputes.findById(DISPUTE_ID)).thenReturn(Optional.of(dispute(DisputeStatus.OPEN)));
+    stubCommitmentAndPlan();
 
     service.respond(ic(), DISPUTE_ID, new RespondDisputeRequest("here is my rationale", null));
 
@@ -134,7 +158,7 @@ class RespondDisputeServiceTest {
   void respond_revisesSupportingOutcome_updatesCommitmentSo() {
     when(disputes.findById(DISPUTE_ID)).thenReturn(Optional.of(dispute(DisputeStatus.OPEN)));
     when(rcdoReadService.findSupportingOutcome(SO_NEW)).thenReturn(mock(SupportingOutcome.class));
-    when(commitments.findById(COMMITMENT_ID)).thenReturn(Optional.of(commitment()));
+    stubCommitmentAndPlan();
 
     service.respond(ic(), DISPUTE_ID, new RespondDisputeRequest(null, SO_NEW));
 
@@ -151,7 +175,7 @@ class RespondDisputeServiceTest {
   void respond_doesNotTouchOtherBaselineFields() {
     when(disputes.findById(DISPUTE_ID)).thenReturn(Optional.of(dispute(DisputeStatus.OPEN)));
     when(rcdoReadService.findSupportingOutcome(SO_NEW)).thenReturn(mock(SupportingOutcome.class));
-    when(commitments.findById(COMMITMENT_ID)).thenReturn(Optional.of(commitment()));
+    stubCommitmentAndPlan();
 
     service.respond(ic(), DISPUTE_ID, new RespondDisputeRequest(null, SO_NEW));
 
@@ -220,14 +244,30 @@ class RespondDisputeServiceTest {
     verify(disputes, never()).save(any());
   }
 
-  // --- no-side-effect: respond does NOT re-derive the review or touch the projection ----
+  // --- respond stays unresolved → it does NOT re-derive the review status (open/resolve do) ----
   @Test
-  void respond_doesNotReDeriveReviewOrTouchProjection() {
+  void respond_doesNotReDeriveReview() {
     when(disputes.findById(DISPUTE_ID)).thenReturn(Optional.of(dispute(DisputeStatus.OPEN)));
+    stubCommitmentAndPlan();
 
     service.respond(ic(), DISPUTE_ID, new RespondDisputeRequest("rationale", null));
 
     verify(reviews, never()).save(any()); // dispute stays unresolved → review untouched
     verify(deriver, never()).derive(any());
+  }
+
+  // --- 6.3b §9 trigger: respond synchronously refreshes the manager projection (SUPERSEDES the
+  // 5.4 "NO projection change" — the rule-#2 SO-revision remaps the commitment's DO, shifting the
+  // §9 heatmap-cell grain; the refresh is unconditional, the no-revision case a cheap no-op) ----
+  @Test
+  void respond_refreshesProjection() {
+    when(disputes.findById(DISPUTE_ID)).thenReturn(Optional.of(dispute(DisputeStatus.OPEN)));
+    stubCommitmentAndPlan();
+
+    service.respond(ic(), DISPUTE_ID, new RespondDisputeRequest("rationale", null));
+
+    ArgumentCaptor<WeeklyPlan> refreshed = ArgumentCaptor.forClass(WeeklyPlan.class);
+    verify(projectionRefresher).recomputeForPlan(refreshed.capture());
+    assertThat(refreshed.getValue().getId()).isEqualTo(PLAN_ID); // commitment.weeklyPlanId → plan
   }
 }
