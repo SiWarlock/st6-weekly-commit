@@ -22,7 +22,11 @@ vi.mock('../review/reviewApi');
 // CommandCenterFilters (ST.8b-2) sources its Defining-objective dropdown from the
 // RCDO read — mock it so these store-free CommandCenter tests don't need a Provider.
 vi.mock('../rcdo/rcdoApi', () => ({
-  useGetRcdoQuery: () => ({ data: undefined, isLoading: false, isError: false }),
+  useGetRcdoQuery: () => ({
+    data: undefined,
+    isLoading: false,
+    isError: false,
+  }),
 }));
 
 /**
@@ -616,9 +620,7 @@ describe('CommandCenter → manager dispute surface (9.14)', () => {
     expect(within(drawer).getByText('Not reviewed')).toBeInTheDocument();
     // Lock-timestamp line (a single node, from the plan's lockedAt — distinct
     // from the exact-"Locked" plan-state pill).
-    expect(
-      within(drawer).getByText(/Locked\b.*(AM|PM)/i),
-    ).toBeInTheDocument();
+    expect(within(drawer).getByText(/Locked\b.*(AM|PM)/i)).toBeInTheDocument();
   });
 
   it('review_drawer_keeps_inline_flag_ux: a commitment that allows OPEN_DISPUTE renders the inline per-commitment flag control (DisputePanel open-form) — NOT a separate FlagModal (lead carve-out; regression guard)', async () => {
@@ -632,7 +634,9 @@ describe('CommandCenter → manager dispute surface (9.14)', () => {
       ]),
     );
     // The flag form renders inline in the commitment row — the carve-out holds.
-    expect(drawer.querySelector('[data-cy="dispute-open-form"]')).not.toBeNull();
+    expect(
+      drawer.querySelector('[data-cy="dispute-open-form"]'),
+    ).not.toBeNull();
     expect(within(drawer).getByLabelText('Flag type')).toBeInTheDocument();
   });
 });

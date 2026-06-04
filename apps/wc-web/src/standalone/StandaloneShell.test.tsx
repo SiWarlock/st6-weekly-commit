@@ -99,9 +99,7 @@ describe('StandaloneShell (full standalone provider tree)', () => {
 
     // Auth0 mode, unauthenticated → the branded login screen; no app mount (no
     // getMe fetch needed). The demo PersonaSwitcher is absent in auth0 mode.
-    expect(
-      screen.getByRole('button', { name: /log in/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /log in/i })).toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: /persona/i }),
     ).not.toBeInTheDocument();

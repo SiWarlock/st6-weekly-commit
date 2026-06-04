@@ -73,14 +73,14 @@ Vite inlines `import.meta.env` at build → **one build per backend URL + Auth0 
 these (in `.env.local` or the build environment) — the full reference + verified values live
 in [`.env.example`](.env.example), not duplicated here:
 
-| Var | Value |
-| --- | --- |
-| `VITE_AUTH_MODE` | `auth0` |
-| `VITE_USE_MOCKS` | `false` |
-| `VITE_API_BASE_URL` | `https://api.wc.<ROOT_DOMAIN>` (required — fail-fast if unset) |
-| `VITE_AUTH0_DOMAIN` | the issuer tenant domain (the SAME tenant as the backend `AUTH0_ISSUER_URI`) |
-| `VITE_AUTH0_CLIENT_ID` | the Auth0 SPA application's Client ID |
-| `VITE_AUTH0_AUDIENCE` | `https://api.wc.<ROOT_DOMAIN>` (== backend `auth0.audience`) |
+| Var                    | Value                                                                        |
+| ---------------------- | ---------------------------------------------------------------------------- |
+| `VITE_AUTH_MODE`       | `auth0`                                                                      |
+| `VITE_USE_MOCKS`       | `false`                                                                      |
+| `VITE_API_BASE_URL`    | `https://api.wc.<ROOT_DOMAIN>` (required — fail-fast if unset)               |
+| `VITE_AUTH0_DOMAIN`    | the issuer tenant domain (the SAME tenant as the backend `AUTH0_ISSUER_URI`) |
+| `VITE_AUTH0_CLIENT_ID` | the Auth0 SPA application's Client ID                                        |
+| `VITE_AUTH0_AUDIENCE`  | `https://api.wc.<ROOT_DOMAIN>` (== backend `auth0.audience`)                 |
 
 ```bash
 cd apps/wc-web && yarn build:standalone    # → dist/  (index.html + hashed assets)
@@ -91,8 +91,7 @@ cd apps/wc-web && yarn build:standalone    # → dist/  (index.html + hashed ass
 Upload `dist/` to the S3 bucket fronted by CloudFront (Terraform: `infra/terraform/s3_cloudfront.tf`,
 task 12.6). **SPA-fallback is already configured there** — CloudFront returns `/index.html` (200)
 for `403`/`404`, with `default_root_object = index.html` — so a hard refresh or deep link on a
-client route (e.g. `/callback`, `/manager/command-center`) resolves to the SPA, not a CloudFront
-404. No extra infra is needed for client-side routing.
+client route (e.g. `/callback`, `/manager/command-center`) resolves to the SPA, not a CloudFront 404. No extra infra is needed for client-side routing.
 
 ### 3. The OAuth login flow (9.17)
 

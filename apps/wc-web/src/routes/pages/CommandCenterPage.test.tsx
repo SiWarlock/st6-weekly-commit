@@ -11,7 +11,11 @@ vi.mock('../../features/manager/managerApi');
 // CommandCenterFilters (ST.8b-2) reads RCDO for its Defining-objective dropdown —
 // mock it so this store-free page test doesn't need a Provider.
 vi.mock('../../features/rcdo/rcdoApi', () => ({
-  useGetRcdoQuery: () => ({ data: undefined, isLoading: false, isError: false }),
+  useGetRcdoQuery: () => ({
+    data: undefined,
+    isLoading: false,
+    isError: false,
+  }),
 }));
 
 function env(): PageEnvelope<ManagerCommandCenterRowDto> {

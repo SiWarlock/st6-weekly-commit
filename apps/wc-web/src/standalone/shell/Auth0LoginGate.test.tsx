@@ -1,5 +1,13 @@
 import { render, screen } from '@testing-library/react';
-import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  vi,
+  type Mock,
+} from 'vitest';
 import { type ReactNode } from 'react';
 
 vi.mock('@auth0/auth0-react', () => ({
@@ -39,7 +47,9 @@ describe('Auth0LoginGate (loading → login screen → app)', () => {
   });
 
   it('loginGate_loginScreenWhenUnauthenticated: unauthenticated shows the login screen, not the app', () => {
-    mockUseAuth0.mockReturnValue(state({ isLoading: false, isAuthenticated: false }));
+    mockUseAuth0.mockReturnValue(
+      state({ isLoading: false, isAuthenticated: false }),
+    );
     render(
       <Auth0LoginGate>
         <div data-testid="app" />

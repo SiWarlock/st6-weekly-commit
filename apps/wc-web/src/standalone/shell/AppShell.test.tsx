@@ -85,9 +85,7 @@ describe('ST.8a standalone app-shell — deterministic seams', () => {
     mockIsManager = true;
     mockIdentity.personaId = MGR.id;
     renderShell('/manager/command-center');
-    expect(
-      screen.getByRole('button', { name: 'My Team' }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'My Team' })).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'My Weekly Commit' }),
     ).toBeInTheDocument();
@@ -159,8 +157,8 @@ describe('ST.8a standalone app-shell — deterministic seams', () => {
     renderShell('/weekly-commit');
     expect(screen.getByText('ST6 Weekly Commit')).toBeInTheDocument();
     expect(screen.getByText('Demo')).toBeInTheDocument();
-    expect(
-      screen.getAllByText('Week of Jun 1–7, 2026').length,
-    ).toBeGreaterThan(0);
+    expect(screen.getAllByText('Week of Jun 1–7, 2026').length).toBeGreaterThan(
+      0,
+    );
   });
 });

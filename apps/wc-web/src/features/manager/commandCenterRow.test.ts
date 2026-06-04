@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  reviewSubline,
-  reconcileText,
-  actionLabel,
-} from './commandCenterRow';
+import { reviewSubline, reconcileText, actionLabel } from './commandCenterRow';
 import type { ManagerCommandCenterRowDto } from '../../shared/lib/dtos';
 
 // ST.8b — the pure per-row derivations for the command-center table (the review

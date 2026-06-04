@@ -54,7 +54,9 @@ export function reconcileText(row: ManagerCommandCenterRowDto): string {
 }
 
 /** The row action label (§B.9) — "Open" once reviewed, else "Review". */
-export function actionLabel(row: ManagerCommandCenterRowDto): 'Review' | 'Open' {
+export function actionLabel(
+  row: ManagerCommandCenterRowDto,
+): 'Review' | 'Open' {
   return row.reviewStatus === 'REVIEWED' ||
     row.reviewStatus === 'REVIEWED_WITH_DISPUTES'
     ? 'Open'
@@ -91,7 +93,8 @@ export function summarizeRows(
       disputes: acc.disputes + r.unresolvedDisputeCount,
       reconciling: acc.reconciling + (r.planState === 'RECONCILING' ? 1 : 0),
       notLocked: acc.notLocked + (r.planState === 'DRAFT' ? 1 : 0),
-      reviewedClean: acc.reviewedClean + (r.reviewStatus === 'REVIEWED' ? 1 : 0),
+      reviewedClean:
+        acc.reviewedClean + (r.reviewStatus === 'REVIEWED' ? 1 : 0),
     }),
     {
       reports: 0,

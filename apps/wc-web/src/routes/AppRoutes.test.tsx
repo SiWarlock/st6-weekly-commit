@@ -33,7 +33,11 @@ vi.mock('../features/sync/syncApi');
 // CommandCenterFilters (ST.8b-2) reads RCDO for its Defining-objective dropdown;
 // mock it so the routing tests stay store-free.
 vi.mock('../features/rcdo/rcdoApi', () => ({
-  useGetRcdoQuery: () => ({ data: undefined, isLoading: false, isError: false }),
+  useGetRcdoQuery: () => ({
+    data: undefined,
+    isLoading: false,
+    isError: false,
+  }),
 }));
 
 const EMPTY_PLAN: WeeklyPlanDto = {

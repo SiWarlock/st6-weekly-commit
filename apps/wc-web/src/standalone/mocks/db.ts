@@ -16,12 +16,7 @@
  * a faithful double that mirrors them so the demo/QA can traverse the loop. The
  * other (non-dispute) mutations stay static-coherent in `handlers.ts` (9.15b).
  */
-import {
-  ALL_PLANS,
-  COMMAND_CENTER_ROWS,
-  IC_1,
-  breadcrumb,
-} from './fixtures';
+import { ALL_PLANS, COMMAND_CENTER_ROWS, IC_1, breadcrumb } from './fixtures';
 import type {
   AlignmentDisputeDto,
   AllowedAction,
@@ -91,7 +86,9 @@ function rawPlanByPersona(personaId: string): WeeklyPlanDto {
 }
 
 /** A live commitment by id (across all plans) — the mutation target. */
-export function getCommitment(commitmentId: string): WeeklyCommitmentDto | undefined {
+export function getCommitment(
+  commitmentId: string,
+): WeeklyCommitmentDto | undefined {
   for (const plan of store.plans) {
     const found = plan.commitments.find((c) => c.id === commitmentId);
     if (found) {
@@ -146,7 +143,10 @@ function emitDisputeAffordances(
       if (viewerIsManager && lockedPlus) {
         return {
           ...c,
-          allowedActions: [...c.allowedActions, 'OPEN_DISPUTE' as AllowedAction],
+          allowedActions: [
+            ...c.allowedActions,
+            'OPEN_DISPUTE' as AllowedAction,
+          ],
         };
       }
       return c;
@@ -254,7 +254,10 @@ export function respondDispute(
   if (!located) {
     throw new MockDbError(404, 'NOT_FOUND', 'This resource is not available.');
   }
-  if (body.icResponse === undefined && body.newSupportingOutcomeId === undefined) {
+  if (
+    body.icResponse === undefined &&
+    body.newSupportingOutcomeId === undefined
+  ) {
     throw new MockDbError(
       400,
       'INVALID_DISPUTE_RESPONSE',
@@ -268,7 +271,9 @@ export function respondDispute(
   }
   if (body.newSupportingOutcomeId !== undefined) {
     commitment.supportingOutcomeId = body.newSupportingOutcomeId;
-    commitment.supportingOutcomeBreadcrumb = breadcrumb(body.newSupportingOutcomeId);
+    commitment.supportingOutcomeBreadcrumb = breadcrumb(
+      body.newSupportingOutcomeId,
+    );
   }
   dispute.version += 1;
   // Still unresolved → the review's unresolved count does not change on respond.

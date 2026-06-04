@@ -38,7 +38,9 @@ function disputedCommitment(): WeeklyCommitmentDto {
   const plan = getPlanForPersona(IC_3);
   const c = plan.commitments.find((x) => x.dispute);
   if (!c) {
-    throw new Error('fixture invariant: ic-3 should seed one disputed commitment');
+    throw new Error(
+      'fixture invariant: ic-3 should seed one disputed commitment',
+    );
   }
   return c;
 }
@@ -51,7 +53,9 @@ function undisputedReviewedCommitment(): {
   const plan = getPlanForPersona(IC_4);
   const commitment = plan.commitments.find((c) => !c.dispute);
   if (!commitment) {
-    throw new Error('fixture invariant: ic-4 should have an undisputed commitment');
+    throw new Error(
+      'fixture invariant: ic-4 should have an undisputed commitment',
+    );
   }
   return { plan, commitment };
 }
@@ -70,7 +74,10 @@ describe('9.15 standalone MSW mutable db — dispute lifecycle write-through', (
 
     const created = openDispute(
       commitment.id,
-      { flagType: 'MISALIGNED', managerNote: 'Re-link this to the reliability outcome.' },
+      {
+        flagType: 'MISALIGNED',
+        managerNote: 'Re-link this to the reliability outcome.',
+      },
       MGR_1,
     );
     expect(created.status).toBe('OPEN');
@@ -96,7 +103,11 @@ describe('9.15 standalone MSW mutable db — dispute lifecycle write-through', (
     const countBefore = planBefore.managerReview?.unresolvedDisputeCount;
 
     const err = captureThrow(() =>
-      openDispute(c.id, { flagType: 'NEEDS_REVISION', managerNote: 'again' }, MGR_1),
+      openDispute(
+        c.id,
+        { flagType: 'NEEDS_REVISION', managerNote: 'again' },
+        MGR_1,
+      ),
     );
     expect(err).toBeInstanceOf(MockDbError);
     expect(err.status).toBe(409);
@@ -110,7 +121,11 @@ describe('9.15 standalone MSW mutable db — dispute lifecycle write-through', (
 
   it('open_on_unknown_commitment_404: opening a dispute on a non-existent commitment id → 404 (not-found, never leaks existence)', () => {
     const err = captureThrow(() =>
-      openDispute('commit-does-not-exist', { flagType: 'MISALIGNED', managerNote: 'x' }, MGR_1),
+      openDispute(
+        'commit-does-not-exist',
+        { flagType: 'MISALIGNED', managerNote: 'x' },
+        MGR_1,
+      ),
     );
     expect(err.status).toBe(404);
   });
@@ -130,13 +145,17 @@ describe('9.15 standalone MSW mutable db — dispute lifecycle write-through', (
       newSupportingOutcomeId: otherSo,
     });
     expect(updated.status).toBe('IC_RESPONDED');
-    expect(updated.icResponse).toBe('Re-scoped — this maps to reliability after all.');
+    expect(updated.icResponse).toBe(
+      'Re-scoped — this maps to reliability after all.',
+    );
 
     const after = getPlanForPersona(IC_3);
     const reread = after.commitments.find((x) => x.id === c.id);
     expect(reread?.dispute?.status).toBe('IC_RESPONDED');
     expect(reread?.supportingOutcomeId).toBe(otherSo);
-    expect(reread?.supportingOutcomeBreadcrumb?.supportingOutcomeId).toBe(otherSo);
+    expect(reread?.supportingOutcomeBreadcrumb?.supportingOutcomeId).toBe(
+      otherSo,
+    );
     // Still unresolved → the review count does NOT change on respond.
     expect(after.managerReview?.unresolvedDisputeCount).toBe(countBefore);
   });
@@ -172,7 +191,9 @@ describe('9.15 standalone MSW mutable db — dispute lifecycle write-through', (
       { flagType: 'MISALIGNED', managerNote: 'check this' },
       MGR_1,
     );
-    expect(getPlanById(plan.id)?.managerReview?.status).toBe('REVIEWED_WITH_DISPUTES');
+    expect(getPlanById(plan.id)?.managerReview?.status).toBe(
+      'REVIEWED_WITH_DISPUTES',
+    );
 
     resolveDispute(created.id);
     const after = getPlanById(plan.id);
@@ -242,7 +263,11 @@ describe('9.15 standalone MSW mutable db — dispute lifecycle write-through', (
     expect(rowBefore?.unresolvedDisputeCount).toBe(0);
     const plannedBefore = rowBefore?.plannedCount;
 
-    openDispute(commitment.id, { flagType: 'MISALIGNED', managerNote: 'x' }, MGR_1);
+    openDispute(
+      commitment.id,
+      { flagType: 'MISALIGNED', managerNote: 'x' },
+      MGR_1,
+    );
 
     const rowAfter = commandCenterPage().content.find(
       (r) => r.weeklyPlanId === plan.id,
@@ -256,10 +281,14 @@ describe('9.15 standalone MSW mutable db — dispute lifecycle write-through', (
     const c = disputedCommitment();
     resolveDispute(c.dispute!.id);
     // Same world, read again — the resolve persisted (no per-read reset).
-    expect(getPlanForPersona(IC_3).managerReview?.unresolvedDisputeCount).toBe(0);
+    expect(getPlanForPersona(IC_3).managerReview?.unresolvedDisputeCount).toBe(
+      0,
+    );
     // A fresh seed restores the canonical OPEN dispute (count back to 1).
     resetDb();
-    expect(getPlanForPersona(IC_3).managerReview?.unresolvedDisputeCount).toBe(1);
+    expect(getPlanForPersona(IC_3).managerReview?.unresolvedDisputeCount).toBe(
+      1,
+    );
   });
 
   it('seed_is_deep_cloned_not_aliased: mutating the db never mutates the exported fixture seed (structuredClone isolation)', () => {
@@ -267,7 +296,9 @@ describe('9.15 standalone MSW mutable db — dispute lifecycle write-through', (
     resolveDispute(c.dispute!.id);
     // The canonical fixture seed still carries the OPEN dispute (db is a clone).
     const seedPlan = ALL_PLANS.find((p) => p.employeeId === IC_3)!;
-    expect(seedPlan.commitments.some((x) => x.dispute?.status === 'OPEN')).toBe(true);
+    expect(seedPlan.commitments.some((x) => x.dispute?.status === 'OPEN')).toBe(
+      true,
+    );
   });
 
   it('getCommitment_and_findDispute_locate_by_id: the selectors resolve a commitment + dispute from the live store', () => {
@@ -287,9 +318,9 @@ describe('9.15 cold-install boot — waitForServiceWorkerControl', () => {
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
     };
-    await expect(
-      waitForServiceWorkerControl(container, 1000),
-    ).resolves.toBe('already');
+    await expect(waitForServiceWorkerControl(container, 1000)).resolves.toBe(
+      'already',
+    );
     expect(container.addEventListener).not.toHaveBeenCalled();
   });
 

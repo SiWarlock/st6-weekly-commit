@@ -36,7 +36,11 @@ describe('ST.8b RiskChips — labeled + hide-zero + P/U pills (§B.3)', () => {
   it('risk_chips_hide_zero_and_label: nonzero counts render labeled chips; zero counts are omitted', () => {
     render(
       <RiskChips
-        row={row({ misalignedCount: 1, blockedCount: 0, unresolvedDisputeCount: 2 })}
+        row={row({
+          misalignedCount: 1,
+          blockedCount: 0,
+          unresolvedDisputeCount: 2,
+        })}
       />,
     );
     // Nonzero → labeled chips present.

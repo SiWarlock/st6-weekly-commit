@@ -566,7 +566,10 @@ describe('CommitmentList → ST.8c card fidelity (description + chips-above-SO)'
         planState="DRAFT"
         planId="plan-1"
         commitments={[
-          commitment({ id: 'c-1', description: 'Cut time-to-first-value below a week.' }),
+          commitment({
+            id: 'c-1',
+            description: 'Cut time-to-first-value below a week.',
+          }),
         ]}
       />,
     );

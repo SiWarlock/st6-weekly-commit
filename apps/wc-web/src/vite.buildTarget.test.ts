@@ -2,7 +2,10 @@ import { describe, it, expect } from 'vitest';
 // The 9.16 build-target resolver lives at the wc-web root, beside vite.config.ts
 // (build config, not app source). This test sits at the src root so the Vitest
 // `src/**` glob collects it AND it escapes the `.gitignore` `build/` rule.
-import { resolveBuildTarget, shouldEnableFederation } from '../vite.buildTarget';
+import {
+  resolveBuildTarget,
+  shouldEnableFederation,
+} from '../vite.buildTarget';
 
 /**
  * 9.16 — the deterministic seam of the standalone-SPA build slice. The app emits
@@ -26,7 +29,10 @@ describe('9.16 — build-target resolution (remote vs standalone SPA)', () => {
   it('keeps federation OFF under Vitest regardless of target (the jsdom suite needs no module-graph rewrite)', () => {
     expect(shouldEnableFederation({ VITEST: 'true' })).toBe(false);
     expect(
-      shouldEnableFederation({ VITEST: 'true', VITE_BUILD_TARGET: 'standalone' }),
+      shouldEnableFederation({
+        VITEST: 'true',
+        VITE_BUILD_TARGET: 'standalone',
+      }),
     ).toBe(false);
     // Even an explicit remote target yields to the test env.
     expect(

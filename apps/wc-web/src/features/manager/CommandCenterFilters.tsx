@@ -16,7 +16,12 @@ import type {
 } from '../../shared/lib/dtos';
 import type { CommandCenterParams } from './managerApi';
 
-const PLAN_STATES: PlanState[] = ['DRAFT', 'LOCKED', 'RECONCILING', 'RECONCILED'];
+const PLAN_STATES: PlanState[] = [
+  'DRAFT',
+  'LOCKED',
+  'RECONCILING',
+  'RECONCILED',
+];
 // Includes the derived OVERDUE filter (server-side on isReviewOverdue, §9).
 const REVIEW_STATES: (ReviewStatus | 'OVERDUE')[] = [
   'NOT_REVIEWED',

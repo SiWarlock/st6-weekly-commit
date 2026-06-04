@@ -11,7 +11,10 @@ export function Breadcrumb() {
   const { pathname } = useLocation();
   const onTeam = surfaceForPath(pathname) === 'team';
   const [root, leaf] = onTeam
-    ? ['My Team', subForPath(pathname) === 'heatmap' ? 'Heatmap' : 'Command Center']
+    ? [
+        'My Team',
+        subForPath(pathname) === 'heatmap' ? 'Heatmap' : 'Command Center',
+      ]
     : ['My Weekly Commit', WEEK_LABEL];
 
   return (

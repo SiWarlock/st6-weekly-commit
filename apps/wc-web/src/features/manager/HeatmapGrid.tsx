@@ -25,7 +25,11 @@ function currentWeekStartIso(): string {
   const now = new Date();
   const isoDow = (now.getUTCDay() + 6) % 7; // 0 = Monday
   const monday = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - isoDow),
+    Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate() - isoDow,
+    ),
   );
   return monday.toISOString().slice(0, 10);
 }
@@ -175,7 +179,10 @@ export function HeatmapGrid() {
           RCDO Coverage Heatmap
         </h1>
         {rallyCry ? (
-          <p data-cy="heatmap-rally-cry" className="text-meta text-ink-secondary">
+          <p
+            data-cy="heatmap-rally-cry"
+            className="text-meta text-ink-secondary"
+          >
             Rally Cry:{' '}
             <span className="font-medium text-ink-primary">
               &ldquo;{rallyCry}&rdquo;
@@ -237,7 +244,10 @@ export function HeatmapGrid() {
                             data-cy="no-coverage"
                             className="flex items-center gap-1 rounded-md border border-dashed border-border-strong bg-vol-gap px-3 py-2 text-meta text-ink-muted"
                           >
-                            <HiMinusCircle aria-hidden className="h-3.5 w-3.5" />
+                            <HiMinusCircle
+                              aria-hidden
+                              className="h-3.5 w-3.5"
+                            />
                             no coverage
                           </div>
                         </td>

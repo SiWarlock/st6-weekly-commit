@@ -26,7 +26,11 @@ function currentWeekStartIso(): string {
   const now = new Date();
   const isoDow = (now.getUTCDay() + 6) % 7; // 0 = Monday
   const monday = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - isoDow),
+    Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate() - isoDow,
+    ),
   );
   return monday.toISOString().slice(0, 10);
 }
@@ -171,7 +175,9 @@ export function CommandCenter() {
         >
           <HiChevronRight aria-hidden className="h-4 w-4" />
         </button>
-        <span className="ml-auto text-meta text-ink-muted">Updated just now</span>
+        <span className="ml-auto text-meta text-ink-muted">
+          Updated just now
+        </span>
         <button
           type="button"
           aria-label="Refresh"

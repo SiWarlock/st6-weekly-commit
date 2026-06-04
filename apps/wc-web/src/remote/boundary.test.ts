@@ -109,9 +109,7 @@ describe('REQ-I-008 — exposed remote excludes demo/persona/chrome (frontend mi
     // FAIL-OPEN import-graph: no standalone-only module carrying the SDK is
     // relative-reachable from the remote (the standalone dir exclusion above
     // already covers this; restated for the auth0 surface).
-    expect(
-      remoteFiles.filter((f) => f.startsWith(standaloneDir)),
-    ).toEqual([]);
+    expect(remoteFiles.filter((f) => f.startsWith(standaloneDir))).toEqual([]);
 
     // FAIL-CLOSED literal scan: no @auth0/auth0-react import nor login markers
     // anywhere in the remote closure (REQ-I-008 — the OAuth login producer ships

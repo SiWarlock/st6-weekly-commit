@@ -15,7 +15,11 @@ vi.mock('./managerApi');
 // so these store-free HeatmapGrid tests don't need a Provider (the rally cry is
 // browser-verified, not unit-pinned).
 vi.mock('../rcdo/rcdoApi', () => ({
-  useGetRcdoQuery: () => ({ data: undefined, isLoading: false, isError: false }),
+  useGetRcdoQuery: () => ({
+    data: undefined,
+    isLoading: false,
+    isError: false,
+  }),
 }));
 
 function cell(overrides: Partial<HeatmapCellDto> = {}): HeatmapCellDto {
