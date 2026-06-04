@@ -61,6 +61,19 @@ public class SyncMessageListener {
       log.warn("sync pointer for unknown syncRecord={} — skipping", pointer.syncRecordId());
       return;
     }
+    if (record.getStatus() != SyncStatus.QUEUED
+        && record.getStatus() != SyncStatus.RETRY_REQUESTED) {
+      // §10 redelivery guard — the worker (re)attempts Graph ONLY for QUEUED/RETRY_REQUESTED. Any
+      // other state (SYNCED / active-SYNCING / FAILED / PENDING_PUBLISH) is a no-op: returning
+      // ACKS/deletes the message (a legitimately-skipped state is NOT a failure, so it never
+      // redrives). Hardens at-least-once idempotency — closes the in-flight-SYNCING-duplicate gap
+      // the graphEventId-only guard left. Log ids only (status name is non-PII, rule #7).
+      log.info(
+          "sync skip for syncRecord={} status={} — not a worker-trigger state (no-op)",
+          pointer.syncRecordId(),
+          record.getStatus());
+      return;
+    }
     if (record.getGraphEventId() != null) {
       // Idempotent (at-least-once): already created in Graph — skip the duplicate op.
       return;

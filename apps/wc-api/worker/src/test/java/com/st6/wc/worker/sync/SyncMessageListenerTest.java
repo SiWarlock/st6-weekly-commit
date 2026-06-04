@@ -124,4 +124,100 @@ class SyncMessageListenerTest {
     verifyNoInteractions(graphPort);
     verify(syncRecords, never()).save(any());
   }
+
+  // ===== 098 — the §10 worker-redelivery status guard =====
+
+  // --- 098 #1: a RETRY_REQUESTED record is re-attempted → SYNCING → port → SYNCED (097 e2e) ----
+  @Test
+  void retryRequested_reattempts_toSynced() {
+    OutlookCalendarSyncRecord r = queuedRecord();
+    r.setStatus(SyncStatus.RETRY_REQUESTED); // graphEventId null (retry only fires on FAILED)
+    when(syncRecords.findById(r.getId())).thenReturn(Optional.of(r));
+    when(graphPort.createEvent(r)).thenReturn("graph-evt-retry");
+
+    listener.onMessage(pointerFor(r));
+
+    verify(graphPort).createEvent(r);
+    assertThat(r.getStatus()).isEqualTo(SyncStatus.SYNCED);
+    assertThat(r.getGraphEventId()).isEqualTo("graph-evt-retry");
+    assertThat(r.getProcessedAt()).isEqualTo(clock.instant());
+  }
+
+  // --- 098 #4: a SYNCING record (in-flight duplicate redelivery) → no-op, no double-attempt ----
+  // graphEventId is null here, so ONLY the new status guard catches it (the gap the s8
+  // graphEventId-only guard left).
+  @Test
+  void syncing_noOp() {
+    OutlookCalendarSyncRecord r = queuedRecord();
+    r.setStatus(SyncStatus.SYNCING);
+    when(syncRecords.findById(r.getId())).thenReturn(Optional.of(r));
+
+    listener.onMessage(pointerFor(r));
+
+    verifyNoInteractions(graphPort);
+    verify(syncRecords, never()).save(any());
+    assertThat(r.getStatus()).isEqualTo(SyncStatus.SYNCING); // unchanged
+  }
+
+  // --- 098 #5: a FAILED record (not yet retried) → no-op (FAILED is not a worker-trigger state) --
+  @Test
+  void failed_noOp() {
+    OutlookCalendarSyncRecord r = queuedRecord();
+    r.setStatus(SyncStatus.FAILED);
+    when(syncRecords.findById(r.getId())).thenReturn(Optional.of(r));
+
+    listener.onMessage(pointerFor(r));
+
+    verifyNoInteractions(graphPort);
+    verify(syncRecords, never()).save(any());
+    assertThat(r.getStatus()).isEqualTo(SyncStatus.FAILED);
+  }
+
+  // --- 098 #6: a PENDING_PUBLISH record (shouldn't be queued) → defensive no-op ----
+  @Test
+  void pendingPublish_noOp() {
+    OutlookCalendarSyncRecord r = queuedRecord();
+    r.setStatus(SyncStatus.PENDING_PUBLISH);
+    when(syncRecords.findById(r.getId())).thenReturn(Optional.of(r));
+
+    listener.onMessage(pointerFor(r));
+
+    verifyNoInteractions(graphPort);
+    verify(syncRecords, never()).save(any());
+  }
+
+  // --- 098: defense-in-depth — a (shouldn't-happen) QUEUED record that ALREADY has a graphEventId
+  // passes the status guard but is skipped by the secondary graphEventId guard (no double-create).
+  // --
+  @Test
+  void queuedWithGraphEventId_secondaryGuardSkips() {
+    OutlookCalendarSyncRecord r = queuedRecord(); // status QUEUED → passes the §10 status guard
+    r.setGraphEventId("already-created"); // …but already created → the secondary guard skips
+    when(syncRecords.findById(r.getId())).thenReturn(Optional.of(r));
+
+    listener.onMessage(pointerFor(r));
+
+    verifyNoInteractions(graphPort); // no duplicate create
+    verify(syncRecords, never()).save(any());
+  }
+
+  // --- 098 #7: §44 preserved on the RETRY path — graph failure → FAILED + cause-less rethrow ----
+  @Test
+  void retryRequested_graphFailure_recordsFailedAndThrows() {
+    OutlookCalendarSyncRecord r = queuedRecord();
+    r.setStatus(SyncStatus.RETRY_REQUESTED);
+    when(syncRecords.findById(r.getId())).thenReturn(Optional.of(r));
+    when(graphPort.createEvent(r))
+        .thenThrow(new RuntimeException("Graph 403: john.doe@acme.com 'Q3 OKRs' rejected"));
+
+    assertThatThrownBy(() -> listener.onMessage(pointerFor(r)))
+        .isInstanceOf(SyncProcessingException.class)
+        .hasNoCause()
+        .hasMessageNotContaining("john.doe@acme.com")
+        .hasMessageNotContaining("Q3 OKRs");
+
+    assertThat(r.getStatus()).isEqualTo(SyncStatus.FAILED);
+    assertThat(r.getRetryCount()).isEqualTo(1);
+    assertThat(r.getFailureCode()).isEqualTo("GRAPH_SYNC_FAILED");
+  }
 }
