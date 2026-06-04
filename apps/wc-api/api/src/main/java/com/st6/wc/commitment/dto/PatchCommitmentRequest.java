@@ -38,6 +38,7 @@ public class PatchCommitmentRequest {
   @Getter private AlignmentStatus alignmentStatus;
   @Getter private ReconciliationOutcome reconciliationOutcome;
   @Getter private String outcomeNote;
+  @Getter private String managerAlignmentNote;
 
   private boolean titleProvided;
   private boolean descriptionProvided;
@@ -48,6 +49,7 @@ public class PatchCommitmentRequest {
   private boolean alignmentStatusProvided;
   private boolean reconciliationOutcomeProvided;
   private boolean outcomeNoteProvided;
+  private boolean managerAlignmentNoteProvided;
 
   public void setTitle(String title) {
     this.title = title;
@@ -94,6 +96,11 @@ public class PatchCommitmentRequest {
     this.outcomeNoteProvided = true;
   }
 
+  public void setManagerAlignmentNote(String managerAlignmentNote) {
+    this.managerAlignmentNote = managerAlignmentNote;
+    this.managerAlignmentNoteProvided = true;
+  }
+
   // Non-bean-style accessors (not getX/isX) so Jackson never treats presence as a JSON property.
 
   public boolean titleProvided() {
@@ -130,5 +137,9 @@ public class PatchCommitmentRequest {
 
   public boolean outcomeNoteProvided() {
     return outcomeNoteProvided;
+  }
+
+  public boolean managerAlignmentNoteProvided() {
+    return managerAlignmentNoteProvided;
   }
 }

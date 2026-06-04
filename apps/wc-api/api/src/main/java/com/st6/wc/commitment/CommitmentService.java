@@ -199,6 +199,16 @@ public class CommitmentService {
   @Transactional
   public WeeklyCommitmentDto update(
       UserPrincipal actor, UUID commitmentId, PatchCommitmentRequest req) {
+    // 5.7 field-level routing: managerAlignmentNote is the one MANAGER-owned E6 field (the inverse
+    // of every IC-owned field), so a patch providing it is a manager-only operation. Single-actor-
+    // per-patch — it cannot combine with any IC field (a request-shape 400, no resource load).
+    if (req.managerAlignmentNoteProvided()) {
+      if (providesAnyIcField(req)) {
+        throw ValidationException.field(
+            "managerAlignmentNote", "cannot be combined with IC-owned fields");
+      }
+      return updateManagerAlignmentNote(actor, commitmentId, req);
+    }
     authz.authorizeCommitmentMutation(actor, commitmentId); // chokepoint: 404/403 (+ audit)
     WeeklyCommitment commitment =
         commitments
@@ -262,6 +272,75 @@ public class CommitmentService {
     }
 
     return commitmentMapper.toDto(commitment); // non-DRAFT, nothing editable provided → no-op
+  }
+
+  /**
+   * The {@code managerAlignmentNote} write (task 5.7, REQ-F-006/010, §3 / §6 rule #3 §33 / §15) —
+   * the one MANAGER-owned, post-lock-mutable commitment field. Authorizes
+   * <strong>manager-of-owner-only</strong> FIRST (the chokepoint — {@link
+   * DomainAuthorizationService#authorizeManagerAlignmentNote}; the IC-owner can SEE the commitment
+   * but must NOT write the manager note → {@code 403 IC_CANNOT_WRITE_MANAGER_NOTE}, the inverse of
+   * the IC-owner E6 fields), guards the plan {@code LOCKED}+ (DRAFT → {@code 409} — the manager has
+   * no pre-lock formal action), validates/normalizes the note (§26, ≤4000 cp; present-null clears),
+   * persists ({@code @Version}-guarded — concurrent edit → {@code 409}), and emits a note-body-free
+   * {@code COMMITMENT_ALIGNMENT_NOTED} audit (§15). The note is stored RAW (React-escapes, §16).
+   * The caller ({@link #update}) has already rejected a patch mixing this with any IC field.
+   */
+  private WeeklyCommitmentDto updateManagerAlignmentNote(
+      UserPrincipal actor, UUID commitmentId, PatchCommitmentRequest req) {
+    authz.authorizeManagerAlignmentNote(
+        actor, commitmentId); // chokepoint: manager-of-owner (IC→403, cross/missing→404)
+    WeeklyCommitment commitment =
+        commitments
+            .findById(commitmentId)
+            .orElseThrow(ResourceNotFoundOrUnauthorizedException::new);
+    WeeklyPlan plan =
+        plans
+            .findById(commitment.getWeeklyPlanId())
+            .orElseThrow(ResourceNotFoundOrUnauthorizedException::new);
+    if (plan.getState() == PlanState.DRAFT) {
+      throw new IllegalStateTransitionException(); // 409 — manager-owned field is post-lock only
+    }
+    String note = TextNormalizer.normalizeMultiLine(req.getManagerAlignmentNote());
+    if (note != null && TextNormalizer.codePointCount(note) > 4000) {
+      throw ValidationException.field("managerAlignmentNote", "must be at most 4000 code points");
+    }
+    commitment.setManagerAlignmentNote(note); // present-null / blank → null (cleared)
+    commitments.save(commitment); // @Version-guarded: stale conflict → 409
+    auditService.record(
+        "COMMITMENT_ALIGNMENT_NOTED",
+        "WeeklyCommitment",
+        commitmentId,
+        actor.employeeId(),
+        "Manager alignment note set",
+        managerNoteAuditMetadata(plan)); // safe ids only — no note body (§15/REQ-S-006)
+    return commitmentMapper.toDto(commitment);
+  }
+
+  /**
+   * True when the patch provides ANY IC-owned field — used to reject mixing with the manager note.
+   */
+  private static boolean providesAnyIcField(PatchCommitmentRequest req) {
+    return req.titleProvided()
+        || req.descriptionProvided()
+        || req.supportingOutcomeIdProvided()
+        || req.priorityProvided()
+        || req.workTypeProvided()
+        || req.confidenceProvided()
+        || req.alignmentStatusProvided()
+        || req.reconciliationOutcomeProvided()
+        || req.outcomeNoteProvided();
+  }
+
+  /**
+   * Safe {@code COMMITMENT_ALIGNMENT_NOTED} metadata — the plan id only (§18 escaped node, no note
+   * body).
+   */
+  private static String managerNoteAuditMetadata(WeeklyPlan plan) {
+    return com.fasterxml.jackson.databind.node.JsonNodeFactory.instance
+        .objectNode()
+        .put("planId", plan.getId().toString())
+        .toString();
   }
 
   /**

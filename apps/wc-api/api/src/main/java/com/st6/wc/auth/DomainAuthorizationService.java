@@ -63,10 +63,12 @@ public class DomainAuthorizationService {
   private static final String REASON_NOT_DIRECT_MANAGER = "not_direct_manager";
   private static final String REASON_IC_NO_OPEN = "ic_cannot_open_dispute";
   private static final String REASON_MGR_NO_RESPOND = "manager_cannot_respond_dispute";
+  private static final String REASON_IC_NO_NOTE = "ic_cannot_write_manager_note";
 
   private static final String CODE_IC_CANNOT_RESOLVE = "IC_CANNOT_RESOLVE_DISPUTE";
   private static final String CODE_IC_CANNOT_OPEN_DISPUTE = "IC_CANNOT_OPEN_DISPUTE";
   private static final String CODE_MANAGER_CANNOT_RESPOND = "MANAGER_CANNOT_RESPOND_DISPUTE";
+  private static final String CODE_IC_CANNOT_WRITE_MANAGER_NOTE = "IC_CANNOT_WRITE_MANAGER_NOTE";
   private static final String CODE_MANAGER_ROLE_REQUIRED = "MANAGER_ROLE_REQUIRED";
   private static final String CODE_COMMITMENT_OWNER_REQUIRED = "COMMITMENT_OWNER_REQUIRED";
   private static final String CODE_PLAN_OWNER_REQUIRED = "PLAN_OWNER_REQUIRED";
@@ -263,6 +265,32 @@ public class DomainAuthorizationService {
           principal, COMMITMENT, commitmentId, REASON_IC_NO_OPEN, CODE_IC_CANNOT_OPEN_DISPUTE);
     }
     // an active direct manager (or SYSTEM) may open a dispute
+  }
+
+  /**
+   * Writing a commitment's {@code managerAlignmentNote} (E6, task 5.7) is a
+   * <strong>manager-of-owner</strong> capability — the INVERSE of the IC-owner-only commitment
+   * fields: the IC owner can SEE their commitment (E6 read) but must NOT write the manager-owned
+   * note. Same shape as {@link #authorizeDisputeCreation} (only the code differs): access
+   * chokepoint (cross-owner / cross-team / missing → IDOR-safe {@code 404} + audit), then reject
+   * the owner-self with {@code 403 IC_CANNOT_WRITE_MANAGER_NOTE} — the IC <em>legitimately</em>
+   * uses {@code /api/commitments/*} (E6), so existence is NOT hidden → a capability {@code 403}
+   * (the §33 namespace-legitimacy tree, the commitment-field manager-capability direction, parallel
+   * to {@link #authorizeDisputeCreation}). SYSTEM is exempt.
+   */
+  public void authorizeManagerAlignmentNote(DomainPrincipal principal, UUID commitmentId) {
+    UUID owner = commitmentOwner(commitmentId); // missing → 404 WITHOUT audit
+    authorizeOwnership(
+        principal, owner, COMMITMENT, commitmentId); // no access at all → 404 + audit
+    if (principal instanceof UserPrincipal up && up.employeeId().equals(owner)) {
+      throw deny403(
+          principal,
+          COMMITMENT,
+          commitmentId,
+          REASON_IC_NO_NOTE,
+          CODE_IC_CANNOT_WRITE_MANAGER_NOTE);
+    }
+    // an active direct manager (or SYSTEM) may write the note
   }
 
   public void authorizeReviewMutation(DomainPrincipal principal, UUID reviewId) {
