@@ -121,7 +121,7 @@ Several typed models in this codebase are **contracts** mirrored in `ARCHITECTUR
 | `MeDto` (`shared/lib/dtos.ts`) | Appendix B.3 | identity: `employeeId`/`email`/`displayName`/`role`/`persona`/`isManager`/`timezone?` (9.5) |
 | `RcdoTreeDto` + `RallyCryNode`/`DefiningObjectiveNode`/`SupportingOutcomeNode` (`shared/lib/dtos.ts`) | Appendix B.4 | `{ rallyCries: RallyCryNode[] }` object wrapper; read-only RC→DO→SO hierarchy (9.5) |
 | `WeeklyPlanDto` (`shared/lib/dtos.ts`) | Appendix B.5 | plan + nested `commitments[]`/`managerReview?`/`allowedActions[]`/`version` (9.6) |
-| `WeeklyCommitmentDto` (`shared/lib/dtos.ts`) | Appendix B.6 | chess fields + `supportingOutcomeId?`/`reconciliationOutcome?`/`alignmentStatus`/`allowedActions[]`/`version` (9.6) |
+| `WeeklyCommitmentDto` (`shared/lib/dtos.ts`) | Appendix B.6 | chess fields + `supportingOutcomeId?`/`reconciliationOutcome?`/`alignmentStatus`/`dispute?: AlignmentDisputeDto`/`allowedActions[]`/`version` (9.6; **B.6 Option-A `dispute?` nest replaced the dropped `hasUnresolvedDispute`** at 9.11a) |
 | `ManagerReviewDto` (`shared/lib/dtos.ts`) | Appendix B.7 | nested in B.5; forms own it at 9.9 (9.6) |
 | `RcdoBreadcrumbDto` (`shared/lib/dtos.ts`) | Appendix B.5 / §5 | RC→DO→SO labels for display (9.6) |
 | `CreateCommitmentRequest` / `PatchCommitmentRequest` / `CreateUnplannedCommitmentRequest` (`shared/lib/dtos.ts`) | Appendix B.6 (E5/E6/E11) | request DTOs; no `version` (per Appendix B) (9.6) |
@@ -135,6 +135,9 @@ Several typed models in this codebase are **contracts** mirrored in `ARCHITECTUR
 | `CommentDto` (`shared/lib/dtos.ts`) | Appendix B.9 | flat one-level comment; `parentCommentId: string \| null` (always null MVP), `depth: number` (always 0); body React-escaped, no `dangerouslySetInnerHTML` (REQ-S-005) (9.11b) |
 | `CommentTargetType` (`shared/lib/dtos.ts`) | Appendix B.1 | `PLAN \| COMMITMENT` comment target (9.11b) |
 | `CreateCommentRequest` (`shared/lib/dtos.ts`) | Appendix B.9 (E21) | `{ targetType, targetId, body }`; unseeable/nonexistent target → `404` (target-id IDOR) (9.11b) |
+| `AlignmentDisputeDto` (`shared/lib/dtos.ts`) | Appendix B.8 | nested in B.6 `dispute?`; `{ id, commitmentId, managerEmployeeId, status, flagType, managerNote, icResponse?, resolvedAt?, allowedActions[], version }`; holds the **current `OPEN`/`IC_RESPONDED`** dispute only (null once `RESOLVED`); `RESPOND_DISPUTE`/`RESOLVE_DISPUTE` gate on its `allowedActions` (9.11a) |
+| `DisputeStatus` / `FlagType` (`shared/lib/dtos.ts`) | Appendix B.1 | `OPEN \| IC_RESPONDED \| RESOLVED` / `NEEDS_REVISION \| MISALIGNED`; typed unions mirroring B.1 verbatim (9.11a) |
+| `OpenDisputeRequest` / `RespondDisputeRequest` / `ResolveDisputeRequest` (`shared/lib/dtos.ts`) | Appendix B.8 (E17/E18/E19) | `{ flagType, managerNote }` / `{ icResponse?, newSupportingOutcomeId? }` (≥1 required) / `{ resolutionNote? }`; request DTOs, no `version` (9.11a) |
 
 <!-- Starts empty (or with the first model if one exists). Populated as contract models land. -->
 
@@ -202,6 +205,7 @@ Lessons start at §1.
 | 16 | 2026-06-03 | [Identity switch → resetApiState()](LESSONS.md#16) | An identity/persona switch must `dispatch(baseApi.util.resetApiState())` (skip first mount) — argless identity-scoped queries (`/api/me`, `/api/plans/current`) don't auto-invalidate on a header/identity change, so a tag-invalidate is insufficient; reset the whole cache. |
 | 17 | 2026-06-03 | [Flowbite theme-mode single source](LESSONS.md#17) | `flowbite-react`'s `<Flowbite>` runs its own `useThemeMode()` (persists `flowbite-theme-mode` + toggles `.dark` independently) — drive it from our `[data-theme]` single source via a sync component inside `<Flowbite>`, else Flowbite primitives drift from the app theme. (Extends §4.) |
 | 18 | 2026-06-03 | [Flowbite .mjs/.cjs content-glob gap + real-browser overlay QA](LESSONS.md#18) | A *partially*-overridden `flowbite-react` primitive silently loses its default positioning/backdrop — those classes live in `.mjs`/`.cjs` outside a `*.{js,jsx,ts,tsx}` content glob (inert). Own the full theme slot in the scanned config (don't widen the glob → CSS bloat); real-browser QA, not jsdom, catches overlay computed-position regressions. |
+| 19 | 2026-06-03 | [Dormant-until-emitted server-authoritative control](LESSONS.md#19) | A control may gate on a server `allowedAction` the backend emits **empty today** — built + unit-tested (mock the action present), it renders dark in the live app until the backend ships the emission, then auto-activates with zero frontend change. Lets the frontend lead the backend WITHOUT re-deriving authz/lifecycle client-side (the §11 corollary); never gate on `status`+role as an interim. |
 
 <!-- Starts empty. Each row links to its `LESSONS.md` anchor. -->
 

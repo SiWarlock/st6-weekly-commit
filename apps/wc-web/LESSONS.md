@@ -306,3 +306,18 @@ The manager Drawers rendered as a small top-left content-sized panel instead of 
 - **jsdom/Vitest pins a Drawer/overlay's open-state + content + gating, but NOT its computed position/size** — a right-slide/full-height/backdrop regression sails past unit tests. A real-browser pass (gstack `/connect-chrome` — a real Chromium, which also drives a React controlled `<select>` that headless synthetic events can't) is required to catch overlay positioning. Pin the deterministic boundary in Vitest (the theme config-shape carries the position/size/backdrop classes); confirm the visual in the real browser.
 
 **Rule:** A *partially*-overridden `flowbite-react` primitive silently loses its default positioning/backdrop — those classes live in `.mjs`/`.cjs` outside a `*.{js,jsx,ts,tsx}` content glob (inert). Own the full theme slot in the scanned config (don't widen the glob → CSS bloat); and real-browser QA, not jsdom, catches overlay computed-position regressions.
+
+## <a id="19"></a>19. A control can gate on an `allowedAction` the backend doesn't emit YET — dormant-until-emitted, never re-derived client-side
+
+**Date:** 2026-06-03.
+**Source slice:** 9.11a (alignment-disputes UI, built ahead of the backend `5.5b` affordance-emission slice).
+
+The disputes UI (manager-open / IC-respond / manager-resolve) had to ship before the backend emitted `OPEN_DISPUTE`/`RESPOND_DISPUTE`/`RESOLVE_DISPUTE` on `allowedActions` — the read contract (B.6 `dispute?`) had landed (5.3b) but the capability emission was a later slice (5.5b). The backend's interim suggestion was "gate respond/resolve on the dispute's `status` + actor role meanwhile." **That is exactly the client-side authz/lifecycle re-derivation §11 forbids** — it duplicates the server's authorization logic in the client, where it silently drifts from the server's real rule.
+
+The correct posture: **gate every control on `allowedActions` via the one `can()` helper (§11), even when the backend emits an empty array today.** The control renders dark (the action is absent) until the backend ships the emission, at which point it **auto-activates with zero frontend change** — the next read simply carries the action. Unit tests exercise the active path by providing the action in the mocked `allowedActions` (the contract is frozen; only the live emission lags). This lets the frontend *lead* the backend on a feature without ever re-deriving server authority.
+
+- **Never substitute `status`+role gating for an absent `allowedAction`.** "Dark until the server says so" is the feature, not a gap — it is the §11 invariant holding under a backend-lag.
+- **Mock the action present in tests** so the component is fully covered now; the live activation is a backend concern, verified at the affordance-emission slice (here, real-browser QA at 5.5b).
+- **Pair the dependency explicitly** (brief Dependencies + a Carry-forward marker) so the activation slice is tracked — a dormant control is invisible until then and easy to forget.
+
+**Rule:** Gate a control on a server `allowedAction` even when the backend emits it empty today — built + mock-tested, it stays dark until the backend ships the emission, then auto-activates with zero frontend change. Never gate on status/role as an interim (that re-derives server authority client-side — the §11 violation this corollary exists to prevent).
