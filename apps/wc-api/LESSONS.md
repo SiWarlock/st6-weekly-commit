@@ -602,3 +602,35 @@ The central authorizer (§17) exposes two families with **different scope**, and
 **The authz is the §33 tree in its IC-owner-capability direction** (the inverse of manager-capability): respond is owning-IC-only, so the only non-owner who passes the access-check is the active direct manager — who lacks the *respond* capability and gets `403 MANAGER_CANNOT_RESPOND_DISPUTE` (they legitimately use `/api/disputes` via open E17 / resolve E19, so existence isn't hidden), while an unrelated/non-owning actor gets `404` IDOR. The exact mirror of resolve's `IC_CANNOT_RESOLVE_DISPUTE` (§33). Both denials audit; chokepoint-first (`verify(disputes, never()).save` on a denied authorize). `@Version` on both the dispute and commitment saves (concurrent edit → OLE → 409).
 
 **Rule:** A new path may carve an exception to a safety invariant only when it is escape-proof — exactly one writable field, double-gated (authz + state), target loaded by an owning id from the trusted entity (never the request), audited (safe ids only), and the carve-out kept local to that path (never widen the general gate). Authz follows the §33 namespace-legitimacy tree in whichever capability direction the endpoint owns (here IC-owner-capability → manager `403`, unrelated `404`). Extends §32/§33.
+
+## <a id="35"></a>35. Per-viewer affordances on a shared read — compute the relationship-context once at the mapper root
+
+**Date:** 2026-06-03.
+**Source slice:** 5.5b (dispute affordances — read-path). No security-reviewer (mirror-enforcement).
+
+A read DTO whose `allowedActions[]` depend on **who is viewing** (owner-IC vs active-direct-manager) — not just the row state — needs the viewer's relationship determined ONCE at the aggregate-mapper root and threaded down as a boolean, never re-derived per child.
+
+- **Compute once, thread the boolean.** `PlanMapper` resolves `viewerIsDirectManager` with a single `findByDirectReportEmployeeIdAndActiveTrue(plan.ownerId)` lookup per read (pinned `verify(times(1))`), then passes the boolean (+ the owner id) through `CommitmentMapper` → the per-dispute `DisputeMapper` + `AllowedActionResolver.commitmentActions`. Do NOT inject the relationship repo into the per-child resolver/mapper (it would N-query) — keep the resolver **repo-free**; the caller passes the booleans (mirrors how it already passes `actorEmployeeId`).
+- **Reuse an already-resolved child** for derived conditions. `OPEN_DISPUTE`'s "no unresolved dispute" reuses the 5.3b nested-dispute resolution (`hasUnresolvedDispute = resolvedDispute != null`), not a second query.
+- **Affordance predicates MIRROR — don't share — the void-throw authorizers.** `authorize…Mutation`/`authorizeDisputeResolution`/`authorizeDisputeResponse` are void-and-throw, so they can't be reused as predicates; the affordance is the parallel boolean form (`RESPOND_DISPUTE = actor==owner ∧ OPEN` mirrors E18; `RESOLVE_DISPUTE = manager ∧ {OPEN,IC_RESPONDED}` mirrors E19; `OPEN_DISPUTE = manager ∧ state≠DRAFT ∧ !hasUnresolvedDispute` mirrors E17). The §24 invariant that holds is the subset direction (affordance-true ⟹ enforcement-accepts), pinned by an eligibility⟹preconditions sweep (§31).
+- **Trace EVERY caller of the shared mapper** before adding per-viewer logic — a per-viewer affordance on a shared mapper silently leaks to every caller otherwise. Confirm where the manager affordances must NOT appear: the lock/start/close lifecycle responses route through the same `PlanMapper` but are owner-only (`viewerIsDirectManager=false`); the E15 heatmap drilldown does NOT use `PlanMapper` (no leak).
+
+This extends 4.4b (owner-only `commitmentActions`) to the manager direction. **Phase-6 MARK_REVIEWED + the projection reuse the `viewerIsDirectManager` threading** established here.
+
+**Rule:** Per-viewer `allowedActions` on a shared read DTO = resolve the viewer-relationship ONCE at the aggregate-mapper root, thread booleans (not repos) to the per-child affordance computations, mirror the void-throw authorizers as parallel predicates (subset-pinned, §24/§31), and trace every caller of the shared mapper to confirm no affordance leaks where the viewer isn't entitled. Extends §24/§31/4.4b.
+
+## <a id="36"></a>36. Field-level authz on a shared mutation endpoint
+
+**Date:** 2026-06-03.
+**Source slice:** 5.7 (managerAlignmentNote on E6 PATCH). **Ad-hoc security-reviewer: CLEAN PASS (0 findings).**
+
+When one field of a shared mutation endpoint is owned by a **different actor** than the rest — E6 PATCH's `managerAlignmentNote` is **manager-of-owner-only**, while every other E6 field is **IC-owner-only** — the endpoint's authz becomes **field-dependent**. Branch it cleanly:
+
+- **Single-actor-per-patch + a request-shape mixing-`400`.** If the manager-field is provided AND any IC field is also provided → `400 VALIDATION_ERROR`. Place this check as **request-shape validation, BEFORE any resource load / authz** (like `@Valid`): it's actor- and resource-independent (a mixed patch → `400` for ANY id, revealing nothing), so it's IDOR-safe and forecloses privilege-confusion. A single patch is one actor's.
+- **Route to the actor-appropriate chokepoint.** A manager-field-only patch → the manager-capability authz (`authorizeManagerAlignmentNote`, §33 commitment-field manager-capability — IC-owner → `403 IC_CANNOT_WRITE_MANAGER_NOTE`, unrelated/non-direct → IDOR `404`, both audited); everything else → the existing IC-owner chokepoint (`authorizeCommitmentMutation`), **unchanged**.
+- **The other actor's path stays byte-for-byte unchanged.** Prove it (a no-regression test on the IC path). The manager-field's sole production setter call-site is the manager branch — the IC path is *structurally unable* to set it (the security-reviewer verified the call-graph), so there's no privilege-escalation vector even if the field somehow appeared on the IC path.
+- **Pin the non-leak + scope:** `doesNotTouchBaseline` (the manager-field write touches ONLY that field), the audit-has-no-note-body (§15), the chokepoint (`verify(repo, never()).save` on a denied authorize).
+
+This is distinct from the §27 per-(state×kind) allow-list (which gates the **same** actor's fields by plan state) — here the gate is by **actor/capability**, on the same endpoint. The authz reuses the §33 commitment-field manager-capability shape (`authorizeDisputeCreation` is the sibling); a 3rd such commitment-keyed-`403` authorizer would warrant extracting a generic `authorizeCommitmentManagerCapability(principal, commitmentId, code)` (review-mutation is excluded — it uses the `404` namespace tree, §33).
+
+**Rule:** Field-level authz on a shared mutation endpoint = a request-shape single-actor-per-patch `400` (before any load, IDOR-safe), then route the actor-distinct field to its own capability chokepoint (§33), leaving the other actor's path byte-for-byte unchanged (no-regression-pinned) with the field structurally unsettable from it. Extends §27/§33.
