@@ -62,9 +62,11 @@ public class DomainAuthorizationService {
   private static final String REASON_NOT_PLAN_OWNER = "not_plan_owner";
   private static final String REASON_NOT_DIRECT_MANAGER = "not_direct_manager";
   private static final String REASON_IC_NO_OPEN = "ic_cannot_open_dispute";
+  private static final String REASON_MGR_NO_RESPOND = "manager_cannot_respond_dispute";
 
   private static final String CODE_IC_CANNOT_RESOLVE = "IC_CANNOT_RESOLVE_DISPUTE";
   private static final String CODE_IC_CANNOT_OPEN_DISPUTE = "IC_CANNOT_OPEN_DISPUTE";
+  private static final String CODE_MANAGER_CANNOT_RESPOND = "MANAGER_CANNOT_RESPOND_DISPUTE";
   private static final String CODE_MANAGER_ROLE_REQUIRED = "MANAGER_ROLE_REQUIRED";
   private static final String CODE_COMMITMENT_OWNER_REQUIRED = "COMMITMENT_OWNER_REQUIRED";
   private static final String CODE_PLAN_OWNER_REQUIRED = "PLAN_OWNER_REQUIRED";
@@ -230,6 +232,28 @@ public class DomainAuthorizationService {
    * has no legitimate {@code /api/manager/*} endpoint — the §33 namespace-legitimacy tree). The
    * inverse-action sibling of {@link #authorizeDisputeResolution}. SYSTEM is exempt.
    */
+  /**
+   * Responding to a dispute (E18, task 5.4) is an <strong>owning-IC</strong> capability — the
+   * <strong>inverse</strong> of {@link #authorizeDisputeResolution}: the disputed commitment's
+   * direct manager can SEE the dispute (they opened it, E17, and resolve it, E19) but cannot
+   * <em>respond</em> on the IC's behalf. Access chokepoint first (cross-team / non-owning-IC /
+   * missing → IDOR-safe {@code 404} + audit), then reject the <strong>non-owner</strong> — the only
+   * non-owner {@code authorizeOwnership} admits is the active direct manager → {@code 403
+   * MANAGER_CANNOT_RESPOND_DISPUTE} + audit. The {@code 403} (not {@code 404}) is correct per the
+   * §33 namespace-legitimacy tree: the manager legitimately uses {@code /api/disputes/*}, so the
+   * dispute's existence is not hidden from them — only the respond capability is denied. SYSTEM is
+   * exempt.
+   */
+  public void authorizeDisputeResponse(DomainPrincipal principal, UUID disputeId) {
+    UUID owner = disputeOwner(disputeId); // missing → 404 WITHOUT audit
+    authorizeOwnership(principal, owner, DISPUTE, disputeId); // no access at all → 404 + audit
+    if (principal instanceof UserPrincipal up && !up.employeeId().equals(owner)) {
+      throw deny403(
+          principal, DISPUTE, disputeId, REASON_MGR_NO_RESPOND, CODE_MANAGER_CANNOT_RESPOND);
+    }
+    // the owning IC (or SYSTEM) may respond
+  }
+
   public void authorizeDisputeCreation(DomainPrincipal principal, UUID commitmentId) {
     UUID owner = commitmentOwner(commitmentId); // missing → 404 WITHOUT audit
     authorizeOwnership(

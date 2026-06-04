@@ -8,6 +8,7 @@ import com.st6.wc.commitment.WeeklyCommitment;
 import com.st6.wc.commitment.repo.WeeklyCommitmentRepository;
 import com.st6.wc.dispute.dto.AlignmentDisputeDto;
 import com.st6.wc.dispute.dto.OpenDisputeRequest;
+import com.st6.wc.dispute.dto.RespondDisputeRequest;
 import com.st6.wc.dispute.mapper.DisputeMapper;
 import com.st6.wc.dispute.repo.AlignmentDisputeRepository;
 import com.st6.wc.enums.DisputeStatus;
@@ -16,10 +17,12 @@ import com.st6.wc.enums.ReviewStatus;
 import com.st6.wc.identity.UserPrincipal;
 import com.st6.wc.plan.WeeklyPlan;
 import com.st6.wc.plan.repo.WeeklyPlanRepository;
+import com.st6.wc.rcdo.RcdoReadService;
 import com.st6.wc.review.ReviewStatusDeriver;
 import com.st6.wc.review.repo.ManagerReviewRepository;
 import com.st6.wc.web.IllegalStateTransitionException;
 import com.st6.wc.web.SecondOpenDisputeException;
+import com.st6.wc.web.ValidationException;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -46,6 +49,7 @@ public class DisputeService {
   private final ReviewStatusDeriver deriver;
   private final DisputeMapper disputeMapper;
   private final AuditService auditService;
+  private final RcdoReadService rcdoReadService;
 
   public DisputeService(
       DomainAuthorizationService authz,
@@ -55,7 +59,8 @@ public class DisputeService {
       ManagerReviewRepository reviews,
       ReviewStatusDeriver deriver,
       DisputeMapper disputeMapper,
-      AuditService auditService) {
+      AuditService auditService,
+      RcdoReadService rcdoReadService) {
     this.authz = authz;
     this.disputes = disputes;
     this.commitments = commitments;
@@ -64,6 +69,7 @@ public class DisputeService {
     this.deriver = deriver;
     this.disputeMapper = disputeMapper;
     this.auditService = auditService;
+    this.rcdoReadService = rcdoReadService;
   }
 
   private static final List<DisputeStatus> UNRESOLVED =
@@ -117,6 +123,62 @@ public class DisputeService {
   }
 
   /**
+   * IC responds to an {@code OPEN} dispute (task 5.4, E18): authorize the owning IC FIRST (the
+   * chokepoint — {@link DomainAuthorizationService#authorizeDisputeResponse}; the manager has no
+   * respond capability), guard the {@code OPEN} state, require at-least-one-of {@code {icResponse,
+   * supportingOutcomeId}}, optionally revise the disputed commitment's {@code supportingOutcomeId}
+   * (the <strong>rule-#2 dispute-gated exception</strong> — that field ONLY, reachable only here),
+   * set {@code icResponse}, transition {@code OPEN→IC_RESPONDED}, and emit a note-body-free {@code
+   * DISPUTE_RESPONDED} audit (status + the safe SO-revision ids, §15). The dispute stays unresolved
+   * ({@code IC_RESPONDED} ∈ the unresolved bucket) — NO review re-derivation, NO projection change.
+   * One {@code @Version}-guarded txn (dispute + commitment).
+   */
+  @Transactional
+  public AlignmentDisputeDto respond(
+      UserPrincipal actor, UUID disputeId, RespondDisputeRequest req) {
+    authz.authorizeDisputeResponse(actor, disputeId); // chokepoint: owning-IC only (manager→403)
+    AlignmentDispute dispute =
+        disputes.findById(disputeId).orElseThrow(ResourceNotFoundOrUnauthorizedException::new);
+    if (dispute.getStatus() != DisputeStatus.OPEN) {
+      throw new IllegalStateTransitionException(); // respond is a one-shot OPEN→IC_RESPONDED
+    }
+    if (req.icResponse() == null && req.supportingOutcomeId() == null) {
+      throw ValidationException.field(
+          "icResponse", "provide a response or a revised Supporting Outcome");
+    }
+
+    UUID revisedSupportingOutcomeId = null;
+    if (req.supportingOutcomeId() != null) {
+      try {
+        rcdoReadService.findSupportingOutcome(req.supportingOutcomeId());
+      } catch (ResourceNotFoundOrUnauthorizedException e) {
+        throw ValidationException.field("supportingOutcomeId", "unknown Supporting Outcome");
+      }
+      WeeklyCommitment commitment =
+          commitments
+              .findById(dispute.getCommitmentId())
+              .orElseThrow(ResourceNotFoundOrUnauthorizedException::new);
+      commitment.setSupportingOutcomeId(req.supportingOutcomeId()); // rule-#2 exception — SO ONLY
+      commitments.save(commitment); // @Version-guarded (concurrent edit → 409)
+      revisedSupportingOutcomeId = req.supportingOutcomeId();
+    }
+    if (req.icResponse() != null) {
+      dispute.setIcResponse(req.icResponse());
+    }
+    dispute.setStatus(DisputeStatus.IC_RESPONDED);
+    disputes.save(dispute);
+
+    auditService.record(
+        "DISPUTE_RESPONDED",
+        "AlignmentDispute",
+        dispute.getId(),
+        actor.employeeId(),
+        "Dispute responded",
+        respondMetadata(dispute, revisedSupportingOutcomeId)); // no icResponse body (§15)
+    return disputeMapper.toDto(dispute);
+  }
+
+  /**
    * Re-derive an <strong>already-reviewed</strong> review's status on dispute-open ({@code REVIEWED
    * → REVIEWED_WITH_DISPUTES}). A {@code NOT_REVIEWED} review is left untouched — opening a dispute
    * must never mark a review reviewed (the deriver returns {@code REVIEWED}/{@code
@@ -145,5 +207,20 @@ public class DisputeService {
         .put("flagType", dispute.getFlagType().name())
         .put("status", dispute.getStatus().name())
         .toString();
+  }
+
+  /**
+   * The {@code DISPUTE_RESPONDED} audit metadata (§18 escaped node): the resulting status + — when
+   * the rule-#2 exception fired — a safe trail of the SO revision (RCDO ids only, §15-safe; the
+   * locked baseline field changed, so the audit records what + that it was via respond). The {@code
+   * icResponse} body is NEVER included.
+   */
+  private static String respondMetadata(AlignmentDispute dispute, UUID revisedSupportingOutcomeId) {
+    var node = JsonNodeFactory.instance.objectNode().put("status", dispute.getStatus().name());
+    if (revisedSupportingOutcomeId != null) {
+      node.put("supportingOutcomeRevised", true)
+          .put("supportingOutcomeId", revisedSupportingOutcomeId.toString());
+    }
+    return node.toString();
   }
 }

@@ -59,10 +59,20 @@ class OpenDisputeServiceTest {
   private final ReviewStatusDeriver deriver = mock(ReviewStatusDeriver.class);
   private final DisputeMapper disputeMapper = mock(DisputeMapper.class);
   private final AuditService auditService = mock(AuditService.class);
+  private final com.st6.wc.rcdo.RcdoReadService rcdoReadService =
+      mock(com.st6.wc.rcdo.RcdoReadService.class);
 
   private final DisputeService service =
       new DisputeService(
-          authz, disputes, commitments, plans, reviews, deriver, disputeMapper, auditService);
+          authz,
+          disputes,
+          commitments,
+          plans,
+          reviews,
+          deriver,
+          disputeMapper,
+          auditService,
+          rcdoReadService);
 
   private static final UUID COMMITMENT_ID = UUID.fromString("d0000000-0000-0000-0000-000000000001");
   private static final UUID PLAN_ID = UUID.fromString("b0000000-0000-0000-0000-000000000001");

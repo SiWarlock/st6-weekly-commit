@@ -2,6 +2,7 @@ package com.st6.wc.dispute;
 
 import com.st6.wc.dispute.dto.AlignmentDisputeDto;
 import com.st6.wc.dispute.dto.OpenDisputeRequest;
+import com.st6.wc.dispute.dto.RespondDisputeRequest;
 import com.st6.wc.identity.UserPrincipal;
 import jakarta.validation.Valid;
 import java.util.UUID;
@@ -35,5 +36,20 @@ public class DisputeController {
       @Valid @RequestBody OpenDisputeRequest req) {
     return ResponseEntity.status(HttpStatus.CREATED)
         .body(disputeService.open(principal, commitmentId, req));
+  }
+
+  /**
+   * {@code POST /api/disputes/{id}/respond} (E18, §5 / §6 / §3) — the owning IC responds to an
+   * {@code OPEN} dispute (rationale and/or a Supporting-Outcome revision). Thin: {@link
+   * DisputeService} authorizes owning-IC-only first (the chokepoint), so the disputed commitment's
+   * manager → 403 (no respond capability), an unrelated/missing actor → codeless 404. Returns the
+   * updated {@link AlignmentDisputeDto} ({@code IC_RESPONDED}) with {@code 200}.
+   */
+  @PostMapping("/api/disputes/{id}/respond")
+  public AlignmentDisputeDto respond(
+      @AuthenticationPrincipal UserPrincipal principal,
+      @PathVariable("id") UUID disputeId,
+      @Valid @RequestBody RespondDisputeRequest req) {
+    return disputeService.respond(principal, disputeId, req);
   }
 }
