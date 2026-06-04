@@ -4,7 +4,7 @@
 - **Track:** `st6-main` · area `apps/wc-web/` (frontend implementer)
 - **Phase:** ST (Cadence styling spine) — with the Phase-9 functional remainder (9.11b/9.13) closed at the session's start
 - **Predecessor:** [007 — frontend Phase-9 reconciliation/manager/sync](007-2026-06-03-frontend-phase9-reconciliation-manager-sync.md)
-- **Successor:** _(next fresh frontend impl — ST.6c via brief 048)_
+- **Successor:** [014 — frontend Drawers (ST.6c→7e) + disputes end-to-end (9.11a/9.14)](014-2026-06-03-frontend-st-drawers-and-disputes.md)
 - **Cycle reason:** impl reached 72% WARN at the clean ST.6b boundary; lead-approved cycle.
 
 ## Why this session existed
