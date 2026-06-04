@@ -17,7 +17,8 @@ const TOUCHED_SURFACES = [
   'features/plan/WeeklyPlanView.tsx',
   'features/plan/PlanLifecycleBar.tsx', // ST.5a stepper
   'features/manager/CommandCenter.tsx',
-  'features/manager/CommandCenterFilters.tsx', // ST.6b
+  'features/manager/CommandCenterFilters.tsx', // ST.6b → ST.8b-2 rebuild
+  'features/manager/FilterDropdown.tsx', // ST.8b-2 reusable filter dropdown
   'features/manager/CommandCenterSummary.tsx', // ST.8b at-a-glance strip
   'features/manager/RiskChips.tsx', // ST.8b risk chips
   'shared/components/Avatar.tsx', // ST.8b initials avatar

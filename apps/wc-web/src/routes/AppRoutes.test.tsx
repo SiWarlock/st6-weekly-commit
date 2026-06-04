@@ -30,6 +30,11 @@ vi.mock('../features/manager/managerApi');
 // WeeklyPlanView (9.12) reads getSyncRecords; mock it so the routing tests stay
 // store-free (default to no records → no sync panel).
 vi.mock('../features/sync/syncApi');
+// CommandCenterFilters (ST.8b-2) reads RCDO for its Defining-objective dropdown;
+// mock it so the routing tests stay store-free.
+vi.mock('../features/rcdo/rcdoApi', () => ({
+  useGetRcdoQuery: () => ({ data: undefined, isLoading: false, isError: false }),
+}));
 
 const EMPTY_PLAN: WeeklyPlanDto = {
   id: 'plan-1',

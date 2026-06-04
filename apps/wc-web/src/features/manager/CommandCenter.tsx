@@ -163,6 +163,12 @@ export function CommandCenter() {
         onChange={(patch) =>
           setParams((p) => ({ ...p, ...patch, page: patch.page ?? 0 }))
         }
+        reports={rows.map((r) => ({
+          id: r.employeeId,
+          name: r.employeeDisplayName,
+        }))}
+        shown={rows.length}
+        total={data.page.totalElements}
       />
 
       {rows.length === 0 ? (

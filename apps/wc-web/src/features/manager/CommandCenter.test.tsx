@@ -19,6 +19,11 @@ import type {
 vi.mock('./managerApi');
 vi.mock('../plan/plansApi');
 vi.mock('../review/reviewApi');
+// CommandCenterFilters (ST.8b-2) sources its Defining-objective dropdown from the
+// RCDO read — mock it so these store-free CommandCenter tests don't need a Provider.
+vi.mock('../rcdo/rcdoApi', () => ({
+  useGetRcdoQuery: () => ({ data: undefined, isLoading: false, isError: false }),
+}));
 
 /**
  * Render within the real Redux store — the manager-dispute-surface tests (9.14)
@@ -226,7 +231,7 @@ describe('CommandCenter (E13 roll-up — rows, view-states, pagination, mark-rev
     // The action is not mounted until the row is expanded (lazy plan fetch).
     expect(screen.queryByRole('button', { name: /mark reviewed/i })).toBeNull();
 
-    await user.click(screen.getByRole('button', { name: /review/i }));
+    await user.click(screen.getByRole('button', { name: 'Review' }));
 
     expect(
       screen.getByRole('button', { name: /mark reviewed/i }),
@@ -244,7 +249,7 @@ describe('CommandCenter (E13 roll-up — rows, view-states, pagination, mark-rev
     // Pending lazy plan fetch → LoadingState on expand.
     mockPlanById({ isLoading: true });
     const { rerender } = render(<CommandCenter />);
-    await user.click(screen.getByRole('button', { name: /review/i }));
+    await user.click(screen.getByRole('button', { name: 'Review' }));
     expect(screen.getByRole('status')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /mark reviewed/i })).toBeNull();
 
@@ -375,7 +380,7 @@ describe('CommandCenter → review Drawer (ST.6c)', () => {
     expect(screen.queryByRole('button', { name: /mark reviewed/i })).toBeNull();
     expect(document.querySelector('[data-cy="cc-row-detail"]')).toBeNull();
 
-    await user.click(screen.getByRole('button', { name: /review/i }));
+    await user.click(screen.getByRole('button', { name: 'Review' }));
 
     // The review surface now renders INSIDE the Drawer, not an inline <tr>.
     const drawer = document.querySelector(
@@ -407,7 +412,7 @@ describe('CommandCenter → review Drawer (ST.6c)', () => {
     });
 
     render(<CommandCenter />);
-    await user.click(screen.getByRole('button', { name: /review/i }));
+    await user.click(screen.getByRole('button', { name: 'Review' }));
 
     const drawer = document.querySelector(
       '[data-cy="review-drawer"]',
@@ -502,7 +507,7 @@ describe('CommandCenter → manager dispute surface (9.14)', () => {
       { isLoading: false, reset: vi.fn() },
     ] as unknown as ReturnType<typeof useMarkReviewedMutation>);
     renderWithStore(<CommandCenter />);
-    await user.click(screen.getByRole('button', { name: /review/i }));
+    await user.click(screen.getByRole('button', { name: 'Review' }));
     return document.querySelector('[data-cy="review-drawer"]') as HTMLElement;
   }
 
