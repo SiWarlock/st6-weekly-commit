@@ -1,11 +1,15 @@
 package com.st6.wc.projection;
 
 import com.st6.wc.commitment.WeeklyCommitment;
+import com.st6.wc.dispute.AlignmentDispute;
+import com.st6.wc.dispute.repo.AlignmentDisputeRepository;
 import com.st6.wc.enums.AlignmentStatus;
 import com.st6.wc.enums.CommitmentKind;
+import com.st6.wc.enums.DisputeStatus;
+import com.st6.wc.enums.FlagType;
+import com.st6.wc.enums.ReconciliationOutcome;
 import com.st6.wc.enums.ReviewStatus;
 import com.st6.wc.enums.RiskBadge;
-import com.st6.wc.enums.WorkType;
 import com.st6.wc.plan.WeeklyPlan;
 import com.st6.wc.projection.repo.ManagerHeatmapCellRepository;
 import com.st6.wc.projection.repo.ManagerPlanSummaryRepository;
@@ -16,38 +20,52 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
 /**
  * Synchronously recomputes the two manager-projection read models (task 3.5, §9) from source — the
  * {@code manager_plan_summary} (one row at plan grain) + the {@code manager_heatmap_cell} rows (one
  * per Defining Objective with ≥1 linked commitment, resolved SO → DO via {@link RcdoReadService}).
- * Called inside the lock transaction (and re-called by later mutation slices). §9 count predicates:
- * misaligned = {@code alignment_status=MISALIGNED}; needs-review = {@code NEEDS_REVIEW}; blocked =
- * {@code work_type=BLOCKER}; carry-forward = a non-null {@code carryForwardSourceCommitmentId}. The
- * unresolved-dispute contribution is 0 until the disputes slice extends this (no dispute repo yet).
- * {@code is_review_overdue} + the {@code OVERDUE_REVIEW} badge are derived over the injectable
- * {@link Clock} ({@code NOT_REVIEWED AND now > reviewDueAt}); at lock they are false (future due
- * date).
+ * Called inside the lock transaction (and re-called by later mutation slices). §9 count predicates
+ * (task 6.2 completes the dispute-driven ones from source): misaligned = {@code
+ * alignment_status=MISALIGNED} <strong>OR</strong> an {@code OPEN}/{@code IC_RESPONDED} dispute
+ * with {@code flag_type=MISALIGNED} (deduped per commitment; the {@code MISALIGNED} badge consumes
+ * the same union); {@code unresolved_dispute_count} = commitments carrying an {@code OPEN}/{@code
+ * IC_RESPONDED} dispute; needs-review = {@code NEEDS_REVIEW}; <strong>blocked = {@code
+ * reconciliation_outcome=BLOCKED}</strong> (the sibling of {@code
+ * carry_forward_count=reconciliation_outcome=CARRIED_FORWARD}; corrected from the latent {@code
+ * work_type=BLOCKER}, so {@code blockedCount} is 0 at lock); carry-forward = a non-null {@code
+ * carryForwardSourceCommitmentId} (§30, unchanged). Disputes are loaded ONCE over the plan's
+ * commitment ids (no N+1; empty set ⇒ no query). {@code is_review_overdue} + the {@code
+ * OVERDUE_REVIEW} badge are derived over the injectable {@link Clock} ({@code NOT_REVIEWED AND now
+ * > reviewDueAt}); at lock they are false (future due date).
  */
 @Service
 public class ProjectionService {
+
+  private static final List<DisputeStatus> UNRESOLVED =
+      List.of(DisputeStatus.OPEN, DisputeStatus.IC_RESPONDED);
 
   private final ManagerPlanSummaryRepository summaries;
   private final ManagerHeatmapCellRepository cells;
   private final RcdoReadService rcdoReadService;
   private final Clock clock;
+  private final AlignmentDisputeRepository disputes;
 
   public ProjectionService(
       ManagerPlanSummaryRepository summaries,
       ManagerHeatmapCellRepository cells,
       RcdoReadService rcdoReadService,
-      Clock clock) {
+      Clock clock,
+      AlignmentDisputeRepository disputes) {
     this.summaries = summaries;
     this.cells = cells;
     this.rcdoReadService = rcdoReadService;
     this.clock = clock;
+    this.disputes = disputes;
   }
 
   public void recompute(
@@ -56,8 +74,39 @@ public class ProjectionService {
         review.getStatus() == ReviewStatus.NOT_REVIEWED
             && clock.instant().isAfter(review.getReviewDueAt());
 
-    upsertSummary(plan, managerId, commitments, review, overdue);
-    upsertHeatmapCells(plan, managerId, commitments, review, overdue);
+    // §9 dispute-driven counts: load the plan's unresolved disputes ONCE over the commitment ids
+    // (one query, no N+1), then derive both the unresolved-dispute set and the MISALIGNED-flag
+    // union
+    // set in-memory. Empty commitment set ⇒ no query (an empty SQL IN is invalid).
+    List<UUID> commitmentIds = commitments.stream().map(WeeklyCommitment::getId).toList();
+    List<AlignmentDispute> unresolved =
+        commitmentIds.isEmpty()
+            ? List.of()
+            : disputes.findByCommitmentIdInAndStatusIn(commitmentIds, UNRESOLVED);
+    Set<UUID> unresolvedDisputeCommitmentIds =
+        unresolved.stream().map(AlignmentDispute::getCommitmentId).collect(Collectors.toSet());
+    Set<UUID> misalignedDisputeCommitmentIds =
+        unresolved.stream()
+            .filter(d -> d.getFlagType() == FlagType.MISALIGNED)
+            .map(AlignmentDispute::getCommitmentId)
+            .collect(Collectors.toSet());
+
+    upsertSummary(
+        plan,
+        managerId,
+        commitments,
+        review,
+        overdue,
+        unresolvedDisputeCommitmentIds,
+        misalignedDisputeCommitmentIds);
+    upsertHeatmapCells(
+        plan,
+        managerId,
+        commitments,
+        review,
+        overdue,
+        unresolvedDisputeCommitmentIds,
+        misalignedDisputeCommitmentIds);
   }
 
   private void upsertSummary(
@@ -65,7 +114,9 @@ public class ProjectionService {
       UUID managerId,
       List<WeeklyCommitment> commitments,
       ManagerReview review,
-      boolean overdue) {
+      boolean overdue,
+      Set<UUID> unresolvedDisputeCommitmentIds,
+      Set<UUID> misalignedDisputeCommitmentIds) {
     ManagerPlanSummary s =
         summaries
             .findByManagerEmployeeIdAndEmployeeIdAndWeekStartDate(
@@ -81,11 +132,11 @@ public class ProjectionService {
     s.setReviewOverdue(overdue);
     s.setPlannedCount(count(commitments, c -> c.getCommitmentKind() == CommitmentKind.PLANNED));
     s.setUnplannedCount(count(commitments, c -> c.getCommitmentKind() == CommitmentKind.UNPLANNED));
-    s.setMisalignedCount(count(commitments, ProjectionService::isMisaligned));
+    s.setMisalignedCount(countMisaligned(commitments, misalignedDisputeCommitmentIds));
     s.setNeedsReviewCount(count(commitments, ProjectionService::isNeedsReview));
     s.setBlockedCount(count(commitments, ProjectionService::isBlocked));
     s.setCarryForwardCount(count(commitments, ProjectionService::isCarryForward));
-    s.setUnresolvedDisputeCount(0); // disputes slice extends this
+    s.setUnresolvedDisputeCount(countWithDispute(commitments, unresolvedDisputeCommitmentIds));
     s.setUpdatedAt(clock.instant());
     summaries.save(s);
   }
@@ -95,7 +146,9 @@ public class ProjectionService {
       UUID managerId,
       List<WeeklyCommitment> commitments,
       ManagerReview review,
-      boolean overdue) {
+      boolean overdue,
+      Set<UUID> unresolvedDisputeCommitmentIds,
+      Set<UUID> misalignedDisputeCommitmentIds) {
     // group the LINKED commitments by their Supporting Outcome's parent Defining Objective.
     Map<UUID, List<WeeklyCommitment>> byDefiningObjective = new LinkedHashMap<>();
     for (WeeklyCommitment c : commitments) {
@@ -128,22 +181,26 @@ public class ProjectionService {
           cell.setPlannedCount(count(group, c -> c.getCommitmentKind() == CommitmentKind.PLANNED));
           cell.setUnplannedCount(
               count(group, c -> c.getCommitmentKind() == CommitmentKind.UNPLANNED));
-          cell.setMisalignedCount(count(group, ProjectionService::isMisaligned));
+          cell.setMisalignedCount(countMisaligned(group, misalignedDisputeCommitmentIds));
           cell.setNeedsReviewCount(count(group, ProjectionService::isNeedsReview));
           cell.setBlockedCount(count(group, ProjectionService::isBlocked));
           cell.setCarryForwardCount(count(group, ProjectionService::isCarryForward));
-          cell.setUnresolvedDisputeCount(0);
-          cell.setRiskBadges(riskBadges(group, unreviewed, overdue));
+          cell.setUnresolvedDisputeCount(countWithDispute(group, unresolvedDisputeCommitmentIds));
+          cell.setRiskBadges(
+              riskBadges(group, unreviewed, overdue, misalignedDisputeCommitmentIds));
           cell.setUpdatedAt(clock.instant());
           cells.save(cell);
         });
   }
 
   private static List<RiskBadge> riskBadges(
-      List<WeeklyCommitment> group, boolean unreviewed, boolean overdue) {
+      List<WeeklyCommitment> group,
+      boolean unreviewed,
+      boolean overdue,
+      Set<UUID> misalignedDisputeCommitmentIds) {
     List<RiskBadge> badges = new ArrayList<>();
-    if (group.stream().anyMatch(ProjectionService::isMisaligned)) {
-      badges.add(RiskBadge.MISALIGNED);
+    if (group.stream().anyMatch(c -> isMisaligned(c, misalignedDisputeCommitmentIds))) {
+      badges.add(RiskBadge.MISALIGNED); // alignment ∪ open-MISALIGNED-dispute (§9 union)
     }
     if (group.stream().anyMatch(ProjectionService::isNeedsReview)) {
       badges.add(RiskBadge.NEEDS_REVIEW);
@@ -163,16 +220,40 @@ public class ProjectionService {
     return badges;
   }
 
-  private static boolean isMisaligned(WeeklyCommitment c) {
-    return c.getAlignmentStatus() == AlignmentStatus.MISALIGNED;
+  /**
+   * §9 misaligned = alignment MISALIGNED OR an open MISALIGNED-flag dispute (deduped per
+   * commitment).
+   */
+  private static int countMisaligned(
+      List<WeeklyCommitment> group, Set<UUID> misalignedDisputeCommitmentIds) {
+    return count(group, c -> isMisaligned(c, misalignedDisputeCommitmentIds));
+  }
+
+  /** §9 unresolved-dispute count = commitments carrying an OPEN/IC_RESPONDED dispute. */
+  private static int countWithDispute(
+      List<WeeklyCommitment> group, Set<UUID> unresolvedDisputeCommitmentIds) {
+    return count(group, c -> unresolvedDisputeCommitmentIds.contains(c.getId()));
+  }
+
+  private static boolean isMisaligned(
+      WeeklyCommitment c, Set<UUID> misalignedDisputeCommitmentIds) {
+    return c.getAlignmentStatus() == AlignmentStatus.MISALIGNED
+        || misalignedDisputeCommitmentIds.contains(c.getId());
   }
 
   private static boolean isNeedsReview(WeeklyCommitment c) {
     return c.getAlignmentStatus() == AlignmentStatus.NEEDS_REVIEW;
   }
 
+  /**
+   * §9 blocked = {@code reconciliation_outcome=BLOCKED} (task 6.2 — the corrected source, the
+   * sibling of {@code carry_forward_count=reconciliation_outcome=CARRIED_FORWARD}). The shipped
+   * {@code work_type=BLOCKER} was a latent bug: BLOCKER is a planning category, not a risk outcome,
+   * and would fail {@code rebuild==seed} for the R5 Grace fixture (ARCH §1127/§1135/§1387, §17). At
+   * lock no commitment has a reconciliation outcome yet, so {@code blockedCount} is 0 at lock.
+   */
   private static boolean isBlocked(WeeklyCommitment c) {
-    return c.getWorkType() == WorkType.BLOCKER;
+    return c.getReconciliationOutcome() == ReconciliationOutcome.BLOCKED;
   }
 
   private static boolean isCarryForward(WeeklyCommitment c) {

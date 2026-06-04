@@ -230,6 +230,28 @@ class RepositoryConstraintTest extends AbstractJpaIntegrationTest {
     assertThat(found).get().extracting(AlignmentDispute::getStatus).isEqualTo(DisputeStatus.OPEN);
   }
 
+  // --- 8b. the List-In finder (6.2) returns OPEN+IC_RESPONDED across commitments, excludes
+  // RESOLVED
+  // (the one query backing the §9 projection dispute-count/union derivation) -------------------
+  @Test
+  void unresolved_disputes_in_finder_returns_across_statuses_excludes_resolved() {
+    UUID c1 = persistCommitment();
+    UUID c2 = persistCommitment();
+    Employee mgr = saveEmployee(RoleType.MANAGER);
+    disputes.saveAndFlush(newDispute(c1, mgr.getId(), DisputeStatus.OPEN));
+    disputes.saveAndFlush(
+        newDispute(c1, mgr.getId(), DisputeStatus.RESOLVED)); // coexists, excluded
+    disputes.saveAndFlush(newDispute(c2, mgr.getId(), DisputeStatus.IC_RESPONDED));
+
+    List<AlignmentDispute> found =
+        disputes.findByCommitmentIdInAndStatusIn(
+            List.of(c1, c2), List.of(DisputeStatus.OPEN, DisputeStatus.IC_RESPONDED));
+    assertThat(found)
+        .hasSize(2)
+        .extracting(AlignmentDispute::getStatus)
+        .containsExactlyInAnyOrder(DisputeStatus.OPEN, DisputeStatus.IC_RESPONDED);
+  }
+
   // --- 9. review-block finder returns the seeded block ----------------------
   @Test
   void review_block_finder_returns_block() {

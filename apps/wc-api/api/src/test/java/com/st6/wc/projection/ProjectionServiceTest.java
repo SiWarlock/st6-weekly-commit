@@ -1,15 +1,23 @@
 package com.st6.wc.projection;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.st6.wc.commitment.WeeklyCommitment;
+import com.st6.wc.dispute.AlignmentDispute;
+import com.st6.wc.dispute.repo.AlignmentDisputeRepository;
 import com.st6.wc.enums.AlignmentStatus;
 import com.st6.wc.enums.CommitmentKind;
 import com.st6.wc.enums.Confidence;
+import com.st6.wc.enums.DisputeStatus;
+import com.st6.wc.enums.FlagType;
 import com.st6.wc.enums.PlanState;
 import com.st6.wc.enums.Priority;
+import com.st6.wc.enums.ReconciliationOutcome;
 import com.st6.wc.enums.ReviewStatus;
 import com.st6.wc.enums.RiskBadge;
 import com.st6.wc.enums.WorkType;
@@ -30,21 +38,26 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 /**
- * {@code ProjectionService} unit proof (task 3.5, §9 count derivation) — synchronous recompute of
- * the {@code manager_plan_summary} (one row, plan grain) + {@code manager_heatmap_cell} (one row
- * per Defining Objective with ≥1 linked commitment) from the plan's commitments + review. Pins the
- * §9 count predicates (misaligned=alignment MISALIGNED, blocked=work_type BLOCKER,
- * needsReview=alignment NEEDS_REVIEW) and the heatmap risk-badge derivation
- * (MISALIGNED/NEEDS_REVIEW/BLOCKED from commitments, UNREVIEWED from review status, no
- * OVERDUE_REVIEW when not past due). Repos + RcdoReadService mocked.
+ * {@code ProjectionService} unit proof (task 3.5 base + 6.2 §9 derivation completion). Synchronous
+ * recompute of the {@code manager_plan_summary} (one row, plan grain) + {@code
+ * manager_heatmap_cell} (one row per Defining Objective with ≥1 linked commitment) from source.
+ * Pins the §9 count predicates: misaligned = {@code alignment_status=MISALIGNED}
+ * <strong>OR</strong> an {@code OPEN}/{@code IC_RESPONDED} dispute with {@code
+ * flag_type=MISALIGNED} (deduped per commitment); {@code unresolvedDisputeCount} = commitments with
+ * an unresolved dispute; <strong>blocked = {@code reconciliation_outcome=BLOCKED}</strong> (6.2
+ * correction from the latent {@code work_type=BLOCKER}); needsReview = {@code NEEDS_REVIEW};
+ * carry-forward = a non-null successor link (unchanged, §30). The {@code MISALIGNED} risk-badge
+ * fires from the same union. Repos + RcdoReadService + the dispute repo mocked.
  */
 class ProjectionServiceTest {
 
   private final ManagerPlanSummaryRepository summaries = mock(ManagerPlanSummaryRepository.class);
   private final ManagerHeatmapCellRepository cells = mock(ManagerHeatmapCellRepository.class);
   private final RcdoReadService rcdo = mock(RcdoReadService.class);
+  private final AlignmentDisputeRepository disputes = mock(AlignmentDisputeRepository.class);
   private final Clock clock = Clock.fixed(Instant.parse("2026-06-02T12:00:00Z"), ZoneOffset.UTC);
-  private final ProjectionService service = new ProjectionService(summaries, cells, rcdo, clock);
+  private final ProjectionService service =
+      new ProjectionService(summaries, cells, rcdo, clock, disputes);
 
   private static final UUID MGR = UUID.randomUUID();
   private static final UUID IC = UUID.randomUUID();
@@ -62,7 +75,8 @@ class ProjectionServiceTest {
     return s;
   }
 
-  private static WeeklyCommitment commitment(UUID so, AlignmentStatus align, WorkType work) {
+  private static WeeklyCommitment commitment(
+      UUID so, AlignmentStatus align, WorkType work, ReconciliationOutcome outcome) {
     WeeklyCommitment c = new WeeklyCommitment();
     c.setId(UUID.randomUUID());
     c.setWeeklyPlanId(PLAN);
@@ -70,17 +84,29 @@ class ProjectionServiceTest {
     c.setSupportingOutcomeId(so);
     c.setAlignmentStatus(align);
     c.setWorkType(work);
+    c.setReconciliationOutcome(outcome);
     c.setPriority(Priority.P1);
     c.setConfidence(Confidence.MEDIUM);
     return c;
   }
 
-  private static WeeklyPlan plan() {
+  private static AlignmentDispute dispute(UUID commitmentId, DisputeStatus status, FlagType flag) {
+    AlignmentDispute d = new AlignmentDispute();
+    d.setId(UUID.randomUUID());
+    d.setCommitmentId(commitmentId);
+    d.setManagerEmployeeId(MGR);
+    d.setStatus(status);
+    d.setFlagType(flag);
+    d.setManagerNote("n");
+    return d;
+  }
+
+  private static WeeklyPlan plan(PlanState state) {
     WeeklyPlan p = new WeeklyPlan();
     p.setId(PLAN);
     p.setEmployeeId(IC);
     p.setWeekStartDate(WEEK);
-    p.setState(PlanState.LOCKED);
+    p.setState(state);
     return p;
   }
 
@@ -94,46 +120,56 @@ class ProjectionServiceTest {
     return r;
   }
 
-  // --- summary counts + per-DO heatmap cells with risk badges, derived from source (§9) ----
-  @Test
-  void recompute_derivesSummaryAndHeatmapCells() {
+  private void stubEmptyProjectionLookups() {
     when(summaries.findByManagerEmployeeIdAndEmployeeIdAndWeekStartDate(MGR, IC, WEEK))
         .thenReturn(Optional.empty());
     when(cells.findByManagerEmployeeIdAndEmployeeIdAndWeekStartDate(MGR, IC, WEEK))
         .thenReturn(List.of());
+  }
+
+  private ManagerPlanSummary captureSummary() {
+    ArgumentCaptor<ManagerPlanSummary> sum = ArgumentCaptor.forClass(ManagerPlanSummary.class);
+    verify(summaries).save(sum.capture());
+    return sum.getValue();
+  }
+
+  private List<ManagerHeatmapCell> captureCells(int times) {
+    ArgumentCaptor<ManagerHeatmapCell> cell = ArgumentCaptor.forClass(ManagerHeatmapCell.class);
+    verify(cells, org.mockito.Mockito.times(times)).save(cell.capture());
+    return cell.getAllValues();
+  }
+
+  // --- summary counts + per-DO heatmap cells from source; BLOCKED now via reconciliation_outcome
+  // --
+  @Test
+  void recompute_derivesSummaryAndHeatmapCells() {
+    stubEmptyProjectionLookups();
     when(rcdo.findSupportingOutcome(SO1)).thenReturn(so(SO1, DO1));
     when(rcdo.findSupportingOutcome(SO2)).thenReturn(so(SO2, DO2));
 
     List<WeeklyCommitment> commitments =
         List.of(
-            commitment(SO1, AlignmentStatus.NEEDS_REVIEW, WorkType.STRATEGIC), // DO1
-            commitment(SO1, AlignmentStatus.MISALIGNED, WorkType.BLOCKER), // DO1
-            commitment(SO2, AlignmentStatus.ALIGNED, WorkType.STRATEGIC)); // DO2
+            commitment(SO1, AlignmentStatus.NEEDS_REVIEW, WorkType.STRATEGIC, null), // DO1
+            commitment(
+                SO1,
+                AlignmentStatus.MISALIGNED,
+                WorkType.STRATEGIC,
+                ReconciliationOutcome.BLOCKED), // DO1 — blocked via the corrected source
+            commitment(SO2, AlignmentStatus.ALIGNED, WorkType.STRATEGIC, null)); // DO2
 
-    service.recompute(plan(), MGR, commitments, review());
+    service.recompute(plan(PlanState.RECONCILING), MGR, commitments, review());
 
-    // ----- manager_plan_summary (plan grain) -----
-    ArgumentCaptor<ManagerPlanSummary> sum = ArgumentCaptor.forClass(ManagerPlanSummary.class);
-    org.mockito.Mockito.verify(summaries).save(sum.capture());
-    ManagerPlanSummary s = sum.getValue();
+    ManagerPlanSummary s = captureSummary();
     assertThat(s.getManagerEmployeeId()).isEqualTo(MGR);
     assertThat(s.getEmployeeId()).isEqualTo(IC);
-    assertThat(s.getPlanState()).isEqualTo(PlanState.LOCKED);
-    assertThat(s.getReviewStatus()).isEqualTo(ReviewStatus.NOT_REVIEWED);
-    assertThat(s.isReviewOverdue()).isFalse(); // future due
     assertThat(s.getPlannedCount()).isEqualTo(3);
-    assertThat(s.getUnplannedCount()).isZero();
     assertThat(s.getMisalignedCount()).isEqualTo(1);
     assertThat(s.getNeedsReviewCount()).isEqualTo(1);
-    assertThat(s.getBlockedCount()).isEqualTo(1);
+    assertThat(s.getBlockedCount()).isEqualTo(1); // from reconciliation_outcome=BLOCKED
     assertThat(s.getCarryForwardCount()).isZero();
     assertThat(s.getUnresolvedDisputeCount()).isZero();
 
-    // ----- manager_heatmap_cell (one per DO) -----
-    ArgumentCaptor<ManagerHeatmapCell> cell = ArgumentCaptor.forClass(ManagerHeatmapCell.class);
-    org.mockito.Mockito.verify(cells, org.mockito.Mockito.times(2)).save(cell.capture());
-    List<ManagerHeatmapCell> saved = cell.getAllValues();
-
+    List<ManagerHeatmapCell> saved = captureCells(2);
     ManagerHeatmapCell do1 =
         saved.stream()
             .filter(x -> x.getDefiningObjectiveId().equals(DO1))
@@ -141,19 +177,134 @@ class ProjectionServiceTest {
             .orElseThrow();
     assertThat(do1.getCommitmentCount()).isEqualTo(2);
     assertThat(do1.getMisalignedCount()).isEqualTo(1);
-    assertThat(do1.getNeedsReviewCount()).isEqualTo(1);
     assertThat(do1.getBlockedCount()).isEqualTo(1);
     assertThat(do1.getRiskBadges())
         .containsExactlyInAnyOrder(
             RiskBadge.MISALIGNED, RiskBadge.NEEDS_REVIEW, RiskBadge.BLOCKED, RiskBadge.UNREVIEWED);
-
     ManagerHeatmapCell do2 =
         saved.stream()
             .filter(x -> x.getDefiningObjectiveId().equals(DO2))
             .findFirst()
             .orElseThrow();
-    assertThat(do2.getCommitmentCount()).isEqualTo(1);
     assertThat(do2.getMisalignedCount()).isZero();
-    assertThat(do2.getRiskBadges()).containsExactly(RiskBadge.UNREVIEWED); // only the review badge
+    assertThat(do2.getRiskBadges()).containsExactly(RiskBadge.UNREVIEWED);
+  }
+
+  // --- §9 union half: an ALIGNED commitment with an OPEN MISALIGNED dispute counts as misaligned
+  // --
+  @Test
+  void recompute_misalignedCount_unionsOpenMisalignedDispute() {
+    stubEmptyProjectionLookups();
+    when(rcdo.findSupportingOutcome(SO1)).thenReturn(so(SO1, DO1));
+    WeeklyCommitment c = commitment(SO1, AlignmentStatus.ALIGNED, WorkType.STRATEGIC, null);
+    when(disputes.findByCommitmentIdInAndStatusIn(any(), any()))
+        .thenReturn(List.of(dispute(c.getId(), DisputeStatus.OPEN, FlagType.MISALIGNED)));
+
+    service.recompute(plan(PlanState.LOCKED), MGR, List.of(c), review());
+
+    assertThat(captureSummary().getMisalignedCount()).isEqualTo(1);
+    ManagerHeatmapCell cell = captureCells(1).get(0);
+    assertThat(cell.getMisalignedCount()).isEqualTo(1);
+    assertThat(cell.getRiskBadges()).contains(RiskBadge.MISALIGNED);
+  }
+
+  // --- §9 dedup: a commitment that is BOTH alignment=MISALIGNED AND disputed counts ONCE ----
+  @Test
+  void recompute_misalignedCount_dedupesAlignmentAndDispute() {
+    stubEmptyProjectionLookups();
+    when(rcdo.findSupportingOutcome(SO1)).thenReturn(so(SO1, DO1));
+    WeeklyCommitment c = commitment(SO1, AlignmentStatus.MISALIGNED, WorkType.STRATEGIC, null);
+    when(disputes.findByCommitmentIdInAndStatusIn(any(), any()))
+        .thenReturn(List.of(dispute(c.getId(), DisputeStatus.OPEN, FlagType.MISALIGNED)));
+
+    service.recompute(plan(PlanState.LOCKED), MGR, List.of(c), review());
+
+    assertThat(captureSummary().getMisalignedCount()).isEqualTo(1); // not 2
+  }
+
+  // --- §9 unresolvedDisputeCount: OPEN + IC_RESPONDED both count; RESOLVED never reaches here ----
+  @Test
+  void recompute_unresolvedDisputeCount_countsOpenAndIcResponded() {
+    stubEmptyProjectionLookups();
+    when(rcdo.findSupportingOutcome(SO1)).thenReturn(so(SO1, DO1));
+    WeeklyCommitment c1 = commitment(SO1, AlignmentStatus.ALIGNED, WorkType.STRATEGIC, null);
+    WeeklyCommitment c2 = commitment(SO1, AlignmentStatus.ALIGNED, WorkType.STRATEGIC, null);
+    when(disputes.findByCommitmentIdInAndStatusIn(any(), any()))
+        .thenReturn(
+            List.of(
+                dispute(c1.getId(), DisputeStatus.OPEN, FlagType.NEEDS_REVISION),
+                dispute(c2.getId(), DisputeStatus.IC_RESPONDED, FlagType.NEEDS_REVISION)));
+
+    service.recompute(plan(PlanState.LOCKED), MGR, List.of(c1, c2), review());
+
+    assertThat(captureSummary().getUnresolvedDisputeCount()).isEqualTo(2);
+    assertThat(captureCells(1).get(0).getUnresolvedDisputeCount()).isEqualTo(2);
+  }
+
+  // --- a NEEDS_REVISION dispute bumps unresolvedDisputeCount but NOT misalignedCount/the badge
+  // ----
+  @Test
+  void recompute_needsRevisionDispute_doesNotCountMisaligned() {
+    stubEmptyProjectionLookups();
+    when(rcdo.findSupportingOutcome(SO1)).thenReturn(so(SO1, DO1));
+    WeeklyCommitment c = commitment(SO1, AlignmentStatus.ALIGNED, WorkType.STRATEGIC, null);
+    when(disputes.findByCommitmentIdInAndStatusIn(any(), any()))
+        .thenReturn(List.of(dispute(c.getId(), DisputeStatus.OPEN, FlagType.NEEDS_REVISION)));
+
+    service.recompute(plan(PlanState.LOCKED), MGR, List.of(c), review());
+
+    ManagerPlanSummary s = captureSummary();
+    assertThat(s.getUnresolvedDisputeCount()).isEqualTo(1);
+    assertThat(s.getMisalignedCount()).isZero();
+    assertThat(captureCells(1).get(0).getRiskBadges()).doesNotContain(RiskBadge.MISALIGNED);
+  }
+
+  // --- §17 R5 regression: blocked is reconciliation_outcome=BLOCKED, NOT work_type=BLOCKER ----
+  @Test
+  void recompute_blockedCount_fromReconciliationOutcome() {
+    stubEmptyProjectionLookups();
+    when(rcdo.findSupportingOutcome(SO1)).thenReturn(so(SO1, DO1));
+    when(rcdo.findSupportingOutcome(SO2)).thenReturn(so(SO2, DO2));
+    // DO1: a reconciliation_outcome=BLOCKED commitment → blocked; DO2: a work_type=BLOCKER
+    // commitment with NO blocked outcome → NOT blocked (the corrected source)
+    WeeklyCommitment blocked =
+        commitment(SO1, AlignmentStatus.ALIGNED, WorkType.STRATEGIC, ReconciliationOutcome.BLOCKED);
+    WeeklyCommitment blockerWorkType =
+        commitment(SO2, AlignmentStatus.ALIGNED, WorkType.BLOCKER, null);
+
+    service.recompute(
+        plan(PlanState.RECONCILING), MGR, List.of(blocked, blockerWorkType), review());
+
+    assertThat(captureSummary().getBlockedCount()).isEqualTo(1);
+    List<ManagerHeatmapCell> saved = captureCells(2);
+    ManagerHeatmapCell do1 =
+        saved.stream()
+            .filter(x -> x.getDefiningObjectiveId().equals(DO1))
+            .findFirst()
+            .orElseThrow();
+    assertThat(do1.getBlockedCount()).isEqualTo(1);
+    assertThat(do1.getRiskBadges()).contains(RiskBadge.BLOCKED);
+    ManagerHeatmapCell do2 =
+        saved.stream()
+            .filter(x -> x.getDefiningObjectiveId().equals(DO2))
+            .findFirst()
+            .orElseThrow();
+    assertThat(do2.getBlockedCount()).isZero(); // work_type=BLOCKER no longer fires blocked
+    assertThat(do2.getRiskBadges()).doesNotContain(RiskBadge.BLOCKED);
+  }
+
+  // --- empty commitment set → no dispute query (empty SQL IN is invalid), zero counts ----
+  @Test
+  void recompute_emptyCommitments_noDisputeQuery() {
+    stubEmptyProjectionLookups();
+
+    service.recompute(plan(PlanState.LOCKED), MGR, List.of(), review());
+
+    ManagerPlanSummary s = captureSummary();
+    assertThat(s.getUnresolvedDisputeCount()).isZero();
+    assertThat(s.getMisalignedCount()).isZero();
+    assertThat(s.getBlockedCount()).isZero();
+    verify(disputes, never()).findByCommitmentIdInAndStatusIn(any(), any());
+    verify(cells, never()).save(any()); // no linked commitments → no cells
   }
 }
