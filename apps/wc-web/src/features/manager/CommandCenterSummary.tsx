@@ -17,9 +17,7 @@ export function CommandCenterSummary({
       data-cy="cc-glance"
       className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-border bg-surface-raised px-4 py-2 text-meta text-ink-secondary"
     >
-      <span className="font-semibold uppercase tracking-wide text-ink-muted">
-        At a glance
-      </span>
+      <span className="mr-1 font-medium text-ink-secondary">At a glance</span>
       <span className="text-ink-primary">{`${g.reports} reports`}</span>
       <span className="inline-flex items-center gap-1 text-tone-failure-fg">
         <HiClock aria-hidden className="h-3 w-3" />

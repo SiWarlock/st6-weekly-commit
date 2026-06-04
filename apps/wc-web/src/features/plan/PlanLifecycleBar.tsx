@@ -188,7 +188,7 @@ export function PlanLifecycleBar({
               type="button"
               disabled={starting}
               onClick={handleStart}
-              className="rounded-md bg-tone-warning-solid px-4 py-2 text-label font-semibold text-white hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-brand-ring disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md bg-tone-warning-solid px-4 py-2 text-label font-semibold text-tone-on-solid-ink hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-brand-ring disabled:cursor-not-allowed disabled:opacity-50"
             >
               Start reconciliation
             </button>
@@ -199,7 +199,7 @@ export function PlanLifecycleBar({
               type="button"
               disabled={closing}
               onClick={handleClose}
-              className="rounded-md bg-tone-success-solid px-4 py-2 text-label font-semibold text-white hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-brand-ring disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md bg-tone-success-solid px-4 py-2 text-label font-semibold text-tone-on-solid-ink hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-brand-ring disabled:cursor-not-allowed disabled:opacity-50"
             >
               Close reconciliation
             </button>

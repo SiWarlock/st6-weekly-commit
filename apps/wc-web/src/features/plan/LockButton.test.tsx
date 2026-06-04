@@ -36,14 +36,16 @@ afterEach(() => {
 });
 
 describe('LockButton (server-authoritative lock affordance, rule #1)', () => {
-  it('lock_button_enabled_only_when_LOCK_in_allowedActions: enabled when LOCK ∈ allowedActions[], disabled when absent (never re-derived client-side)', () => {
+  it('lock_button_rendered_only_when_LOCK_in_allowedActions: shown+enabled when LOCK ∈ allowedActions[], GATED OUT (not rendered, never disabled) when absent — server-authoritative (§11; mirrors the START_RECONCILIATION gating), matches canon (no lock affordance past DRAFT)', () => {
     mockLock(vi.fn());
 
     const { rerender } = render(<LockButton plan={plan(['LOCK'])} />);
     expect(screen.getByRole('button', { name: /lock/i })).toBeEnabled();
 
     rerender(<LockButton plan={plan([])} />);
-    expect(screen.getByRole('button', { name: /lock/i })).toBeDisabled();
+    expect(
+      screen.queryByRole('button', { name: /lock/i }),
+    ).not.toBeInTheDocument();
   });
 
   it('lock_blocked_renders_UNLINKED_PLANNED_COMMITMENT_safeMessage_and_fieldErrors: a 409 surfaces the server safeMessage + per-field fieldErrors verbatim', async () => {

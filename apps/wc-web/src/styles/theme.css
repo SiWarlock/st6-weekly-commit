@@ -55,6 +55,11 @@
   --brand-400: #828fff;
   --brand-ink: #ffffff;
   --brand-ring: rgba(94, 106, 210, 0.55);
+  /* Dark ink for text on the BRIGHT status-tone solids (warning/success). These
+     solids stay bright in BOTH themes, so white text fails AA — this fixed near-
+     black is theme-independent (not overridden in [data-theme="light"]). Used on
+     the gold Start-reconciliation + green Close-week buttons (ST.8d a11y fix). */
+  --tone-on-solid-ink: #1b1c1f;
 
   /* ---- Six status tones ---- */
   --tone-neutral-fg: #b4b8bd;

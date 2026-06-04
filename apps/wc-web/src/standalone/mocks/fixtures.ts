@@ -291,6 +291,8 @@ const planIc1: WeeklyPlanDto = {
   commitments: [
     commitment(PLAN_IC_1, {
       title: 'Launch the guided-onboarding checklist',
+      description:
+        'Ship the in-product onboarding checklist so new teams reach first value faster.',
       supportingOutcomeId: SO_1_1,
       priority: 'P0',
       workType: 'STRATEGIC',
@@ -299,6 +301,8 @@ const planIc1: WeeklyPlanDto = {
     }),
     commitment(PLAN_IC_1, {
       title: 'Triage the activation funnel drop-off',
+      description:
+        'Instrument the activation funnel and surface the biggest drop-off on the WAU board.',
       supportingOutcomeId: SO_1_2,
       priority: 'P1',
       workType: 'MAINTENANCE',
@@ -307,6 +311,8 @@ const planIc1: WeeklyPlanDto = {
     }),
     commitment(PLAN_IC_1, {
       title: 'Spike: evaluate in-app product-tour vendors',
+      description:
+        'Time-box a vendor evaluation for an embedded product tour and recommend one.',
       priority: 'P2',
       workType: 'STRATEGIC',
       confidence: 'LOW',
@@ -334,6 +340,8 @@ const planIc2: WeeklyPlanDto = {
   commitments: [
     commitment(PLAN_IC_2, {
       title: 'Stabilize the release-train cutover',
+      description:
+        'Land the weekly release-train cutover so deploys ship on a predictable cadence.',
       supportingOutcomeId: SO_2_1,
       priority: 'P0',
       workType: 'STRATEGIC',
@@ -342,6 +350,8 @@ const planIc2: WeeklyPlanDto = {
     }),
     commitment(PLAN_IC_2, {
       title: 'Unblock deploys stuck on flaky end-to-end tests',
+      description:
+        'Quarantine the flaky end-to-end tests that are blocking the deploy pipeline.',
       supportingOutcomeId: SO_2_2,
       priority: 'P1',
       workType: 'BLOCKER',
@@ -350,6 +360,8 @@ const planIc2: WeeklyPlanDto = {
     }),
     commitment(PLAN_IC_2, {
       title: 'Document the on-call rotation handbook',
+      description:
+        'Write the on-call rotation handbook so every engineer can run an incident.',
       supportingOutcomeId: SO_2_2,
       priority: 'P2',
       workType: 'MAINTENANCE',
@@ -382,6 +394,8 @@ const planIc3: WeeklyPlanDto = {
   commitments: [
     commitment(PLAN_IC_3, {
       title: 'Sustain 99.95% API availability through June',
+      description:
+        'Hold API availability at or above 99.95% across the June reliability target.',
       supportingOutcomeId: SO_3_1,
       priority: 'P0',
       workType: 'STRATEGIC',
@@ -392,6 +406,8 @@ const planIc3: WeeklyPlanDto = {
     }),
     commitment(PLAN_IC_3, {
       title: 'Remediate the top SOC 2 control findings',
+      description:
+        'Close the highest-severity SOC 2 control gaps ahead of the audit window.',
       supportingOutcomeId: SO_3_2,
       priority: 'P1',
       workType: 'STRATEGIC',
@@ -417,6 +433,8 @@ const planIc3: WeeklyPlanDto = {
     }),
     commitment(PLAN_IC_3, {
       title: 'Hotfix the auth token-refresh regression',
+      description:
+        'Ship the hotfix for the auth token-refresh regression hitting signed-in users.',
       supportingOutcomeId: SO_3_1,
       commitmentKind: 'UNPLANNED',
       priority: 'P0',
@@ -428,6 +446,8 @@ const planIc3: WeeklyPlanDto = {
     }),
     commitment(PLAN_IC_3, {
       title: 'Finish the activation-onboarding runbook',
+      description:
+        'Complete the activation-onboarding runbook carried over from last week.',
       supportingOutcomeId: SO_1_1,
       priority: 'P1',
       workType: 'MAINTENANCE',
@@ -464,6 +484,8 @@ const planIc4: WeeklyPlanDto = {
   commitments: [
     commitment(PLAN_IC_4, {
       title: 'Cut time-to-first-value below one week',
+      description:
+        'Drive median time-to-first-value under a week for newly activated teams.',
       supportingOutcomeId: SO_1_1,
       priority: 'P1',
       workType: 'STRATEGIC',
@@ -473,6 +495,8 @@ const planIc4: WeeklyPlanDto = {
     }),
     commitment(PLAN_IC_4, {
       title: 'Lift activation-to-paid conversion by 3 points',
+      description:
+        'Raise activation-to-paid conversion by three points through targeted nudges.',
       supportingOutcomeId: SO_1_2,
       priority: 'P2',
       workType: 'STRATEGIC',
@@ -482,6 +506,8 @@ const planIc4: WeeklyPlanDto = {
     }),
     commitment(PLAN_IC_4, {
       title: 'Migrate the legacy billing webhooks',
+      description:
+        'Move the legacy billing webhooks onto the new event-delivery pipeline.',
       supportingOutcomeId: SO_2_1,
       priority: 'P1',
       workType: 'MAINTENANCE',

@@ -50,6 +50,8 @@ export default {
           ink: 'var(--brand-ink)',
           ring: 'var(--brand-ring)',
         },
+        // Dark ink for text on the bright warning/success solids (AA; theme-stable)
+        'tone-on-solid-ink': 'var(--tone-on-solid-ink)',
         // Six status tones × {fg,bg,border,solid}
         'tone-neutral-fg': 'var(--tone-neutral-fg)',
         'tone-neutral-bg': 'var(--tone-neutral-bg)',
