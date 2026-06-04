@@ -321,3 +321,16 @@ The correct posture: **gate every control on `allowedActions` via the one `can()
 - **Pair the dependency explicitly** (brief Dependencies + a Carry-forward marker) so the activation slice is tracked — a dormant control is invisible until then and easy to forget.
 
 **Rule:** Gate a control on a server `allowedAction` even when the backend emits it empty today — built + mock-tested, it stays dark until the backend ships the emission, then auto-activates with zero frontend change. Never gate on status/role as an interim (that re-derives server authority client-side — the §11 violation this corollary exists to prevent).
+
+## <a id="20"></a>20. One `allowedActions`-gated list component serves ALL actor roles — zero client-side role branching (the §11 dividend)
+
+**Date:** 2026-06-03.
+**Source slice:** 9.14 (manager plan-detail dispute surface — the IC `CommitmentList` rendered verbatim for the manager).
+
+The manager needed a surface to open/resolve disputes on a direct-report's commitments. Rather than build a manager-specific commitment renderer, we rendered the **same `CommitmentList`** the IC view uses, fed by the manager's E4 (`getPlanById`) read. Because every control inside it gates purely on the server's per-actor `allowedActions` (§11), the component is **automatically role-correct**: the IC sees respond + edit/reconcile/carry-forward (their `allowedActions`); the manager sees open/resolve (theirs); neither sees the other's — with **no `if (isManager)` anywhere in the component**. The whole 9.14 slice was ~15 lines (render the existing list in the existing Drawer) precisely because of this.
+
+- **Don't fork a component per actor role.** If a component gates every control on `allowedActions`, the server's per-actor computation makes one component correct for all roles. A per-role fork duplicates logic + re-derives authority client-side (the §11 violation).
+- **The read endpoint is the per-actor differentiator**, not the component: the IC reads via E3 (`getCurrentPlan`), the manager via E4 (`getPlanById` of a report) — same component, different `allowedActions` in the payload. (Extends [[11]] server-authoritative gating + [[13]] reach-the-aggregate-root-lazily; the IDOR scoping is the backend's, §6.)
+- **Caveat:** the shared component must be presentation + gating only (no actor assumptions in its own logic). `CommitmentList` qualified because 9.7/9.11a kept it purely `allowedActions`-driven.
+
+**Rule:** Render one `allowedActions`-gated component for every actor role instead of forking per role — the server's per-actor `allowedActions` make it role-correct with zero client-side role branching (the §11 dividend). The read endpoint differentiates the actor (E3 own vs E4 report), not the component.
