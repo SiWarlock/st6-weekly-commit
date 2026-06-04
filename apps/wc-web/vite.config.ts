@@ -2,19 +2,22 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import federation from '@originjs/vite-plugin-federation';
+import { shouldEnableFederation } from './vite.buildTarget';
 
 // Module Federation remote (9.3): exposes one mountable module and shares the
-// React/Redux singletons. The federation plugin is gated OFF under Vitest — it
-// rewrites the module graph for the build and isn't needed (or wanted) for the
-// jsdom unit suite, which exercises the boundary via a static import-graph test.
-const isTest = process.env.VITEST === 'true';
+// React/Redux singletons. The federation plugin is gated OFF under Vitest (the
+// jsdom unit suite exercises the boundary via a static import-graph test, not the
+// rewritten module graph) AND for the standalone SPA build (9.16) — `vite build`
+// with VITE_BUILD_TARGET=standalone uses `index.html` as the entry instead of
+// emitting the `remoteEntry.js` library. The default build stays the remote.
+// See vite.buildTarget.ts for the pure, unit-tested mode-selection.
+const enableFederation = shouldEnableFederation(process.env);
 
 export default defineConfig({
   plugins: [
     react(),
-    ...(isTest
-      ? []
-      : [
+    ...(enableFederation
+      ? [
           federation({
             name: 'wc_web',
             filename: 'remoteEntry.js',
@@ -33,7 +36,8 @@ export default defineConfig({
               'react-redux': { requiredVersion: '^9.1.2' },
             },
           }),
-        ]),
+        ]
+      : []),
   ],
   // Federation emits top-level await; esnext keeps the build valid.
   build: { target: 'esnext' },

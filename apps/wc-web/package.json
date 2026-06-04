@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:remote": "vite build",
+    "build:standalone": "VITE_BUILD_TARGET=standalone vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
