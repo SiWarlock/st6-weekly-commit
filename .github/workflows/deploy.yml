@@ -287,6 +287,12 @@ jobs:
         env:
           VITE_AUTH_MODE: auth0
           VITE_API_BASE_URL: https://api.wc.${{ vars.ROOT_DOMAIN }}
+          # standalone/auth0Config.ts requireVar-fails on these in auth0 mode — without them the
+          # deployed SPA throws on boot. DOMAIN/CLIENT_ID from GitHub vars (runbook a §1.2);
+          # AUDIENCE derived from ROOT_DOMAIN (== backend auth0.audience).
+          VITE_AUTH0_DOMAIN: ${{ vars.AUTH0_DOMAIN }}
+          VITE_AUTH0_CLIENT_ID: ${{ vars.AUTH0_CLIENT_ID }}
+          VITE_AUTH0_AUDIENCE: https://api.wc.${{ vars.ROOT_DOMAIN }}
         run: |
           set -euo pipefail
           yarn install --frozen-lockfile
