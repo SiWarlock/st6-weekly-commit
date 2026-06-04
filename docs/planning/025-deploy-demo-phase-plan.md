@@ -57,3 +57,35 @@ Runbook **(a)** setup-everything (expand `auth0-tenant-setup.md` + M365 E5 trial
 6. Put the Auth0/Graph/demo **secret values** into the TF-created containers (templated `put-secret-value` helper → fill-in-the-blanks).
 
 **Net "fresh AWS account → live":** run bootstrap → `terraform apply` → populate ~3 secrets (from runbook-a tenants) → trigger deploy.yml. Everything else automates.
+
+---
+
+## Wave-2 scoping pass — findings (2026-06-04, fresh backend orch)
+
+> The ~15-min seam-confirmation the handoff/plan call for, done BEFORE authoring the Wave-2 briefs. Verified against HEAD `8984d26`. **The seam is clean — Wave-2 is mostly greenfield worker code + one api-gateway swap, no lifecycle-txn surgery.** These findings anchor the s7/s8/s9 briefs (authored after 092 lands).
+
+### s7 — Real SNS gateway (api-side, brief 09x)
+- **Seam = `LifecycleSnsGateway.publish(SyncJobPointer)`.** `SnsLifecyclePublisher` (`@Service`, `sns/`) ALREADY owns the whole non-blocking outbox dance: `@Transactional(REQUIRES_NEW)`, loads the record, calls `gateway.publish(pointer)`, flips `PENDING_PUBLISH → QUEUED` + `queuedAt`, **swallows `RuntimeException` (rule #4 — record stays `PENDING_PUBLISH`, retryable), logs ids-only (rule #7)**. The afterCommit hook is registered at `PlanLifecycleService:299–308` (`TransactionSynchronization.afterCommit → syncRecordIds.forEach(snsLifecyclePublisher::publish)`, inline fallback if no active sync). **No lifecycle/publisher change needed.**
+- **ONLY change:** replace `LoggingLifecycleSnsGateway` (a bare `@Component`, no conditional) with a real `AwsSnsLifecycleGateway` that JSON-serializes the 4-field `SyncJobPointer` and `sns:Publish`es to `${SNS_TOPIC_ARN}`.
+- **Bean selection (Step-2.5 Q):** gate the real gateway (`@ConditionalOnProperty(app.sns.topic-arn)` or `@Profile("aws")`) + make the stub `@ConditionalOnMissingBean(LifecycleSnsGateway.class)` so local/demo/test keep the no-op. Both can't be bare `@Component`s.
+- **Deps:** ADD `software.amazon.awssdk:sns` to the **api** module (NONE present today — verify version via the AWS SDK v2 BOM / Context7 at author time).
+- **Env:** `SNS_TOPIC_ARN` already wired in `deployment-api.yaml:53`. **GAP — no `APP_ENV`/`app.env` env** → `SnsLifecyclePublisher`'s `@Value("${app.env:local}")` makes the pointer's `env` field `"local"` in the deployed api. **Infra seam:** wire `APP_ENV=aws` (or `app.env`) into `deployment-api.yaml` (+ worker) so the pointer `env` is correct.
+- **IRSA:** confirm the api IRSA grants `sns:Publish` on the topic ARN (`iam_irsa.tf`) at author time.
+- **Security:** ad-hoc review (rules #4 + #7).
+
+### s8 — Worker SQS consumer (worker-side, greenfield)
+- Worker is **skeleton-only** (confirmed — only `WcSyncWorkerApplication` + `WorkerSharedConfig`). `@SqsListener` on the `wc-sync` queue (`SQS_QUEUE_URL` + `SQS_DLQ_URL` already in `deployment-worker.yaml:45–48`); deserialize `SyncJobPointer`, reload `OutlookCalendarSyncRecord` by `syncRecordId` via the `:shared` `OutlookCalendarSyncRecordRepository`, dispatch to the Graph adapter, transition status (`QUEUED → …`), → DLQ on fail.
+- **⚠️ This slice RE-ADDS the worker datasource** (removes the 092 JPA-exclude) — the worker must read the SyncRecord + resolve the owner email + plan/commitments to render the calendar event (`SyncRecordService` shows the record carries only `ownerEmployeeId`/`relatedType`/`relatedId`/`eventKind`/`weekStartDate`/`traceId` → the worker loads the rest from the DB). **Pairs with 092** (092 Q4 forward-note: the exclude is removed exactly here).
+- **Deps:** ADD `io.awspring.cloud:spring-cloud-aws-starter-sqs` (the `@SqsListener` provider) to the **worker** (verify version at author time).
+- **⚠️ INFRA seam (paired infra slice):** the `wc-worker-secrets` SPC + worker IRSA grant **GRAPH-only `GetSecretValue`** today (`deployment-worker.yaml:3`). Wave-2 worker needs **db secret keys added to the worker SPC + `GetSecretValue` on the db secret in the worker IRSA** (read-only). The comment claims the worker IRSA already has `sqs Receive/Delete/GetQueueAttributes` — confirm in `iam_irsa.tf`.
+- **Security:** ad-hoc review (rule #7 — pointer-only payload, no body in DLQ; idempotent reprocessing).
+
+### s9 — MS Graph adapter + app-only auth (worker-side, greenfield)
+- Client-credentials token from the **graph secret** (`GRAPH_TENANT_ID`/`GRAPH_CLIENT_ID`/`GRAPH_CLIENT_SECRET`). **⚠️ The worker has NO `configtree` import yet** (its `application-aws.yml` after 092 is logging-only) → this slice ADDS `spring.config.import=optional:configtree:/mnt/secrets/` to the worker's aws profile so the graph keys bind (LESSONS §42; the worker SPC already mounts the graph secret).
+- **`GRAPH_MODE=demo-success`** (env on both deployments, NO code consumer yet — greenfield): the adapter honors it as a **deterministic success stub** (simulate a successful Graph create/update without a live M365 call — lets the demo run before/without the M365 trial) vs real Graph mode. Confirm the exact `demo-success` contract when authoring.
+- Calendar create/update on the owner's calendar (owner email ← `Employee` by `ownerEmployeeId`).
+- **Deps:** `com.microsoft.graph:microsoft-graph` + `com.azure:azure-identity` (`ClientSecretCredential`) — verify versions at author time.
+- **Security:** ad-hoc review (rule #7 — secrets never logged; rule #4 — Graph failure never blocks, lands `FAILED`/retryable).
+
+### Sequencing
+**092 (in flight) → s7 (api SNS, independent of 092) → s8 (worker SQS, depends on 092 + its infra seam) → s9 (Graph, depends on s8 + the worker configtree import).** Each backend slice pairs with an infra seam (APP_ENV env · worker DB secret+IRSA · worker configtree). Ad-hoc security review (general-purpose agent — the `security-reviewer` subagent isn't registered) on each. Brief lane: s7/s8/s9 = next-free after 092 (coordinate numbering with the frontend orch).
