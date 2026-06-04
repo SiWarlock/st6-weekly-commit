@@ -18,6 +18,11 @@ dependencies {
   // SQS consume (Wave-2 s8, §10) — @SqsListener + SqsClient auto-config.
   implementation 'io.awspring.cloud:spring-cloud-aws-starter-sqs'
 
+  // Microsoft Graph calendar sync (Wave-2 s9, §10) — the real GRAPH_MODE=real adapter behind the s8
+  // port: app-only client-credentials (azure-identity) + the v6 Graph SDK calendar-event create.
+  implementation libs.microsoft.graph
+  implementation libs.azure.identity
+
   // JPA runtime (Wave-2 s8) — the worker reloads OutlookCalendarSyncRecord by id. The data-jpa
   // starter was transitive-runtime via :shared; the worker now uses it directly (@EnableJpaRepositories
   // in WorkerSharedConfig + the sync repo), so depend on it explicitly (compile + runtime).

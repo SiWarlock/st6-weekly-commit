@@ -7,6 +7,10 @@ springBoot = "3.3.5"
 # spring-cloud-aws 3.2.x is the line compatible with Spring Boot 3.3 (the BOM makes the starters
 # version-less); the 3.4.x line targets Boot 3.5. Wave-2 s7 (real SNS gateway).
 springCloudAws = "3.2.1"
+# Microsoft Graph calendar sync (Wave-2 s9). The v6 Kiota-based Java SDK + azure-identity for the
+# app-only client-credentials flow — the exact pair Microsoft's 2025 app-only Java tutorial pins.
+microsoftGraph = "6.65.0"
+azureIdentity = "1.18.3"
 lombok = "1.18.34"
 junit = "5.11.3"
 junitPlatform = "1.11.3"
@@ -19,6 +23,8 @@ spotbugs = "6.0.26"
 
 [libraries]
 lombok = { module = "org.projectlombok:lombok", version.ref = "lombok" }
+microsoft-graph = { module = "com.microsoft.graph:microsoft-graph", version.ref = "microsoftGraph" }
+azure-identity = { module = "com.azure:azure-identity", version.ref = "azureIdentity" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junitPlatform" }
 jakarta-persistence-api = { module = "jakarta.persistence:jakarta.persistence-api", version.ref = "jakartaPersistence" }

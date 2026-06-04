@@ -17,4 +17,17 @@
     <Class name="~com\.st6\.wc\.migration\..*"/>
     <Bug pattern="SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE"/>
   </Match>
+  <!--
+    Wave-2 s9: MsGraphEventGateway is a thin wrapper that holds the injected Microsoft Graph SDK
+    client (com.microsoft.graph.serviceclient.GraphServiceClient) to make the calendar-create call.
+    SpotBugs flags storing the externally-provided client as EI_EXPOSE_REP2. The project's usual
+    dodge — inject the framework's *Operations interface (LESSONS §43) — does not apply (the Graph
+    SDK client is a concrete class with no interface), and it is not a mutable collection to
+    defensive-copy (LESSONS §10). Holding the singleton client reference is the intended design;
+    suppress this one detector on this one class only. Production behavior is unaffected.
+  -->
+  <Match>
+    <Class name="com.st6.wc.worker.sync.MsGraphEventGateway"/>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+  </Match>
 </FindBugsFilter>

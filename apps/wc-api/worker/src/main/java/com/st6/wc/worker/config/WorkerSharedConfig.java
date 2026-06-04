@@ -17,12 +17,14 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
  *   <li>{@link EntityScan @EntityScan}({@code com.st6.wc}) — the JPA entities, so {@code
  *       ddl-auto=validate} validates the worker's full view against the migration-owned schema
  *       (Wave-2 s8 — the worker reloads {@code OutlookCalendarSyncRecord}).
- *   <li>{@link EnableJpaRepositories @EnableJpaRepositories}({@code com.st6.wc.sync.repo}) — only
- *       the sync repo the worker actually uses (not every domain repo).
+ *   <li>{@link EnableJpaRepositories @EnableJpaRepositories}({@code com.st6.wc.sync.repo} + {@code
+ *       com.st6.wc.employee.repo}) — only the repos the worker actually uses (the sync repo for the
+ *       SQS consumer, the employee repo for the s9 owner-email → Graph lookup), not every domain
+ *       repo.
  * </ul>
  */
 @Configuration
 @Import(ClockConfig.class)
 @EntityScan("com.st6.wc")
-@EnableJpaRepositories("com.st6.wc.sync.repo")
+@EnableJpaRepositories({"com.st6.wc.sync.repo", "com.st6.wc.employee.repo"})
 public class WorkerSharedConfig {}
