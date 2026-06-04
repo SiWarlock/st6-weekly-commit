@@ -7,6 +7,7 @@ import com.st6.wc.enums.CommitmentKind;
 import com.st6.wc.plan.AllowedActionResolver;
 import com.st6.wc.plan.WeeklyPlan;
 import com.st6.wc.plan.dto.WeeklyPlanDto;
+import com.st6.wc.relationship.repo.ManagerRelationshipRepository;
 import com.st6.wc.review.dto.ManagerReviewDto;
 import com.st6.wc.review.mapper.ReviewMapper;
 import com.st6.wc.review.repo.ManagerReviewRepository;
@@ -29,16 +30,19 @@ public class PlanMapper {
   private final AllowedActionResolver allowedActionResolver;
   private final ManagerReviewRepository reviews;
   private final ReviewMapper reviewMapper;
+  private final ManagerRelationshipRepository relationships;
 
   public PlanMapper(
       CommitmentMapper commitmentMapper,
       AllowedActionResolver allowedActionResolver,
       ManagerReviewRepository reviews,
-      ReviewMapper reviewMapper) {
+      ReviewMapper reviewMapper,
+      ManagerRelationshipRepository relationships) {
     this.commitmentMapper = commitmentMapper;
     this.allowedActionResolver = allowedActionResolver;
     this.reviews = reviews;
     this.reviewMapper = reviewMapper;
+    this.relationships = relationships;
   }
 
   public WeeklyPlanDto toWeeklyPlanDto(
@@ -47,12 +51,23 @@ public class PlanMapper {
       List<WeeklyCommitment> commitments,
       UUID actorEmployeeId) {
 
+    // viewerIsDirectManager: determined ONCE per plan read (one relationship lookup, 5.5b) — the
+    // viewer is the plan owner's active direct manager. Threaded to the per-commitment +
+    // per-dispute
+    // affordances (OPEN_DISPUTE / RESOLVE_DISPUTE). The owning IC is never their own manager →
+    // false.
+    boolean viewerIsDirectManager =
+        relationships
+            .findByDirectReportEmployeeIdAndActiveTrue(plan.getEmployeeId())
+            .map(r -> r.getManagerEmployeeId().equals(actorEmployeeId))
+            .orElse(false);
+
     List<WeeklyCommitmentDto> commitmentDtos =
         commitments.stream()
             .map(
                 c ->
                     commitmentMapper.toDto(
-                        c, plan, actorEmployeeId)) // 4.4b per-commitment affordances
+                        c, plan, actorEmployeeId, viewerIsDirectManager)) // 4.4b/5.5b affordances
             .toList();
     int plannedCount =
         (int)

@@ -168,8 +168,9 @@ class CommitmentMapperTest {
   void toDto_withContext_eligibleEmitsCarryForward() {
     UUID owner = UUID.randomUUID();
     WeeklyPlan plan = reconcilingPlan(owner);
+    when(disputes.findByCommitmentIdAndStatusIn(any(), any())).thenReturn(Optional.empty());
 
-    WeeklyCommitmentDto dto = mapper.toDto(commitment(null), plan, owner);
+    WeeklyCommitmentDto dto = mapper.toDto(commitment(null), plan, owner, false);
 
     assertThat(dto.allowedActions()).contains(AllowedAction.CARRY_FORWARD);
   }
@@ -179,9 +180,65 @@ class CommitmentMapperTest {
   @Test
   void toDto_withContext_nonOwner_noCarryForward() {
     WeeklyPlan plan = reconcilingPlan(UUID.randomUUID());
+    when(disputes.findByCommitmentIdAndStatusIn(any(), any())).thenReturn(Optional.empty());
 
-    WeeklyCommitmentDto dto = mapper.toDto(commitment(null), plan, UUID.randomUUID());
+    WeeklyCommitmentDto dto = mapper.toDto(commitment(null), plan, UUID.randomUUID(), true);
 
     assertThat(dto.allowedActions()).doesNotContain(AllowedAction.CARRY_FORWARD);
+  }
+
+  private static WeeklyPlan lockedPlan(UUID owner) {
+    WeeklyPlan p = reconcilingPlan(owner);
+    p.setState(PlanState.LOCKED);
+    return p;
+  }
+
+  // --- 5.5b: a manager viewing a LOCKED commitment with NO unresolved dispute → OPEN_DISPUTE on
+  // the
+  // commitment (the viewerIsDirectManager=true path threads through commitmentActions) ----
+  @Test
+  void toDto_withContext_managerViewer_undisputedLocked_emitsOpenDispute() {
+    UUID owner = UUID.randomUUID();
+    WeeklyPlan plan = lockedPlan(owner);
+    when(disputes.findByCommitmentIdAndStatusIn(any(), any())).thenReturn(Optional.empty());
+
+    WeeklyCommitmentDto dto = mapper.toDto(commitment(null), plan, UUID.randomUUID(), true);
+
+    assertThat(dto.allowedActions()).contains(AllowedAction.OPEN_DISPUTE);
+    assertThat(dto.dispute()).isNull();
+  }
+
+  // --- 5.5b: a manager viewing a commitment WITH an OPEN dispute → no OPEN_DISPUTE on the
+  // commitment (rule #6), but RESOLVE_DISPUTE on the nested dispute (viewerIsDirectManager threaded
+  // into DisputeMapper) ----
+  @Test
+  void toDto_withContext_managerViewer_disputed_nestsResolveAndHidesOpen() {
+    UUID owner = UUID.randomUUID();
+    WeeklyPlan plan = lockedPlan(owner);
+    WeeklyCommitment c = commitment(null);
+    when(disputes.findByCommitmentIdAndStatusIn(eq(c.getId()), any()))
+        .thenReturn(Optional.of(dispute(c.getId(), DisputeStatus.OPEN)));
+
+    WeeklyCommitmentDto dto = mapper.toDto(c, plan, UUID.randomUUID(), true);
+
+    assertThat(dto.allowedActions()).doesNotContain(AllowedAction.OPEN_DISPUTE);
+    assertThat(dto.dispute().allowedActions()).contains(AllowedAction.RESOLVE_DISPUTE);
+  }
+
+  // --- 5.5b: the owning IC viewing their own commitment's OPEN dispute → RESPOND_DISPUTE nested,
+  // no
+  // manager affordances ----
+  @Test
+  void toDto_withContext_ownerViewer_openDispute_nestsRespond() {
+    UUID owner = UUID.randomUUID();
+    WeeklyPlan plan = lockedPlan(owner);
+    WeeklyCommitment c = commitment(null);
+    when(disputes.findByCommitmentIdAndStatusIn(eq(c.getId()), any()))
+        .thenReturn(Optional.of(dispute(c.getId(), DisputeStatus.OPEN)));
+
+    WeeklyCommitmentDto dto = mapper.toDto(c, plan, owner, false);
+
+    assertThat(dto.dispute().allowedActions()).containsExactly(AllowedAction.RESPOND_DISPUTE);
+    assertThat(dto.allowedActions()).doesNotContain(AllowedAction.OPEN_DISPUTE);
   }
 }

@@ -76,16 +76,41 @@ public class AllowedActionResolver {
   }
 
   /**
-   * Per-commitment affordances for the viewing actor (task 4.4b) — currently just {@code
-   * CARRY_FORWARD} for a carry-forward-eligible commitment (others — {@code OPEN_DISPUTE}/{@code
-   * COMMENT} — join as their enforcing slices land, "no affordance without enforcement", §15/§24).
+   * Per-commitment affordances for the viewing actor: {@code CARRY_FORWARD} for a carry-forward-
+   * eligible commitment (task 4.4b, the owning IC) + {@code OPEN_DISPUTE} for the active direct
+   * manager (task 5.5b). {@code viewerIsDirectManager} + {@code hasUnresolvedDispute} are computed
+   * by the caller ({@code CommitmentMapper}, reusing the 5.3b nested-dispute resolution) so the
+   * resolver stays repo-free ("no affordance without enforcement", §15/§24). {@code COMMENT} joins
+   * as its enforcing slice lands.
    */
   public List<AllowedAction> commitmentActions(
-      UUID actorEmployeeId, WeeklyPlan plan, WeeklyCommitment commitment) {
+      UUID actorEmployeeId,
+      WeeklyPlan plan,
+      WeeklyCommitment commitment,
+      boolean viewerIsDirectManager,
+      boolean hasUnresolvedDispute) {
+    List<AllowedAction> actions = new ArrayList<>();
     if (canCarryForward(actorEmployeeId, plan, commitment)) {
-      return List.of(AllowedAction.CARRY_FORWARD);
+      actions.add(AllowedAction.CARRY_FORWARD); // owning IC ∧ RECONCILING
     }
-    return List.of();
+    if (canOpenDispute(viewerIsDirectManager, plan, hasUnresolvedDispute)) {
+      actions.add(AllowedAction.OPEN_DISPUTE); // direct manager ∧ LOCKED+ ∧ no unresolved dispute
+    }
+    return List.copyOf(actions);
+  }
+
+  /**
+   * The {@code OPEN_DISPUTE} affordance predicate (task 5.5b) — the active direct manager viewing a
+   * report's <strong>post-lock</strong> plan may open a dispute on a commitment that has no
+   * unresolved dispute yet (rule #6). MIRRORS — not shares — E17's enforcement (the authorizer is
+   * void-and-throw, §31): the boolean parallel of {@code authorizeDisputeCreation}
+   * (manager-of-owner, here {@code viewerIsDirectManager}) + {@code DisputeService.open}'s
+   * non-DRAFT state guard + the single-unresolved pre-check. So {@code canOpenDispute}-true ⟹ E17
+   * accepts (§24).
+   */
+  public boolean canOpenDispute(
+      boolean viewerIsDirectManager, WeeklyPlan plan, boolean hasUnresolvedDispute) {
+    return viewerIsDirectManager && plan.getState() != PlanState.DRAFT && !hasUnresolvedDispute;
   }
 
   /**

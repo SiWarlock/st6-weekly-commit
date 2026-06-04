@@ -164,7 +164,8 @@ class AllowedActionResolverTest {
   @Test
   void carryForward_present_whenOwnerReconcilingNotCarried() {
     List<AllowedAction> actions =
-        resolver.commitmentActions(OWNER, plan(OWNER, PlanState.RECONCILING), withOutcome(null));
+        resolver.commitmentActions(
+            OWNER, plan(OWNER, PlanState.RECONCILING), withOutcome(null), false, false);
     assertThat(actions).contains(AllowedAction.CARRY_FORWARD);
   }
 
@@ -172,7 +173,9 @@ class AllowedActionResolverTest {
   @Test
   void carryForward_absent_whenNotReconciling() {
     for (PlanState state : List.of(PlanState.DRAFT, PlanState.LOCKED, PlanState.RECONCILED)) {
-      assertThat(resolver.commitmentActions(OWNER, plan(OWNER, state), withOutcome(null)))
+      assertThat(
+              resolver.commitmentActions(
+                  OWNER, plan(OWNER, state), withOutcome(null), false, false))
           .as("no CARRY_FORWARD affordance in %s", state)
           .doesNotContain(AllowedAction.CARRY_FORWARD);
     }
@@ -185,7 +188,9 @@ class AllowedActionResolverTest {
         resolver.commitmentActions(
             OWNER,
             plan(OWNER, PlanState.RECONCILING),
-            withOutcome(ReconciliationOutcome.CARRIED_FORWARD));
+            withOutcome(ReconciliationOutcome.CARRIED_FORWARD),
+            false,
+            false);
     assertThat(actions).doesNotContain(AllowedAction.CARRY_FORWARD);
   }
 
@@ -194,7 +199,8 @@ class AllowedActionResolverTest {
   @Test
   void carryForward_absent_whenNotOwner() {
     List<AllowedAction> actions =
-        resolver.commitmentActions(OTHER, plan(OWNER, PlanState.RECONCILING), withOutcome(null));
+        resolver.commitmentActions(
+            OTHER, plan(OWNER, PlanState.RECONCILING), withOutcome(null), false, false);
     assertThat(actions).doesNotContain(AllowedAction.CARRY_FORWARD);
   }
 
@@ -207,7 +213,9 @@ class AllowedActionResolverTest {
         resolver.commitmentActions(
             OWNER,
             plan(OWNER, PlanState.RECONCILING),
-            withOutcome(ReconciliationOutcome.PARTIALLY_COMPLETED));
+            withOutcome(ReconciliationOutcome.PARTIALLY_COMPLETED),
+            false,
+            false);
     assertThat(actions).contains(AllowedAction.CARRY_FORWARD);
   }
 
@@ -221,7 +229,8 @@ class AllowedActionResolverTest {
     unplanned.setCommitmentKind(CommitmentKind.UNPLANNED);
     unplanned.setWorkType(WorkType.UNPLANNED);
     List<AllowedAction> actions =
-        resolver.commitmentActions(OWNER, plan(OWNER, PlanState.RECONCILING), unplanned);
+        resolver.commitmentActions(
+            OWNER, plan(OWNER, PlanState.RECONCILING), unplanned, false, false);
     assertThat(actions).contains(AllowedAction.CARRY_FORWARD);
   }
 
@@ -240,12 +249,95 @@ class AllowedActionResolverTest {
           WeeklyPlan p = plan(owner, state);
           boolean eligible =
               resolver
-                  .commitmentActions(actor, p, withOutcome(outcome))
+                  .commitmentActions(actor, p, withOutcome(outcome), false, false)
                   .contains(AllowedAction.CARRY_FORWARD);
           if (eligible) {
             // exactly E12's gate: owner ∧ RECONCILING (the central authz owner-check + state guard)
             assertThat(actor).as("eligible ⇒ actor owns the plan").isEqualTo(owner);
             assertThat(state).as("eligible ⇒ plan RECONCILING").isEqualTo(PlanState.RECONCILING);
+          }
+        }
+      }
+    }
+  }
+
+  // ===================== commitmentActions — per-commitment OPEN_DISPUTE (5.5b)
+  // =====================
+
+  // --- OPEN_DISPUTE present iff the viewer is the direct manager ∧ plan LOCKED+ ∧ no unresolved
+  // dispute (the 5.5b predicate mirroring E17's enforcement) ----
+  @Test
+  void openDispute_present_whenManagerViewerLockedNoDispute() {
+    List<AllowedAction> actions =
+        resolver.commitmentActions(
+            OTHER, plan(OWNER, PlanState.LOCKED), planned(UUID.randomUUID()), true, false);
+    assertThat(actions).contains(AllowedAction.OPEN_DISPUTE);
+  }
+
+  // --- present across all LOCKED+ states (LOCKED ∧ RECONCILING ∧ RECONCILED) ----
+  @Test
+  void openDispute_present_acrossAllPostLockStates() {
+    for (PlanState state : List.of(PlanState.LOCKED, PlanState.RECONCILING, PlanState.RECONCILED)) {
+      assertThat(
+              resolver.commitmentActions(
+                  OTHER, plan(OWNER, state), planned(UUID.randomUUID()), true, false))
+          .as("OPEN_DISPUTE affordance in %s", state)
+          .contains(AllowedAction.OPEN_DISPUTE);
+    }
+  }
+
+  // --- absent on a DRAFT plan (a dispute is a post-lock manager action; mirrors E17's state guard)
+  @Test
+  void openDispute_absent_whenDraft() {
+    List<AllowedAction> actions =
+        resolver.commitmentActions(
+            OTHER, plan(OWNER, PlanState.DRAFT), planned(UUID.randomUUID()), true, false);
+    assertThat(actions).doesNotContain(AllowedAction.OPEN_DISPUTE);
+  }
+
+  // --- absent when the commitment already carries an unresolved dispute (rule #6 — one at a time)
+  @Test
+  void openDispute_absent_whenUnresolvedDisputeExists() {
+    List<AllowedAction> actions =
+        resolver.commitmentActions(
+            OTHER, plan(OWNER, PlanState.LOCKED), planned(UUID.randomUUID()), true, true);
+    assertThat(actions).doesNotContain(AllowedAction.OPEN_DISPUTE);
+  }
+
+  // --- absent for a non-manager viewer (the IC owner cannot dispute their own work — E17 403) ----
+  @Test
+  void openDispute_absent_whenNotManagerViewer() {
+    List<AllowedAction> actions =
+        resolver.commitmentActions(
+            OWNER, plan(OWNER, PlanState.LOCKED), planned(UUID.randomUUID()), false, false);
+    assertThat(actions).doesNotContain(AllowedAction.OPEN_DISPUTE);
+  }
+
+  // --- a RECONCILING owner (not the manager) gets CARRY_FORWARD only, never OPEN_DISPUTE ----
+  @Test
+  void commitmentActions_reconcilingOwner_carryForwardOnly_noOpenDispute() {
+    List<AllowedAction> actions =
+        resolver.commitmentActions(
+            OWNER, plan(OWNER, PlanState.RECONCILING), withOutcome(null), false, false);
+    assertThat(actions).containsExactly(AllowedAction.CARRY_FORWARD);
+  }
+
+  // --- §24 single-source pin: OPEN_DISPUTE-eligible ⟹ exactly E17's preconditions (manager ∧
+  // non-DRAFT ∧ no unresolved dispute) — the affordance never offers a button E17 would reject ----
+  @Test
+  void openDispute_eligibility_impliesEnforcementPreconditions() {
+    for (PlanState state : PlanState.values()) {
+      for (boolean isManager : List.of(true, false)) {
+        for (boolean hasDispute : List.of(true, false)) {
+          boolean eligible =
+              resolver
+                  .commitmentActions(
+                      OTHER, plan(OWNER, state), planned(UUID.randomUUID()), isManager, hasDispute)
+                  .contains(AllowedAction.OPEN_DISPUTE);
+          if (eligible) {
+            assertThat(isManager).as("eligible ⇒ viewer is the direct manager").isTrue();
+            assertThat(state).as("eligible ⇒ plan is post-lock").isNotEqualTo(PlanState.DRAFT);
+            assertThat(hasDispute).as("eligible ⇒ no unresolved dispute").isFalse();
           }
         }
       }

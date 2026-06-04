@@ -4,6 +4,7 @@ import com.st6.wc.action.AllowedAction;
 import com.st6.wc.commitment.WeeklyCommitment;
 import com.st6.wc.commitment.dto.RcdoBreadcrumbDto;
 import com.st6.wc.commitment.dto.WeeklyCommitmentDto;
+import com.st6.wc.dispute.AlignmentDispute;
 import com.st6.wc.dispute.dto.AlignmentDisputeDto;
 import com.st6.wc.dispute.mapper.DisputeMapper;
 import com.st6.wc.dispute.repo.AlignmentDisputeRepository;
@@ -12,6 +13,7 @@ import com.st6.wc.plan.AllowedActionResolver;
 import com.st6.wc.plan.WeeklyPlan;
 import com.st6.wc.rcdo.RcdoReadService;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
 
@@ -54,30 +56,51 @@ public class CommitmentMapper {
     this.disputeMapper = disputeMapper;
   }
 
-  /** Context-free map — empty {@code allowedActions} (single-commitment responses; UI re-reads). */
+  /**
+   * Context-free map — empty {@code allowedActions} + a context-free nested dispute (single-
+   * commitment write responses; the UI re-reads the plan).
+   */
   public WeeklyCommitmentDto toDto(WeeklyCommitment c) {
-    return toDto(c, List.of());
+    AlignmentDisputeDto dispute = resolveDispute(c).map(disputeMapper::toDto).orElse(null);
+    return assemble(c, dispute, List.of());
   }
 
   /**
-   * Context-aware map (task 4.4b) — fills {@code allowedActions} via the resolver for the viewing
-   * actor (the plan read path; {@code PlanMapper} passes the parent plan + actor).
+   * Context-aware map (task 4.4b / 5.5b) — for the viewing actor on the plan read ({@code
+   * PlanMapper} passes the parent plan + actor + the once-determined {@code
+   * viewerIsDirectManager}). Resolves the commitment's unresolved dispute ONCE (5.3b) → both the
+   * per-viewer nested dispute affordances AND the {@code hasUnresolvedDispute} signal for {@code
+   * OPEN_DISPUTE} (no second query, §24).
    */
-  public WeeklyCommitmentDto toDto(WeeklyCommitment c, WeeklyPlan plan, UUID actorEmployeeId) {
-    return toDto(c, allowedActionResolver.commitmentActions(actorEmployeeId, plan, c));
+  public WeeklyCommitmentDto toDto(
+      WeeklyCommitment c, WeeklyPlan plan, UUID actorEmployeeId, boolean viewerIsDirectManager) {
+    Optional<AlignmentDispute> disputeEntity = resolveDispute(c);
+    AlignmentDisputeDto dispute =
+        disputeEntity
+            .map(
+                d ->
+                    disputeMapper.toDto(
+                        d, actorEmployeeId, plan.getEmployeeId(), viewerIsDirectManager))
+            .orElse(null);
+    List<AllowedAction> allowedActions =
+        allowedActionResolver.commitmentActions(
+            actorEmployeeId, plan, c, viewerIsDirectManager, disputeEntity.isPresent());
+    return assemble(c, dispute, allowedActions);
   }
 
-  private WeeklyCommitmentDto toDto(WeeklyCommitment c, List<AllowedAction> allowedActions) {
+  /**
+   * The commitment's current unresolved dispute (B.6 Option-A, 5.3b) — ≤1 by rule #6, else empty.
+   */
+  private Optional<AlignmentDispute> resolveDispute(WeeklyCommitment c) {
+    return disputes.findByCommitmentIdAndStatusIn(c.getId(), UNRESOLVED);
+  }
+
+  private WeeklyCommitmentDto assemble(
+      WeeklyCommitment c, AlignmentDisputeDto dispute, List<AllowedAction> allowedActions) {
     RcdoBreadcrumbDto breadcrumb =
         c.getSupportingOutcomeId() == null
             ? null
             : rcdoReadService.resolveBreadcrumb(c.getSupportingOutcomeId());
-    // The commitment's current unresolved dispute (B.6 Option-A, 5.3b), ≤1 by rule #6, else null.
-    AlignmentDisputeDto dispute =
-        disputes
-            .findByCommitmentIdAndStatusIn(c.getId(), UNRESOLVED)
-            .map(disputeMapper::toDto)
-            .orElse(null);
     return new WeeklyCommitmentDto(
         c.getId(),
         c.getWeeklyPlanId(),

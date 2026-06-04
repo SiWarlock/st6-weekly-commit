@@ -116,6 +116,16 @@ class PlanByIdEndpointTest extends AbstractAppBootTest {
     return plans.saveAndFlush(p);
   }
 
+  private WeeklyPlan saveLockedPlan(UUID ownerId) {
+    WeeklyPlan p = new WeeklyPlan();
+    p.setId(UUID.randomUUID());
+    p.setEmployeeId(ownerId);
+    p.setWeekStartDate(WEEK);
+    p.setWeekEndDate(WEEK.plusDays(6));
+    p.setState(PlanState.LOCKED);
+    return plans.saveAndFlush(p);
+  }
+
   private void savePlannedCommitment(UUID planId) {
     saveCommitmentReturning(planId);
   }
@@ -214,6 +224,69 @@ class PlanByIdEndpointTest extends AbstractAppBootTest {
     mvc.perform(get("/api/plans/" + plan.getId()).header(HEADER, mgr.getId().toString()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.commitments[0].allowedActions[?(@ == 'CARRY_FORWARD')]").isEmpty());
+  }
+
+  // --- 5.5b (the 9.11a activation proof): a direct manager reading a report's LOCKED plan sees
+  // OPEN_DISPUTE on an undisputed commitment (the frontend "open dispute" control gates on this)
+  // ----
+  @Test
+  void byId_managerViewsReportLockedPlan_undisputedCommitment_emitsOpenDispute() throws Exception {
+    Employee ic = saveEmployee(RoleType.IC, "ada@x.test");
+    Employee mgr = saveEmployee(RoleType.MANAGER, "boss@x.test");
+    saveRelationship(mgr.getId(), ic.getId());
+    WeeklyPlan plan = saveLockedPlan(ic.getId());
+    savePlannedCommitment(plan.getId());
+
+    mvc.perform(get("/api/plans/" + plan.getId()).header(HEADER, mgr.getId().toString()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.commitments[0].allowedActions[?(@ == 'OPEN_DISPUTE')]").exists())
+        // a manager is not the owner → no IC-only affordances on the commitment
+        .andExpect(jsonPath("$.commitments[0].allowedActions[?(@ == 'CARRY_FORWARD')]").isEmpty());
+  }
+
+  // --- 5.5b: a direct manager reading a report's plan with a DISPUTED commitment → no OPEN_DISPUTE
+  // on that commitment (rule #6), and RESOLVE_DISPUTE on the nested dispute (the frontend "resolve"
+  // control gates on this) ----
+  @Test
+  void byId_managerViewsReportPlan_disputedCommitment_nestedResolveNoOpen() throws Exception {
+    Employee ic = saveEmployee(RoleType.IC, "ada@x.test");
+    Employee mgr = saveEmployee(RoleType.MANAGER, "boss@x.test");
+    saveRelationship(mgr.getId(), ic.getId());
+    WeeklyPlan plan = saveLockedPlan(ic.getId());
+    WeeklyCommitment c = saveCommitmentReturning(plan.getId());
+    saveDispute(c.getId(), mgr.getId(), DisputeStatus.OPEN);
+
+    mvc.perform(get("/api/plans/" + plan.getId()).header(HEADER, mgr.getId().toString()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.commitments[0].allowedActions[?(@ == 'OPEN_DISPUTE')]").isEmpty())
+        .andExpect(
+            jsonPath("$.commitments[0].dispute.allowedActions[?(@ == 'RESOLVE_DISPUTE')]").exists())
+        // the manager is not the owner → no RESPOND on the nested dispute
+        .andExpect(
+            jsonPath("$.commitments[0].dispute.allowedActions[?(@ == 'RESPOND_DISPUTE')]")
+                .isEmpty());
+  }
+
+  // --- 5.5b: the owning IC reading their own plan's OPEN dispute → RESPOND_DISPUTE nested; the IC
+  // (viewerIsDirectManager=false) gets NO manager affordances (OPEN/RESOLVE) ----
+  @Test
+  void byId_icViewsOwnPlan_openDispute_emitsRespondNotManagerActions() throws Exception {
+    Employee ic = saveEmployee(RoleType.IC, "ada@x.test");
+    Employee mgr = saveEmployee(RoleType.MANAGER, "boss@x.test");
+    saveRelationship(mgr.getId(), ic.getId());
+    WeeklyPlan plan = saveLockedPlan(ic.getId());
+    WeeklyCommitment c = saveCommitmentReturning(plan.getId());
+    saveDispute(c.getId(), mgr.getId(), DisputeStatus.OPEN);
+
+    mvc.perform(get("/api/plans/" + plan.getId()).header(HEADER, ic.getId().toString()))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.commitments[0].dispute.allowedActions[?(@ == 'RESPOND_DISPUTE')]").exists())
+        .andExpect(
+            jsonPath("$.commitments[0].dispute.allowedActions[?(@ == 'RESOLVE_DISPUTE')]")
+                .isEmpty())
+        // the IC owns the commitment but already has an unresolved dispute → no OPEN_DISPUTE either
+        .andExpect(jsonPath("$.commitments[0].allowedActions[?(@ == 'OPEN_DISPUTE')]").isEmpty());
   }
 
   // --- #1: IC reads OWN plan -> 200 WeeklyPlanDto ----
