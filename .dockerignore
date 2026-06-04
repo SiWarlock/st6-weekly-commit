@@ -1,0 +1,16 @@
+# Build context = repo root for both backend images (apps/wc-api/Dockerfile + worker/Dockerfile).
+# The images only need apps/wc-api/ source — trim everything else so the context stays small and no
+# build output / secret / unrelated tree is sent to the daemon. (Keeps apps/wc-api/gradle/wrapper/.)
+**/build/
+**/.gradle/
+.git/
+.github/
+**/node_modules/
+apps/wc-web/
+apps/wc-e2e/
+infra/
+docs/
+*.md
+**/*.iml
+.idea/
+.vscode/
