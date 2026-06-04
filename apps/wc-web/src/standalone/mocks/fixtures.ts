@@ -518,15 +518,54 @@ const PLAN_BY_ID: Record<string, WeeklyPlanDto> = {
   [PLAN_IC_4]: planIc4,
 };
 
-/** The IC persona's own current plan (E3). Falls back to ic-1 for safety. */
+/**
+ * Inject the per-viewer dispute affordances backend 5.5b emits on E3/E4 (9.14),
+ * so the standalone demo + QA see the live controls:
+ *  - a manager viewer (a report's plan): each UNDISPUTED LOCKED+ commitment gets
+ *    `OPEN_DISPUTE`; each DISPUTED commitment's nested dispute gets `RESOLVE_DISPUTE`.
+ *  - an IC owner viewer (own plan): each DISPUTED commitment's dispute gets
+ *    `RESPOND_DISPUTE`.
+ * (The full open-persists→resolve-clears round-trip rides the Phase-13 mutable-db;
+ * these are static-coherent affordances — the controls render + fire E17/E18/E19.)
+ */
+function emitDisputeAffordances(
+  plan: WeeklyPlanDto,
+  viewerIsManager: boolean,
+): WeeklyPlanDto {
+  const lockedPlus = plan.state !== 'DRAFT';
+  return {
+    ...plan,
+    commitments: plan.commitments.map((c) => {
+      if (c.dispute) {
+        const da: AllowedAction[] = viewerIsManager
+          ? ['RESOLVE_DISPUTE']
+          : ['RESPOND_DISPUTE'];
+        return { ...c, dispute: { ...c.dispute, allowedActions: da } };
+      }
+      if (viewerIsManager && lockedPlus) {
+        return {
+          ...c,
+          allowedActions: [
+            ...c.allowedActions,
+            'OPEN_DISPUTE' as AllowedAction,
+          ],
+        };
+      }
+      return c;
+    }),
+  };
+}
+
+/** The IC persona's own current plan (E3) — owner view (IC dispute respond). */
 export function planForPersona(personaId: string): WeeklyPlanDto {
-  return PLAN_BY_PERSONA[personaId] ?? planIc1;
+  return emitDisputeAffordances(PLAN_BY_PERSONA[personaId] ?? planIc1, false);
 }
 
 /**
- * A plan by id (E4). When the reader is NOT the owner (a manager reading a
- * report's plan via the review Drawer), the plan-level `allowedActions` are []
- * (owner-only contract); the nested `managerReview` is preserved.
+ * A plan by id (E4). The owner (IC) sees their own dispute respond affordance;
+ * a manager reading a report's plan (non-owner) sees the OPEN/RESOLVE dispute
+ * affordances (9.14, backend 5.5b) with the plan-level `allowedActions` cleared
+ * (owner-only lifecycle contract); the nested `managerReview` is preserved.
  */
 export function planById(
   planId: string,
@@ -537,9 +576,9 @@ export function planById(
     return undefined;
   }
   if (readerPersonaId && readerPersonaId !== plan.employeeId) {
-    return { ...plan, allowedActions: [] };
+    return { ...emitDisputeAffordances(plan, true), allowedActions: [] };
   }
-  return plan;
+  return emitDisputeAffordances(plan, false);
 }
 
 // ── Manager command center (the 4 ICs as Morgan's direct reports) ────────────

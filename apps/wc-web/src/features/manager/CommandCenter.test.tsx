@@ -1,19 +1,35 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import type { ReactElement } from 'react';
+import { Provider } from 'react-redux';
 import { CommandCenter } from './CommandCenter';
 import { useGetCommandCenterQuery } from './managerApi';
 import { useGetPlanByIdQuery } from '../plan/plansApi';
 import { useMarkReviewedMutation } from '../review/reviewApi';
+import { store } from '../../app/store';
 import type {
+  AlignmentDisputeDto,
   ManagerCommandCenterRowDto,
   PageEnvelope,
+  WeeklyCommitmentDto,
   WeeklyPlanDto,
 } from '../../shared/lib/dtos';
 
 vi.mock('./managerApi');
 vi.mock('../plan/plansApi');
 vi.mock('../review/reviewApi');
+
+/**
+ * Render within the real Redux store — the manager-dispute-surface tests (9.14)
+ * render the genuine `CommitmentList` → `DisputePanel` (+ its respond/resolve
+ * mutation hooks), which need the `baseApi` store context. The managerApi/
+ * plansApi/reviewApi module mocks still drive the canned data; no network fires
+ * (mutation hooks don't auto-fetch; CommentThread is COMMENT-gated → no subscribe).
+ */
+function renderWithStore(ui: ReactElement) {
+  return render(<Provider store={store}>{ui}</Provider>);
+}
 
 function row(
   overrides: Partial<ManagerCommandCenterRowDto> = {},
@@ -401,5 +417,180 @@ describe('CommandCenter → review Drawer (ST.6c)', () => {
     expect(drawer.querySelector('[data-cy="error-state"]')).not.toBeNull();
     // Gating preserved: a 404 → no review → no mark-reviewed affordance.
     expect(screen.queryByRole('button', { name: /mark reviewed/i })).toBeNull();
+  });
+});
+
+// 9.14 — manager plan-detail dispute surface: the review Drawer renders the
+// report's commitments via the allowedActions-gated CommitmentList, so the
+// manager's now-live (backend 5.5b) OPEN_DISPUTE / RESOLVE_DISPUTE controls have
+// a home. Rendered with the REAL CommitmentList → DisputePanel (store-wrapped).
+describe('CommandCenter → manager dispute surface (9.14)', () => {
+  function mgrCommitment(
+    overrides: Partial<WeeklyCommitmentDto> & { id: string },
+  ): WeeklyCommitmentDto {
+    return {
+      weeklyPlanId: 'plan-1',
+      commitmentKind: 'PLANNED',
+      title: `Commitment ${overrides.id}`,
+      priority: 'P1',
+      workType: 'STRATEGIC',
+      confidence: 'HIGH',
+      alignmentStatus: 'NEEDS_REVIEW',
+      allowedActions: [],
+      version: 0,
+      ...overrides,
+    };
+  }
+
+  function openDispute(
+    overrides: Partial<AlignmentDisputeDto> = {},
+  ): AlignmentDisputeDto {
+    return {
+      id: 'd-1',
+      commitmentId: 'c-1',
+      managerEmployeeId: 'mgr-1',
+      status: 'OPEN',
+      flagType: 'MISALIGNED',
+      managerNote: 'Off-strategy — re-link or re-scope.',
+      allowedActions: [],
+      version: 0,
+      ...overrides,
+    };
+  }
+
+  function plan(
+    commitments: WeeklyCommitmentDto[],
+    review = true,
+  ): WeeklyPlanDto {
+    return {
+      id: 'plan-1',
+      employeeId: 'emp-1',
+      employeeDisplayName: 'Ivy Chen',
+      weekStartDate: '2026-06-01',
+      weekEndDate: '2026-06-07',
+      state: 'LOCKED',
+      plannedCount: commitments.length,
+      unplannedCount: 0,
+      commitments,
+      managerReview: review
+        ? {
+            id: 'rev-1',
+            weeklyPlanId: 'plan-1',
+            managerEmployeeId: 'mgr-1',
+            status: 'NOT_REVIEWED',
+            reviewDueAt: '2026-06-09T17:00:00Z',
+            isOverdue: false,
+            unresolvedDisputeCount: 0,
+            allowedActions: ['MARK_REVIEWED'],
+            version: 1,
+          }
+        : null,
+      allowedActions: [],
+      version: 1,
+    };
+  }
+
+  async function expandReview(planData: WeeklyPlanDto) {
+    const user = userEvent.setup();
+    mockQuery({ data: env([row({ weeklyPlanId: 'plan-1' })]) });
+    mockPlanById({ data: planData });
+    vi.mocked(useMarkReviewedMutation).mockReturnValue([
+      vi.fn(),
+      { isLoading: false, reset: vi.fn() },
+    ] as unknown as ReturnType<typeof useMarkReviewedMutation>);
+    renderWithStore(<CommandCenter />);
+    await user.click(screen.getByRole('button', { name: /review/i }));
+    return document.querySelector('[data-cy="review-drawer"]') as HTMLElement;
+  }
+
+  it('manager_review_drawer_renders_report_commitments: the review Drawer renders the report plan commitments via CommitmentList (a row per commitment)', async () => {
+    const drawer = await expandReview(
+      plan([
+        mgrCommitment({ id: 'c-1', title: 'Ship the release train' }),
+        mgrCommitment({ id: 'c-2', title: 'Cut activation time' }),
+      ]),
+    );
+    expect(drawer.querySelector('[data-cy="commitment-list"]')).not.toBeNull();
+    expect(drawer.querySelectorAll('[data-cy="commitment-row"]')).toHaveLength(
+      2,
+    );
+    expect(
+      within(drawer).getByText('Ship the release train'),
+    ).toBeInTheDocument();
+  });
+
+  it('manager_open_dispute_control_renders_when_authorized: an undisputed commitment with OPEN_DISPUTE ∈ allowedActions shows the open form; one without it does not (§11)', async () => {
+    const drawer = await expandReview(
+      plan([
+        mgrCommitment({
+          id: 'c-1',
+          title: 'Disputable',
+          allowedActions: ['OPEN_DISPUTE'],
+        }),
+        mgrCommitment({
+          id: 'c-2',
+          title: 'Not disputable',
+          allowedActions: [],
+        }),
+      ]),
+    );
+    const rowOf = (title: string) =>
+      within(drawer)
+        .getByText(title)
+        .closest('[data-cy="commitment-row"]') as HTMLElement;
+    expect(
+      rowOf('Disputable').querySelector('[data-cy="dispute-open-form"]'),
+    ).not.toBeNull();
+    expect(
+      rowOf('Not disputable').querySelector('[data-cy="dispute-open-form"]'),
+    ).toBeNull();
+  });
+
+  it('manager_resolve_control_renders_on_disputed_commitment: a disputed commitment whose dispute.allowedActions has RESOLVE_DISPUTE shows the dispute display + the resolve control', async () => {
+    const drawer = await expandReview(
+      plan([
+        mgrCommitment({
+          id: 'c-1',
+          title: 'Disputed work',
+          dispute: openDispute({ allowedActions: ['RESOLVE_DISPUTE'] }),
+        }),
+      ]),
+    );
+    expect(drawer.querySelector('[data-cy="dispute-panel"]')).not.toBeNull();
+    expect(drawer.querySelector('[data-cy="dispute-resolve"]')).not.toBeNull();
+    // The IC-only respond control does NOT render for the manager.
+    expect(drawer.querySelector('[data-cy="dispute-respond-form"]')).toBeNull();
+  });
+
+  it('manager_view_hides_ic_authoring_controls: a LOCKED report plan shows no IC edit/delete/reconciliation/carry-forward controls (their allowedActions/state absent)', async () => {
+    const drawer = await expandReview(
+      plan([
+        mgrCommitment({
+          id: 'c-1',
+          title: 'Locked work',
+          allowedActions: ['OPEN_DISPUTE'],
+        }),
+      ]),
+    );
+    expect(
+      within(drawer).queryByRole('button', { name: /^edit$/i }),
+    ).toBeNull();
+    expect(
+      within(drawer).queryByRole('button', { name: /delete/i }),
+    ).toBeNull();
+    expect(
+      within(drawer).queryByRole('button', { name: /carry forward/i }),
+    ).toBeNull();
+    expect(
+      within(drawer).queryByRole('button', { name: /record outcome/i }),
+    ).toBeNull();
+  });
+
+  it('no_review_plan_still_renders_commitments: a plan with managerReview absent still renders the commitment list (no early-return swallow)', async () => {
+    const drawer = await expandReview(
+      plan([mgrCommitment({ id: 'c-1', title: 'Orphan work' })], false),
+    );
+    expect(drawer.querySelector('[data-cy="commitment-list"]')).not.toBeNull();
+    expect(within(drawer).getByText('Orphan work')).toBeInTheDocument();
   });
 });

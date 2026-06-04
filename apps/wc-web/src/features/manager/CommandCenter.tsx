@@ -9,6 +9,7 @@ import {
 import { CommandCenterFilters } from './CommandCenterFilters';
 import { useGetPlanByIdQuery } from '../plan/plansApi';
 import { MarkReviewedAction } from '../review/MarkReviewedAction';
+import { CommitmentList } from '../commitment/CommitmentList';
 import { LoadingState } from '../../shared/components/LoadingState';
 import { ErrorState } from '../../shared/components/ErrorState';
 import { EmptyState } from '../../shared/components/EmptyState';
@@ -64,12 +65,21 @@ function currentWeekStartIso(): string {
 }
 
 /**
- * The per-row review surface (Q2 wiring). B.11 rows carry no `reviewId`/
- * `allowedActions[]`, so acting on a review lazily fetches the report's plan
- * (E4 — authorizes the direct manager) to obtain `managerReview` (B.7) + its
- * `allowedActions`. Renders the §7 partial view-states: LoadingState while
- * pending, an IDOR-safe ErrorState(safeMessage) on a `404` (never a crash or
- * existence leak, §6). `MarkReviewedAction` self-gates on `MARK_REVIEWED`.
+ * The per-row review + plan-detail surface (9.9 + 9.14). B.11 rows carry no
+ * `reviewId`/`allowedActions[]`, so this lazily fetches the report's plan (E4 —
+ * authorizes the direct manager) to obtain `managerReview` (B.7) + the report's
+ * `commitments` with their per-actor `allowedActions`. Renders the §7 partial
+ * view-states: LoadingState while pending, an IDOR-safe ErrorState(safeMessage)
+ * on a `404` (never a crash/existence leak, §6). The review section
+ * (`MarkReviewedAction`, self-gated on `MARK_REVIEWED`) renders FIRST (the
+ * primary action), then the report's commitments via the SAME
+ * `allowedActions`-gated `CommitmentList` the IC view uses — so the manager's
+ * `OPEN_DISPUTE`/`RESOLVE_DISPUTE`/`COMMENT` controls (emitted on E4 per viewing
+ * actor by backend 5.5b) light up through the portable `DisputePanel` with zero
+ * per-role branching (§11). Read-only: no `onEdit`; IC-authoring controls
+ * (edit/delete/reconciliation/carry-forward) gate themselves out (their
+ * `allowedActions`/DRAFT state are absent on a manager read). The review section
+ * + the commitments render INDEPENDENTLY (a no-review plan still shows the list).
  */
 function ManagerRowReview({ planId }: { planId: string }) {
   const { data, isLoading, isError, error } = useGetPlanByIdQuery(planId);
@@ -83,12 +93,20 @@ function ManagerRowReview({ planId }: { planId: string }) {
     return <LoadingState variant="inline" delayMs={0} />;
   }
   const review = data.managerReview;
-  if (!review) {
-    return (
-      <p className="text-meta text-ink-secondary">No review record yet.</p>
-    );
-  }
-  return <MarkReviewedAction review={review} />;
+  return (
+    <div className="space-y-4">
+      {review ? (
+        <MarkReviewedAction review={review} />
+      ) : (
+        <p className="text-meta text-ink-secondary">No review record yet.</p>
+      )}
+      <CommitmentList
+        commitments={data.commitments}
+        planState={data.state}
+        planId={data.id}
+      />
+    </div>
+  );
 }
 
 const COUNTS: {
