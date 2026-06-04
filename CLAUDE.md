@@ -102,8 +102,8 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
 
 ### Push posture
 
-- Pushes go to **origin (not yet configured — push deferred until a remote is set)** only.
-- Push only at `/orchestrate-end` round close-out; never mid-slice.
+- **Remotes:** `origin` = gitlab (`gauntlet-gitlab/codyclayton/st6-weekly-commit`) — the submission/code remote (configured + pushed by the user); a separate `github` remote drives the deploy CI (GitHub Actions, release-tag / `workflow_dispatch`-triggered).
+- **Pushes are USER-controlled (outward-facing).** Teammates commit **locally** and do **NOT** auto-push — not at `/orchestrate-end`, not mid-slice, not ever. The user pushes to gitlab (submission) + github (deploy).
 
 ### Code intelligence & docs (external MCP tools — use when available)
 

@@ -30,7 +30,7 @@ WC is a strategy-enforced weekly-alignment micro-frontend replacing 15Five's wee
 
 **Current state:** Read `MVP_TASKS.md` "Currently in progress" + the most recent `docs/sessions/<NNN>-*.md`. Those are the canonical source of truth.
 
-**Repo:** `ST6/`. Pushes go to **origin (not yet configured — push deferred until a remote is set)** only.
+**Repo:** `ST6/`. `origin` = gitlab (submission/code remote, user-pushed); a separate `github` remote drives the deploy CI. **Pushes are USER-controlled** — teammates commit locally and never auto-push.
 
 <!-- ▲ END EXAMPLE BLOCK [id=project-context] ▲ -->
 
@@ -207,9 +207,9 @@ When the implementer sends you a Step 9 summary, route each item **immediately**
 |---|---|---|---|
 | `/tdd` Step 10 (after Step 9 routing) | Implementer | **Slice's code + tests + manifest only.** Explicit `git add <path>`; never `-A`/`.`; never an orchestrator-territory file. Orchestrator-authored Conventional Commits + AI trailer via HEREDOC. | No |
 | `/session-end` Step 7 | Implementer | Session doc (+ any audit-fix tests). `docs(sessions)` / `chore(sessions)`. | No |
-| `/orchestrate-end` Step 7 | Orchestrator | `MVP_TASKS.md` + `<area>/LESSONS.md` + `<area>/CLAUDE.md` index + `ARCHITECTURE.md` prose + `docs/briefs/NNN-*.md` + optional orchestrator session doc. **Round terminal commit.** | **Only if a remote exists — to origin (not yet configured — push deferred until a remote is set)** |
+| `/orchestrate-end` Step 7 | Orchestrator | `MVP_TASKS.md` + `<area>/LESSONS.md` + `<area>/CLAUDE.md` index + `ARCHITECTURE.md` prose + `docs/briefs/NNN-*.md` + optional orchestrator session doc. **Round terminal commit.** | **No — commit locally; pushes are user-controlled (gitlab submission + github deploy)** |
 
-**Per round:** N slice commits + 1 session-doc commit + 1 round commit = **N + 2**. You author every commit message. Push once at round end (when a remote is configured).
+**Per round:** N slice commits + 1 session-doc commit + 1 round commit = **N + 2**. You author every commit message. **The user controls all pushes** (gitlab submission + github deploy) — teammates never auto-push.
 
 ---
 
