@@ -25,7 +25,7 @@ import com.st6.wc.enums.RoleType;
 import com.st6.wc.identity.UserPrincipal;
 import com.st6.wc.plan.mapper.PlanMapper;
 import com.st6.wc.plan.repo.WeeklyPlanRepository;
-import com.st6.wc.projection.ProjectionService;
+import com.st6.wc.projection.ProjectionRefresher;
 import com.st6.wc.relationship.ManagerRelationship;
 import com.st6.wc.relationship.repo.ManagerRelationshipRepository;
 import com.st6.wc.review.ManagerReview;
@@ -67,7 +67,7 @@ class CloseReconciliationServiceTest {
   private final AllowedActionResolver allowedActionResolver = mock(AllowedActionResolver.class);
   private final ReviewSlaService reviewSlaService = mock(ReviewSlaService.class);
   private final ManagerReviewRepository reviews = mock(ManagerReviewRepository.class);
-  private final ProjectionService projectionService = mock(ProjectionService.class);
+  private final ProjectionRefresher projectionRefresher = mock(ProjectionRefresher.class);
   private final SyncRecordService syncRecordService = mock(SyncRecordService.class);
   private final SnsLifecyclePublisher snsPublisher = mock(SnsLifecyclePublisher.class);
   private final AuditService auditService = mock(AuditService.class);
@@ -84,7 +84,7 @@ class CloseReconciliationServiceTest {
           allowedActionResolver,
           reviewSlaService,
           reviews,
-          projectionService,
+          projectionRefresher,
           syncRecordService,
           snsPublisher,
           auditService,
@@ -162,7 +162,7 @@ class CloseReconciliationServiceTest {
     verify(plans).save(saved.capture());
     assertThat(saved.getValue().getState()).isEqualTo(PlanState.RECONCILED);
     assertThat(saved.getValue().getReconciledAt()).isEqualTo(clock.instant());
-    verify(projectionService).recompute(any(), eq(MGR), any(), any()); // §9 plan_state refresh
+    verify(projectionRefresher).recomputeForPlan(any()); // §9 plan_state refresh
     verify(auditService)
         .record(eq("PLAN_RECONCILED"), eq("WeeklyPlan"), eq(PLAN_ID), eq(IC), any(), any());
     verify(syncRecordService, never())
@@ -293,9 +293,10 @@ class CloseReconciliationServiceTest {
         .isInstanceOf(org.springframework.orm.ObjectOptimisticLockingFailureException.class);
   }
 
-  // --- no active manager → transition + audit, projection skipped (close is non-blocking) ----
+  // --- no active manager → transition + audit; the projection refresh is now called
+  //     unconditionally (the refresher no-ops when there's no manager) ----
   @Test
-  void close_noManager_transitionsButSkipsProjection() {
+  void close_noManager_transitionsAndRefreshes() {
     stubLoad(
         PlanState.RECONCILING,
         List.of(
@@ -309,6 +310,6 @@ class CloseReconciliationServiceTest {
     verify(plans).save(saved.capture());
     assertThat(saved.getValue().getState()).isEqualTo(PlanState.RECONCILED);
     verify(auditService).record(eq("PLAN_RECONCILED"), any(), any(), any(), any(), any());
-    verify(projectionService, never()).recompute(any(), any(), any(), any());
+    verify(projectionRefresher).recomputeForPlan(any());
   }
 }

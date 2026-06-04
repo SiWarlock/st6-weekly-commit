@@ -16,15 +16,11 @@ import com.st6.wc.enums.WorkType;
 import com.st6.wc.identity.UserPrincipal;
 import com.st6.wc.plan.WeeklyPlan;
 import com.st6.wc.plan.repo.WeeklyPlanRepository;
-import com.st6.wc.projection.ProjectionService;
+import com.st6.wc.projection.ProjectionRefresher;
 import com.st6.wc.rcdo.RcdoReadService;
-import com.st6.wc.relationship.ManagerRelationship;
-import com.st6.wc.relationship.repo.ManagerRelationshipRepository;
-import com.st6.wc.review.repo.ManagerReviewRepository;
 import com.st6.wc.web.IllegalStateTransitionException;
 import com.st6.wc.web.LockedBaselineEditException;
 import com.st6.wc.web.ValidationException;
-import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -50,9 +46,7 @@ public class CommitmentService {
   private final WeeklyCommitmentRepository commitments;
   private final RcdoReadService rcdoReadService;
   private final CommitmentMapper commitmentMapper;
-  private final ManagerRelationshipRepository relationships;
-  private final ManagerReviewRepository reviews;
-  private final ProjectionService projectionService;
+  private final ProjectionRefresher projectionRefresher;
   private final AuditService auditService;
 
   public CommitmentService(
@@ -61,18 +55,14 @@ public class CommitmentService {
       WeeklyCommitmentRepository commitments,
       RcdoReadService rcdoReadService,
       CommitmentMapper commitmentMapper,
-      ManagerRelationshipRepository relationships,
-      ManagerReviewRepository reviews,
-      ProjectionService projectionService,
+      ProjectionRefresher projectionRefresher,
       AuditService auditService) {
     this.authz = authz;
     this.plans = plans;
     this.commitments = commitments;
     this.rcdoReadService = rcdoReadService;
     this.commitmentMapper = commitmentMapper;
-    this.relationships = relationships;
-    this.reviews = reviews;
-    this.projectionService = projectionService;
+    this.projectionRefresher = projectionRefresher;
     this.auditService = auditService;
   }
 
@@ -161,7 +151,8 @@ public class CommitmentService {
     commitment.setAlignmentStatus(req.alignmentStatus());
     commitments.save(commitment);
 
-    recomputeProjection(plan); // §9 synchronous unplanned_count upsert (skipped if no manager)
+    projectionRefresher.recomputeForPlan(
+        plan); // §9 synchronous unplanned_count upsert (skipped if no manager)
     auditService.record(
         "UNPLANNED_COMMITMENT_CREATED",
         "WeeklyCommitment",
@@ -258,7 +249,7 @@ public class CommitmentService {
         applyUnplannedSoLink(commitment, req);
       }
       commitments.save(commitment); // @Version-guarded: stale conflict → 409
-      recomputeProjection(
+      projectionRefresher.recomputeForPlan(
           plan); // §9 synchronous manager-projection refresh (skipped if no manager)
       auditService.record(
           "OUTCOME_RECORDED",
@@ -501,32 +492,5 @@ public class CommitmentService {
       }
       commitment.setOutcomeNote(note); // present-null / blank → null (cleared)
     }
-  }
-
-  /**
-   * Synchronously recompute the manager projection for the plan's owner after an outcome write (§9
-   * — reconciliation mutations keep the read models in lockstep in the same transaction). Skipped
-   * when the IC has no active manager or no review row yet (nothing to project). Reuses the 3.5
-   * {@link ProjectionService#recompute} from-source path unchanged — recording an outcome refreshes
-   * {@code plan_state}/{@code updated_at} without changing the 3.5 count derivations (the §9
-   * outcome-count source is an open doc-clarification, not introduced here).
-   */
-  private void recomputeProjection(WeeklyPlan plan) {
-    UUID managerId =
-        relationships
-            .findByDirectReportEmployeeIdAndActiveTrue(plan.getEmployeeId())
-            .map(ManagerRelationship::getManagerEmployeeId)
-            .orElse(null);
-    if (managerId == null) {
-      return;
-    }
-    final UUID resolvedManagerId = managerId;
-    reviews
-        .findByWeeklyPlanId(plan.getId())
-        .ifPresent(
-            review -> {
-              List<WeeklyCommitment> all = commitments.findByWeeklyPlanIdOrderByIdAsc(plan.getId());
-              projectionService.recompute(plan, resolvedManagerId, all, review);
-            });
   }
 }

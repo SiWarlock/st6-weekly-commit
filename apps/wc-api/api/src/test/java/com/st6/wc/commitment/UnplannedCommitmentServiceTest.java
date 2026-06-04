@@ -26,7 +26,7 @@ import com.st6.wc.enums.WorkType;
 import com.st6.wc.identity.UserPrincipal;
 import com.st6.wc.plan.WeeklyPlan;
 import com.st6.wc.plan.repo.WeeklyPlanRepository;
-import com.st6.wc.projection.ProjectionService;
+import com.st6.wc.projection.ProjectionRefresher;
 import com.st6.wc.rcdo.RcdoReadService;
 import com.st6.wc.relationship.ManagerRelationship;
 import com.st6.wc.relationship.repo.ManagerRelationshipRepository;
@@ -62,7 +62,7 @@ class UnplannedCommitmentServiceTest {
   private final ManagerRelationshipRepository relationships =
       mock(ManagerRelationshipRepository.class);
   private final ManagerReviewRepository reviews = mock(ManagerReviewRepository.class);
-  private final ProjectionService projectionService = mock(ProjectionService.class);
+  private final ProjectionRefresher projectionRefresher = mock(ProjectionRefresher.class);
   private final AuditService auditService = mock(AuditService.class);
 
   private final CommitmentService service =
@@ -72,9 +72,7 @@ class UnplannedCommitmentServiceTest {
           commitments,
           rcdoReadService,
           commitmentMapper,
-          relationships,
-          reviews,
-          projectionService,
+          projectionRefresher,
           auditService);
 
   private static final UUID IC = UUID.randomUUID();
@@ -132,7 +130,7 @@ class UnplannedCommitmentServiceTest {
     assertThat(saved.getValue().getCommitmentKind()).isEqualTo(CommitmentKind.UNPLANNED); // forced
     assertThat(saved.getValue().getWorkType()).isEqualTo(WorkType.UNPLANNED); // forced
     assertThat(saved.getValue().getWeeklyPlanId()).isEqualTo(PLAN_ID);
-    verify(projectionService).recompute(any(), eq(MGR), any(), any()); // §9 unplanned_count upsert
+    verify(projectionRefresher).recomputeForPlan(any()); // §9 unplanned_count upsert
     verify(auditService)
         .record(
             eq("UNPLANNED_COMMITMENT_CREATED"),
@@ -157,9 +155,10 @@ class UnplannedCommitmentServiceTest {
     assertThat(saved.getValue().getCommitmentKind()).isEqualTo(CommitmentKind.UNPLANNED);
   }
 
-  // --- no active manager → created + audit, projection skipped (mirrors 4.1/4.2) ----
+  // --- no active manager → created + audit; the projection refresh is now called unconditionally
+  //     (the refresher no-ops when there's no manager) ----
   @Test
-  void createUnplanned_noManager_skipsProjection() {
+  void createUnplanned_noManager_refreshes() {
     when(plans.findById(PLAN_ID)).thenReturn(Optional.of(plan(PlanState.LOCKED)));
     when(relationships.findByDirectReportEmployeeIdAndActiveTrue(IC)).thenReturn(Optional.empty());
 
@@ -168,7 +167,7 @@ class UnplannedCommitmentServiceTest {
     verify(commitments).save(any());
     verify(auditService)
         .record(eq("UNPLANNED_COMMITMENT_CREATED"), any(), any(), any(), any(), any());
-    verify(projectionService, never()).recompute(any(), any(), any(), any());
+    verify(projectionRefresher).recomputeForPlan(any());
   }
 
   // --- a provided valid Supporting Outcome is resolved + linked ----
@@ -197,7 +196,7 @@ class UnplannedCommitmentServiceTest {
     assertThatThrownBy(() -> service.createUnplanned(actor(), PLAN_ID, request(soId)))
         .isInstanceOf(ValidationException.class);
     verify(commitments, never()).save(any());
-    verify(projectionService, never()).recompute(any(), any(), any(), any());
+    verify(projectionRefresher, never()).recomputeForPlan(any());
   }
 
   // --- state guard: create on DRAFT or RECONCILED → 409 ILLEGAL_STATE_TRANSITION; never persists
@@ -211,7 +210,7 @@ class UnplannedCommitmentServiceTest {
           .isInstanceOf(IllegalStateTransitionException.class);
     }
     verify(commitments, never()).save(any());
-    verify(projectionService, never()).recompute(any(), any(), any(), any());
+    verify(projectionRefresher, never()).recomputeForPlan(any());
   }
 
   // --- rule #3: a denied owner-only authorize is the chokepoint — nothing loaded, saved, projected
@@ -226,6 +225,6 @@ class UnplannedCommitmentServiceTest {
         .isInstanceOf(ResourceNotFoundOrUnauthorizedException.class);
     verify(plans, never()).findById(PLAN_ID); // no load before authorization
     verify(commitments, never()).save(any());
-    verify(projectionService, never()).recompute(any(), any(), any(), any());
+    verify(projectionRefresher, never()).recomputeForPlan(any());
   }
 }

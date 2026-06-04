@@ -13,7 +13,7 @@ import com.st6.wc.identity.UserPrincipal;
 import com.st6.wc.plan.dto.WeeklyPlanDto;
 import com.st6.wc.plan.mapper.PlanMapper;
 import com.st6.wc.plan.repo.WeeklyPlanRepository;
-import com.st6.wc.projection.ProjectionService;
+import com.st6.wc.projection.ProjectionRefresher;
 import com.st6.wc.relationship.ManagerRelationship;
 import com.st6.wc.relationship.repo.ManagerRelationshipRepository;
 import com.st6.wc.review.ManagerReview;
@@ -64,7 +64,7 @@ public class PlanLifecycleService {
   private final AllowedActionResolver allowedActionResolver;
   private final ReviewSlaService reviewSlaService;
   private final ManagerReviewRepository reviews;
-  private final ProjectionService projectionService;
+  private final ProjectionRefresher projectionRefresher;
   private final SyncRecordService syncRecordService;
   private final SnsLifecyclePublisher snsLifecyclePublisher;
   private final AuditService auditService;
@@ -80,7 +80,7 @@ public class PlanLifecycleService {
       AllowedActionResolver allowedActionResolver,
       ReviewSlaService reviewSlaService,
       ManagerReviewRepository reviews,
-      ProjectionService projectionService,
+      ProjectionRefresher projectionRefresher,
       SyncRecordService syncRecordService,
       SnsLifecyclePublisher snsLifecyclePublisher,
       AuditService auditService,
@@ -94,7 +94,7 @@ public class PlanLifecycleService {
     this.allowedActionResolver = allowedActionResolver;
     this.reviewSlaService = reviewSlaService;
     this.reviews = reviews;
-    this.projectionService = projectionService;
+    this.projectionRefresher = projectionRefresher;
     this.syncRecordService = syncRecordService;
     this.snsLifecyclePublisher = snsLifecyclePublisher;
     this.auditService = auditService;
@@ -158,7 +158,7 @@ public class PlanLifecycleService {
       review.setReviewDueAt(reviewSlaService.reviewDueAt(lockedAt));
       reviews.save(review);
 
-      projectionService.recompute(plan, managerId, planCommitments, review);
+      projectionRefresher.recomputeForPlan(plan); // §9 — review just saved, so the helper finds it
 
       syncRecordService
           .upsertManagerReviewBlock(managerId, plan.getWeekStartDate(), traceId)
@@ -208,17 +208,8 @@ public class PlanLifecycleService {
     OutlookCalendarSyncRecord icReconciliation =
         syncRecordService.createIcReconciliationRecord(plan, traceId); // §10 — IC start
 
-    UUID managerId =
-        relationships
-            .findByDirectReportEmployeeIdAndActiveTrue(actor.employeeId())
-            .map(ManagerRelationship::getManagerEmployeeId)
-            .orElse(null);
-    if (managerId != null) {
-      reviews
-          .findByWeeklyPlanId(planId)
-          .ifPresent(
-              review -> projectionService.recompute(plan, managerId, planCommitments, review));
-    }
+    projectionRefresher.recomputeForPlan(
+        plan); // §9 plan_state refresh (no-op if no manager/review)
 
     auditService.record(
         "RECONCILIATION_STARTED",
@@ -284,17 +275,8 @@ public class PlanLifecycleService {
     plans.save(
         plan); // @Version-guarded: a concurrent double-close → ObjectOptimisticLockingFailure
 
-    UUID managerId =
-        relationships
-            .findByDirectReportEmployeeIdAndActiveTrue(actor.employeeId())
-            .map(ManagerRelationship::getManagerEmployeeId)
-            .orElse(null);
-    if (managerId != null) {
-      reviews
-          .findByWeeklyPlanId(planId)
-          .ifPresent(
-              review -> projectionService.recompute(plan, managerId, planCommitments, review));
-    }
+    projectionRefresher.recomputeForPlan(
+        plan); // §9 plan_state refresh (no-op if no manager/review)
 
     auditService.record(
         "PLAN_RECONCILED", "WeeklyPlan", planId, actor.employeeId(), "Reconciliation closed", "{}");

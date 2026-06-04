@@ -27,7 +27,7 @@ import com.st6.wc.enums.WorkType;
 import com.st6.wc.identity.UserPrincipal;
 import com.st6.wc.plan.WeeklyPlan;
 import com.st6.wc.plan.repo.WeeklyPlanRepository;
-import com.st6.wc.projection.ProjectionService;
+import com.st6.wc.projection.ProjectionRefresher;
 import com.st6.wc.rcdo.RcdoReadService;
 import com.st6.wc.relationship.ManagerRelationship;
 import com.st6.wc.relationship.repo.ManagerRelationshipRepository;
@@ -64,7 +64,7 @@ class CommitmentOutcomePatchTest {
   private final ManagerRelationshipRepository relationships =
       mock(ManagerRelationshipRepository.class);
   private final ManagerReviewRepository reviews = mock(ManagerReviewRepository.class);
-  private final ProjectionService projectionService = mock(ProjectionService.class);
+  private final ProjectionRefresher projectionRefresher = mock(ProjectionRefresher.class);
   private final AuditService auditService = mock(AuditService.class);
 
   private final CommitmentService service =
@@ -74,9 +74,7 @@ class CommitmentOutcomePatchTest {
           commitments,
           rcdoReadService,
           commitmentMapper,
-          relationships,
-          reviews,
-          projectionService,
+          projectionRefresher,
           auditService);
 
   private static final UUID IC = UUID.randomUUID();
@@ -178,7 +176,7 @@ class CommitmentOutcomePatchTest {
     assertThat(saved.getValue().getReconciliationOutcome())
         .isEqualTo(ReconciliationOutcome.COMPLETED);
     assertThat(saved.getValue().getOutcomeNote()).isEqualTo("Shipped");
-    verify(projectionService).recompute(any(), eq(MGR), any(), any()); // §9 synchronous upsert
+    verify(projectionRefresher).recomputeForPlan(any()); // §9 synchronous upsert
     verify(auditService)
         .record(
             eq("OUTCOME_RECORDED"),
@@ -189,10 +187,10 @@ class CommitmentOutcomePatchTest {
             any());
   }
 
-  // --- no active manager → outcome saved + audit, but projection skipped (no manager to project
-  // to)
+  // --- no active manager → outcome saved + audit; the projection refresh is now called
+  //     unconditionally (the refresher no-ops when there's no manager) ----
   @Test
-  void patch_outcomeInReconciling_noManager_skipsProjection() {
+  void patch_outcomeInReconciling_noManager_refreshes() {
     loadReconciling();
     when(relationships.findByDirectReportEmployeeIdAndActiveTrue(IC)).thenReturn(Optional.empty());
 
@@ -200,7 +198,7 @@ class CommitmentOutcomePatchTest {
 
     verify(commitments).save(any());
     verify(auditService).record(eq("OUTCOME_RECORDED"), any(), any(), any(), any(), any());
-    verify(projectionService, never()).recompute(any(), any(), any(), any());
+    verify(projectionRefresher).recomputeForPlan(any());
   }
 
   // --- single-outcome rule (§3): a DIRECT reconciliationOutcome=CARRIED_FORWARD is rejected ----
@@ -217,7 +215,7 @@ class CommitmentOutcomePatchTest {
                     patchOutcome(ReconciliationOutcome.CARRIED_FORWARD, null)))
         .isInstanceOf(ValidationException.class);
     verify(commitments, never()).save(any());
-    verify(projectionService, never()).recompute(any(), any(), any(), any());
+    verify(projectionRefresher, never()).recomputeForPlan(any());
   }
 
   // --- per-state allow-list: outcome fields editable ONLY in RECONCILING (DRAFT/LOCKED/RECONCILED
@@ -236,7 +234,7 @@ class CommitmentOutcomePatchTest {
           .isInstanceOf(IllegalStateTransitionException.class);
     }
     verify(commitments, never()).save(any());
-    verify(projectionService, never()).recompute(any(), any(), any(), any());
+    verify(projectionRefresher, never()).recomputeForPlan(any());
   }
 
   // --- per-state allow-list: the planned baseline stays frozen in RECONCILING too (rule #2) ----
@@ -264,7 +262,7 @@ class CommitmentOutcomePatchTest {
     assertThatThrownBy(() -> service.update(actor(), COMMITMENT_ID, req))
         .isInstanceOf(LockedBaselineEditException.class);
     verify(commitments, never()).save(any()); // the outcome was NOT persisted
-    verify(projectionService, never()).recompute(any(), any(), any(), any());
+    verify(projectionRefresher, never()).recomputeForPlan(any());
   }
 
   // --- per-state allow-list: alignmentStatus stays read-only post-lock (incl. RECONCILING) ----
@@ -357,7 +355,7 @@ class CommitmentOutcomePatchTest {
         .isInstanceOf(ResourceNotFoundOrUnauthorizedException.class);
     verify(commitments, never()).findById(COMMITMENT_ID);
     verify(commitments, never()).save(any());
-    verify(projectionService, never()).recompute(any(), any(), any(), any());
+    verify(projectionRefresher, never()).recomputeForPlan(any());
   }
 
   // ===================== E6 allow-list extension (4.5): unplanned SO-link in RECONCILING

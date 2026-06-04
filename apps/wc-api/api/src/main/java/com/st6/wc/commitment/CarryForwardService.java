@@ -15,13 +15,9 @@ import com.st6.wc.enums.WorkType;
 import com.st6.wc.identity.UserPrincipal;
 import com.st6.wc.plan.WeeklyPlan;
 import com.st6.wc.plan.repo.WeeklyPlanRepository;
-import com.st6.wc.projection.ProjectionService;
-import com.st6.wc.relationship.ManagerRelationship;
-import com.st6.wc.relationship.repo.ManagerRelationshipRepository;
-import com.st6.wc.review.repo.ManagerReviewRepository;
+import com.st6.wc.projection.ProjectionRefresher;
 import com.st6.wc.web.IllegalStateTransitionException;
 import java.time.LocalDate;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -51,9 +47,7 @@ public class CarryForwardService {
   private final DomainAuthorizationService authz;
   private final WeeklyPlanRepository plans;
   private final WeeklyCommitmentRepository commitments;
-  private final ManagerRelationshipRepository relationships;
-  private final ManagerReviewRepository reviews;
-  private final ProjectionService projectionService;
+  private final ProjectionRefresher projectionRefresher;
   private final AuditService auditService;
   private final CommitmentMapper commitmentMapper;
   private final OrgTimeConfig orgTimeConfig;
@@ -62,18 +56,14 @@ public class CarryForwardService {
       DomainAuthorizationService authz,
       WeeklyPlanRepository plans,
       WeeklyCommitmentRepository commitments,
-      ManagerRelationshipRepository relationships,
-      ManagerReviewRepository reviews,
-      ProjectionService projectionService,
+      ProjectionRefresher projectionRefresher,
       AuditService auditService,
       CommitmentMapper commitmentMapper,
       OrgTimeConfig orgTimeConfig) {
     this.authz = authz;
     this.plans = plans;
     this.commitments = commitments;
-    this.relationships = relationships;
-    this.reviews = reviews;
-    this.projectionService = projectionService;
+    this.projectionRefresher = projectionRefresher;
     this.auditService = auditService;
     this.commitmentMapper = commitmentMapper;
     this.orgTimeConfig = orgTimeConfig;
@@ -126,7 +116,7 @@ public class CarryForwardService {
     successor.setCarryForwardSourceCommitmentId(source.getId()); // REQ-D-006 self-link
     commitments.save(successor);
 
-    recomputeProjection(
+    projectionRefresher.recomputeForPlan(
         sourcePlan); // §9 source-plan lockstep (count unchanged — carried-IN reading)
     auditService.record(
         "COMMITMENT_CARRIED_FORWARD",
@@ -162,30 +152,5 @@ public class CarryForwardService {
    */
   private static WorkType plannedWorkType(WorkType sourceWorkType) {
     return sourceWorkType == WorkType.UNPLANNED ? WorkType.STRATEGIC : sourceWorkType;
-  }
-
-  /**
-   * Synchronously recompute the source plan's manager projection (§9 lockstep), reusing the 4.1/4.2
-   * pattern: skipped when the IC has no active manager or no review row (nothing to project). The
-   * source-plan {@code carry_forward_count} does not change here (the source is not a successor —
-   * carried-IN reading); the count materializes when the next-week plan locks.
-   */
-  private void recomputeProjection(WeeklyPlan plan) {
-    UUID managerId =
-        relationships
-            .findByDirectReportEmployeeIdAndActiveTrue(plan.getEmployeeId())
-            .map(ManagerRelationship::getManagerEmployeeId)
-            .orElse(null);
-    if (managerId == null) {
-      return;
-    }
-    final UUID resolvedManagerId = managerId;
-    reviews
-        .findByWeeklyPlanId(plan.getId())
-        .ifPresent(
-            review -> {
-              List<WeeklyCommitment> all = commitments.findByWeeklyPlanIdOrderByIdAsc(plan.getId());
-              projectionService.recompute(plan, resolvedManagerId, all, review);
-            });
   }
 }

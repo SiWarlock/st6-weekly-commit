@@ -28,7 +28,7 @@ import com.st6.wc.enums.WorkType;
 import com.st6.wc.identity.UserPrincipal;
 import com.st6.wc.plan.WeeklyPlan;
 import com.st6.wc.plan.repo.WeeklyPlanRepository;
-import com.st6.wc.projection.ProjectionService;
+import com.st6.wc.projection.ProjectionRefresher;
 import com.st6.wc.relationship.ManagerRelationship;
 import com.st6.wc.relationship.repo.ManagerRelationshipRepository;
 import com.st6.wc.review.ManagerReview;
@@ -61,7 +61,7 @@ class CarryForwardServiceTest {
   private final ManagerRelationshipRepository relationships =
       mock(ManagerRelationshipRepository.class);
   private final ManagerReviewRepository reviews = mock(ManagerReviewRepository.class);
-  private final ProjectionService projectionService = mock(ProjectionService.class);
+  private final ProjectionRefresher projectionRefresher = mock(ProjectionRefresher.class);
   private final AuditService auditService = mock(AuditService.class);
   private final CommitmentMapper commitmentMapper = mock(CommitmentMapper.class);
   private final OrgTimeConfig orgTimeConfig = new OrgTimeConfig();
@@ -71,9 +71,7 @@ class CarryForwardServiceTest {
           authz,
           plans,
           commitments,
-          relationships,
-          reviews,
-          projectionService,
+          projectionRefresher,
           auditService,
           commitmentMapper,
           orgTimeConfig);
@@ -156,7 +154,7 @@ class CarryForwardServiceTest {
     assertThat(successor.getSupportingOutcomeId()).isNull(); // starts unlinked (R5)
     assertThat(successor.getReconciliationOutcome()).isNull();
     assertThat(successor.getTitle()).isEqualTo("Draft the activation-onboarding runbook"); // copied
-    verify(projectionService).recompute(any(), eq(MGR), any(), any()); // §9 source-plan lockstep
+    verify(projectionRefresher).recomputeForPlan(any()); // §9 source-plan lockstep
     verify(auditService)
         .record(
             eq("COMMITMENT_CARRIED_FORWARD"),
@@ -223,7 +221,7 @@ class CarryForwardServiceTest {
     verify(commitments, never()).save(any()); // source not re-touched, no successor created
     verify(plans, never()).save(any()); // no second shell
     verify(auditService, never()).record(any(), any(), any(), any(), any(), any());
-    verify(projectionService, never()).recompute(any(), any(), any(), any());
+    verify(projectionRefresher, never()).recomputeForPlan(any());
     verify(commitmentMapper).toDto(existingSuccessor); // returns the existing successor
   }
 
@@ -303,10 +301,10 @@ class CarryForwardServiceTest {
         .isInstanceOf(org.springframework.orm.ObjectOptimisticLockingFailureException.class);
   }
 
-  // --- no active manager → successor + audit still happen, projection skipped (mirrors 4.1/4.2)
-  // ---
+  // --- no active manager → successor + audit still happen; the projection refresh is now called
+  //     unconditionally (the refresher no-ops when there's no manager) ----
   @Test
-  void carryForward_noManager_skipsProjection() {
+  void carryForward_noManager_refreshes() {
     when(commitments.findById(SRC_ID)).thenReturn(Optional.of(source(null)));
     when(plans.findById(SRC_PLAN_ID)).thenReturn(Optional.of(sourcePlan(PlanState.RECONCILING)));
     when(commitments.findByCarryForwardSourceCommitmentId(SRC_ID)).thenReturn(Optional.empty());
@@ -318,7 +316,7 @@ class CarryForwardServiceTest {
     verify(commitments, times(2)).save(any()); // source + successor
     verify(auditService)
         .record(eq("COMMITMENT_CARRIED_FORWARD"), any(), any(), any(), any(), any());
-    verify(projectionService, never()).recompute(any(), any(), any(), any());
+    verify(projectionRefresher).recomputeForPlan(any());
   }
 
   // --- successor work-type: an UNPLANNED source becomes a PLANNED successor with a planned type

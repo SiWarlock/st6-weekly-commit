@@ -27,7 +27,7 @@ import com.st6.wc.enums.WorkType;
 import com.st6.wc.identity.UserPrincipal;
 import com.st6.wc.plan.mapper.PlanMapper;
 import com.st6.wc.plan.repo.WeeklyPlanRepository;
-import com.st6.wc.projection.ProjectionService;
+import com.st6.wc.projection.ProjectionRefresher;
 import com.st6.wc.relationship.ManagerRelationship;
 import com.st6.wc.relationship.repo.ManagerRelationshipRepository;
 import com.st6.wc.review.ManagerReview;
@@ -68,7 +68,7 @@ class PlanLifecycleServiceTest {
   private final AllowedActionResolver allowedActionResolver = new AllowedActionResolver(); // REAL
   private final ReviewSlaService reviewSlaService = mock(ReviewSlaService.class);
   private final ManagerReviewRepository reviews = mock(ManagerReviewRepository.class);
-  private final ProjectionService projectionService = mock(ProjectionService.class);
+  private final ProjectionRefresher projectionRefresher = mock(ProjectionRefresher.class);
   private final SyncRecordService syncRecordService = mock(SyncRecordService.class);
   private final SnsLifecyclePublisher snsPublisher = mock(SnsLifecyclePublisher.class);
   private final AuditService auditService = mock(AuditService.class);
@@ -85,7 +85,7 @@ class PlanLifecycleServiceTest {
           allowedActionResolver,
           reviewSlaService,
           reviews,
-          projectionService,
+          projectionRefresher,
           syncRecordService,
           snsPublisher,
           auditService,
@@ -170,7 +170,7 @@ class PlanLifecycleServiceTest {
     assertThat(savedReview.getValue().getReviewDueAt())
         .isEqualTo(Instant.parse("2026-06-02T22:00:00Z"));
 
-    verify(projectionService).recompute(any(), eq(MGR), any(), any());
+    verify(projectionRefresher).recomputeForPlan(any());
     verify(syncRecordService).createIcPlanningRecord(any(), any());
     verify(syncRecordService).upsertManagerReviewBlock(eq(MGR), eq(WEEK), any());
     verify(auditService)
@@ -243,7 +243,7 @@ class PlanLifecycleServiceTest {
     verify(auditService).record(eq("PLAN_LOCKED"), any(), any(), any(), any(), any());
     // manager-scoped side-effects skipped
     verify(reviews, never()).save(any());
-    verify(projectionService, never()).recompute(any(), any(), any(), any());
+    verify(projectionRefresher, never()).recomputeForPlan(any());
     verify(syncRecordService, never()).upsertManagerReviewBlock(any(), any(), any());
   }
 
@@ -278,7 +278,7 @@ class PlanLifecycleServiceTest {
             stubResolver,
             reviewSlaService,
             reviews,
-            projectionService,
+            projectionRefresher,
             syncRecordService,
             snsPublisher,
             auditService,

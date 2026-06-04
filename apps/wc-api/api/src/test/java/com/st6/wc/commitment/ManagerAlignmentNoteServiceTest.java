@@ -27,10 +27,8 @@ import com.st6.wc.enums.WorkType;
 import com.st6.wc.identity.UserPrincipal;
 import com.st6.wc.plan.WeeklyPlan;
 import com.st6.wc.plan.repo.WeeklyPlanRepository;
-import com.st6.wc.projection.ProjectionService;
+import com.st6.wc.projection.ProjectionRefresher;
 import com.st6.wc.rcdo.RcdoReadService;
-import com.st6.wc.relationship.repo.ManagerRelationshipRepository;
-import com.st6.wc.review.repo.ManagerReviewRepository;
 import com.st6.wc.web.IllegalStateTransitionException;
 import com.st6.wc.web.ValidationException;
 import java.util.Optional;
@@ -55,10 +53,7 @@ class ManagerAlignmentNoteServiceTest {
   private final WeeklyCommitmentRepository commitments = mock(WeeklyCommitmentRepository.class);
   private final RcdoReadService rcdoReadService = mock(RcdoReadService.class);
   private final CommitmentMapper commitmentMapper = mock(CommitmentMapper.class);
-  private final ManagerRelationshipRepository relationships =
-      mock(ManagerRelationshipRepository.class);
-  private final ManagerReviewRepository reviews = mock(ManagerReviewRepository.class);
-  private final ProjectionService projectionService = mock(ProjectionService.class);
+  private final ProjectionRefresher projectionRefresher = mock(ProjectionRefresher.class);
   private final AuditService auditService = mock(AuditService.class);
   private final CommitmentService service =
       new CommitmentService(
@@ -67,9 +62,7 @@ class ManagerAlignmentNoteServiceTest {
           commitments,
           rcdoReadService,
           commitmentMapper,
-          relationships,
-          reviews,
-          projectionService,
+          projectionRefresher,
           auditService);
 
   private static final UUID MANAGER_ID = UUID.fromString("a0000000-0000-0000-0000-0000000000aa");
