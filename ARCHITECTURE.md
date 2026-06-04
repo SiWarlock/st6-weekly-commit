@@ -1203,7 +1203,7 @@ Envelope per Appendix B.20; `page` default `0`, `size` default `25`, max `100`. 
 |---|---|
 | `GET /api/manager/command-center` | `weekStartDate DESC`, then `employeeDisplayName ASC` |
 | `GET /api/comments` | `createdAt ASC` (chronological thread) |
-| `GET /api/manager/heatmap/{cellId}/drilldown` | `priority ASC` (P0→P2), then `createdAt ASC` |
+| `GET /api/manager/heatmap/{cellId}/drilldown` | `priority ASC` (P0→P2), then `createdAt ASC`, then `id ASC` (deterministic tiebreaker — `createdAt` is unpopulated until JPA-auditing lands, so `id` pins stable pagination; added 6.5b) |
 
 `GET /api/manager/heatmap` and `GET /api/outlook-sync?planId=` are **not** paginated (bounded by reports×DOs and by plan, respectively).
 
