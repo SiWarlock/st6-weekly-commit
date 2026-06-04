@@ -14,4 +14,10 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface SupportingOutcomeRepository extends JpaRepository<SupportingOutcome, UUID> {
 
   List<SupportingOutcome> findAllByOrderByIdAsc();
+
+  /**
+   * The Supporting Outcomes under one Defining Objective, id-ascending (task 6.5b, E15 drill-down)
+   * — the bounded SO set the drill-down groups the report's commitments by.
+   */
+  List<SupportingOutcome> findByDefiningObjectiveIdOrderByIdAsc(UUID definingObjectiveId);
 }

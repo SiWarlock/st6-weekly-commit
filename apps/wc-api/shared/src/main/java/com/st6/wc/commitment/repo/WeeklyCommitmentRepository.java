@@ -4,6 +4,8 @@ import com.st6.wc.commitment.WeeklyCommitment;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 /**
@@ -21,4 +23,12 @@ public interface WeeklyCommitmentRepository extends JpaRepository<WeeklyCommitme
 
   Optional<WeeklyCommitment> findByCarryForwardSourceCommitmentId(
       UUID carryForwardSourceCommitmentId);
+
+  /**
+   * A plan's commitments under one Supporting Outcome, paginated (task 6.5b, E15 drill-down) — the
+   * caller passes the F.5 sort ({@code priority ASC, createdAt ASC, id ASC}); the {@code id}
+   * tie-break keeps pagination stable while {@code createdAt} is unpopulated.
+   */
+  Page<WeeklyCommitment> findByWeeklyPlanIdAndSupportingOutcomeId(
+      UUID weeklyPlanId, UUID supportingOutcomeId, Pageable pageable);
 }

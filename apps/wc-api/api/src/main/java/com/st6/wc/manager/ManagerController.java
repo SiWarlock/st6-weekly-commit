@@ -5,6 +5,8 @@ import com.st6.wc.enums.PlanState;
 import com.st6.wc.enums.Priority;
 import com.st6.wc.enums.WorkType;
 import com.st6.wc.identity.UserPrincipal;
+import com.st6.wc.manager.dto.HeatmapDrilldownDto;
+import com.st6.wc.manager.dto.HeatmapResponseDto;
 import com.st6.wc.manager.dto.ManagerCommandCenterRowDto;
 import com.st6.wc.manager.dto.PageEnvelope;
 import com.st6.wc.manager.dto.ReviewStateFilter;
@@ -14,6 +16,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -31,9 +34,16 @@ import org.springframework.web.bind.annotation.RestController;
 public class ManagerController {
 
   private final ManagerQueryService queryService;
+  private final ManagerHeatmapService heatmapService;
+  private final ManagerDrilldownService drilldownService;
 
-  public ManagerController(ManagerQueryService queryService) {
+  public ManagerController(
+      ManagerQueryService queryService,
+      ManagerHeatmapService heatmapService,
+      ManagerDrilldownService drilldownService) {
     this.queryService = queryService;
+    this.heatmapService = heatmapService;
+    this.drilldownService = drilldownService;
   }
 
   @GetMapping("/api/manager/command-center")
@@ -59,5 +69,27 @@ public class ManagerController {
         workType,
         alignmentStatus,
         pageable);
+  }
+
+  /** E14 — the manager × direct-report × week × Defining-Objective heatmap grid (NOT paginated). */
+  @GetMapping("/api/manager/heatmap")
+  public HeatmapResponseDto heatmap(
+      @AuthenticationPrincipal UserPrincipal principal,
+      @RequestParam("weekStart") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate weekStart,
+      @RequestParam(value = "definingObjectiveId", required = false) UUID definingObjectiveId,
+      @RequestParam(value = "supportingOutcomeId", required = false) UUID supportingOutcomeId) {
+    return heatmapService.heatmap(principal, weekStart, definingObjectiveId, supportingOutcomeId);
+  }
+
+  /**
+   * E15 — the Supporting-Outcome breakdown for ONE report × Defining-Objective cell (own-cell
+   * only).
+   */
+  @GetMapping("/api/manager/heatmap/{cellId}/drilldown")
+  public HeatmapDrilldownDto drilldown(
+      @AuthenticationPrincipal UserPrincipal principal,
+      @PathVariable("cellId") UUID cellId,
+      Pageable pageable) {
+    return drilldownService.drilldown(principal, cellId, pageable);
   }
 }
