@@ -6,6 +6,7 @@ import com.st6.wc.enums.CommitmentKind;
 import com.st6.wc.enums.PlanState;
 import com.st6.wc.enums.ReconciliationOutcome;
 import com.st6.wc.enums.ReviewStatus;
+import com.st6.wc.enums.SyncStatus;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -178,5 +179,15 @@ public class AllowedActionResolver {
     List<WeeklyCommitment> planned =
         commitments.stream().filter(c -> c.getCommitmentKind() == CommitmentKind.PLANNED).toList();
     return !planned.isEmpty() && planned.stream().allMatch(c -> c.getSupportingOutcomeId() != null);
+  }
+
+  /**
+   * The {@code RETRY_SYNC} precondition (E23, §10/§31) — a sync record is retryable iff it is in
+   * the {@code FAILED} terminal. The SINGLE source for both the {@code OutlookSyncRecordDto}
+   * affordance ({@code SyncRecordMapper}) and the {@code SyncRetryService} enforcement, so they
+   * never drift.
+   */
+  public boolean canRetrySync(SyncStatus status) {
+    return status == SyncStatus.FAILED;
   }
 }

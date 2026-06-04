@@ -142,6 +142,25 @@ public class DomainAuthorizationService {
     authorizeOwnership(principal, sync.getOwnerEmployeeId(), SYNC_RECORD, syncRecordId);
   }
 
+  /**
+   * Authorize LISTING a plan's Outlook sync records (E22, §10 / §6 rule #3) —
+   * <strong>OWNER-ONLY</strong>: the sync list is the IC's private view (the catalog scopes E22 to
+   * "IC own", unlike the manager-inclusive E23 retry {@link #authorizeSyncRecordAccess}). The
+   * owning IC (or SYSTEM) may list; ANY non-owner — <em>including a manager-of-owner</em> — gets an
+   * IDOR-safe codeless {@code 404} + a denial audit (the list is existence-hidden, never a {@code
+   * 403}). Distinct from {@link #authorizePlanAccess} (which admits the manager-direct-report) and
+   * from {@link #authorizePlanMutation} (a {@code 403 PLAN_OWNER_REQUIRED} capability check — wrong
+   * posture for a read).
+   */
+  public void authorizeSyncListAccess(DomainPrincipal principal, UUID planId) {
+    UUID owner = planOwner(planId); // missing → 404 WITHOUT audit
+    if (principal instanceof UserPrincipal up && !up.employeeId().equals(owner)) {
+      throw deny404(
+          principal, PLAN, planId); // any non-owner (incl. manager) → codeless 404 + audit
+    }
+    // the owning IC (or SYSTEM) may list
+  }
+
   /** A heatmap cell is owned by its manager; only that manager (or SYSTEM) may drill into it. */
   public void authorizeHeatmapCellAccess(DomainPrincipal principal, UUID cellId) {
     ManagerHeatmapCell cell = heatmapCells.findById(cellId).orElseThrow(this::notFound);

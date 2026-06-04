@@ -41,4 +41,10 @@ public final class ErrorCodes {
    * V2 partial-unique DB backstop.
    */
   public static final String SECOND_OPEN_DISPUTE = "SECOND_OPEN_DISPUTE";
+
+  /**
+   * A manual Outlook-sync retry (E23) attempted on a non-{@code FAILED} record (409; §10, task
+   * sync-E22/E23). Only a {@code FAILED} record is the retryable terminal.
+   */
+  public static final String SYNC_NOT_RETRYABLE = "SYNC_NOT_RETRYABLE";
 }

@@ -148,6 +148,15 @@ public class ProblemDetailsExceptionHandler {
         ErrorCodes.SECOND_OPEN_DISPUTE);
   }
 
+  @ExceptionHandler(SyncNotRetryableException.class)
+  ResponseEntity<ProblemDetail> handleSyncNotRetryable(SyncNotRetryableException ex) {
+    // §10 — only a FAILED sync record is the retryable terminal (E23, task sync-E22/E23).
+    return render(
+        HttpStatus.CONFLICT,
+        "This sync record is not in a retryable state.",
+        ErrorCodes.SYNC_NOT_RETRYABLE);
+  }
+
   @ExceptionHandler(UnlinkedPlannedCommitmentException.class)
   ResponseEntity<ProblemDetail> handleUnlinked(UnlinkedPlannedCommitmentException ex) {
     // rule #1 — every planned commitment must link a Supporting Outcome before lock (REQ-E-001).
