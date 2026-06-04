@@ -16,15 +16,15 @@
 ## Step 0 — GitHub repository + remote (do first; the deploy lives on GitHub)
 The deploy pipeline (GitHub Actions + OIDC) runs from a **GitHub** repo. Per the project remote posture (root `CLAUDE.md`): **`origin` = GitLab** is the submission/code remote (already configured + pushed by the user) — you **ADD** a `github` remote for the deploy; you do **NOT** switch `origin`, and you do **NOT** mirror.
 
-1. Create a new GitHub repo (e.g. `<owner>/st6-weekly-commit`).
+1. The deploy repo (already created by the user): **`SiWarlock/st6-weekly-commit`**.
 2. Add it as a **second** remote (keep `origin` = GitLab) + publish the code:
    ```bash
-   git remote add github https://github.com/<owner>/<repo>.git
-   git push github main          # origin/GitLab is untouched
+   git remote add github git@github.com:SiWarlock/st6-weekly-commit.git   # KEEP origin=gitlab; this is the 2nd remote
+   git push github main                                                   # origin/GitLab is untouched
    ```
-3. **`<owner>/<repo>` is the single value that wires the entire deploy** — set it once and it threads through:
+3. **`SiWarlock/st6-weekly-commit` is the single value that wires the entire deploy** — set it once and it threads through:
    - → the Terraform **`github_repo`** var (Step 3 `TF_VAR_github_repo`),
-   - → the CI role's **OIDC trust subject** `repo:<owner>/<repo>:environment:production` — **already parameterized** on that var in `iam_ci.tf` (you only set the var; **no Terraform code edit**),
+   - → the CI role's **OIDC trust subject** `repo:SiWarlock/st6-weekly-commit:environment:production` — **already parameterized** on that var in `iam_ci.tf` (you only set the var; **no Terraform code edit**),
    - → the GitHub **`production` Environment** + its **variables** (Step 4, incl. the `AUTH0_DOMAIN`/`AUTH0_CLIENT_ID` SPA-build vars).
 4. **Deploy trigger (deliberate):** the pipeline runs **only** on a **`release-*` tag push** or a **`workflow_dispatch`** — so to deploy you push to `github` then tag/dispatch (runbook c). **GitLab stays the submission remote with no auto-deploy**, and pushing to `github main` alone does **not** deploy (only a release tag / a manual dispatch does).
 
@@ -71,7 +71,7 @@ terraform init \
 
 # the two no-default vars (deploy-specific):
 export TF_VAR_ROOT_DOMAIN="<ROOT_DOMAIN>"
-export TF_VAR_github_repo="<owner>/<repo>"     # the OIDC trust subject
+export TF_VAR_github_repo="SiWarlock/st6-weekly-commit"     # the OIDC trust subject
 # export TF_VAR_region="<region>"               # optional; defaults to us-east-1
 
 terraform plan -out tfplan
@@ -88,22 +88,22 @@ terraform output -raw cluster_name            # FYI (the pipeline derives it its
 - **No secrets yet:** auth0/graph hold `REPLACE_VIA_HITL` placeholders (`ignore_changes` — the apply won't clobber a later real value). They're populated in runbook (c).
 
 ## Step 4 — GitHub `production` Environment + required reviewers + variables
-The CI role's OIDC trust is **`repo:<owner>/<repo>:environment:production`** — so the deploy job must run under a GitHub Environment named **exactly `production`**, gated by required reviewers (the per-deploy HITL approval).
+The CI role's OIDC trust is **`repo:SiWarlock/st6-weekly-commit:environment:production`** — so the deploy job must run under a GitHub Environment named **exactly `production`**, gated by required reviewers (the per-deploy HITL approval).
 
 ```bash
 # Create the production Environment (idempotent):
-gh api -X PUT "repos/<owner>/<repo>/environments/production"
+gh api -X PUT "repos/SiWarlock/st6-weekly-commit/environments/production"
 
 # Add a required reviewer (replace <reviewer-user-id>; or set in the UI: Settings → Environments → production → Required reviewers):
-gh api -X PUT "repos/<owner>/<repo>/environments/production" \
+gh api -X PUT "repos/SiWarlock/st6-weekly-commit/environments/production" \
   -f 'reviewers[][type=User]' -F 'reviewers[][id]=<reviewer-user-id>'
 
 # Set the 5 deploy variables (Environment-scoped or repo-scoped):
-gh variable set AWS_REGION          --env production --repo <owner>/<repo> --body "<region>"
-gh variable set ROOT_DOMAIN         --env production --repo <owner>/<repo> --body "<ROOT_DOMAIN>"
-gh variable set AWS_DEPLOY_ROLE_ARN --env production --repo <owner>/<repo> --body "<ci_deploy_role_arn>"
-gh variable set TF_STATE_BUCKET     --env production --repo <owner>/<repo> --body "<state_bucket_name>"
-gh variable set TF_STATE_LOCK_TABLE --env production --repo <owner>/<repo> --body "<lock_table_name>"
+gh variable set AWS_REGION          --env production --repo SiWarlock/st6-weekly-commit --body "<region>"
+gh variable set ROOT_DOMAIN         --env production --repo SiWarlock/st6-weekly-commit --body "<ROOT_DOMAIN>"
+gh variable set AWS_DEPLOY_ROLE_ARN --env production --repo SiWarlock/st6-weekly-commit --body "<ci_deploy_role_arn>"
+gh variable set TF_STATE_BUCKET     --env production --repo SiWarlock/st6-weekly-commit --body "<state_bucket_name>"
+gh variable set TF_STATE_LOCK_TABLE --env production --repo SiWarlock/st6-weekly-commit --body "<lock_table_name>"
 ```
 
 | GitHub variable | Value | Source |
@@ -118,8 +118,8 @@ gh variable set TF_STATE_LOCK_TABLE --env production --repo <owner>/<repo> --bod
 
 ```bash
 # the 2 SPA-build vars (the pipeline bakes VITE_AUTH0_DOMAIN/CLIENT_ID/AUDIENCE into the SPA):
-gh variable set AUTH0_DOMAIN    --env production --repo <owner>/<repo> --body "<tenant>.<region>.auth0.com"
-gh variable set AUTH0_CLIENT_ID --env production --repo <owner>/<repo> --body "<spa-client-id>"
+gh variable set AUTH0_DOMAIN    --env production --repo SiWarlock/st6-weekly-commit --body "<tenant>.<region>.auth0.com"
+gh variable set AUTH0_CLIENT_ID --env production --repo SiWarlock/st6-weekly-commit --body "<spa-client-id>"
 ```
 > `AUTH0_DOMAIN` + `AUTH0_CLIENT_ID` feed the wc-web build (`VITE_AUTH0_*`); the SPA's `auth0Config.ts` fail-fasts without them, so the deployed login won't boot if they're unset. `VITE_AUTH0_AUDIENCE` is derived from `ROOT_DOMAIN` (no separate var).
 
