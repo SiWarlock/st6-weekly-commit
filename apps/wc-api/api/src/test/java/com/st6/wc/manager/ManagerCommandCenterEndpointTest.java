@@ -1,9 +1,11 @@
 package com.st6.wc.manager;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.st6.wc.audit.AuditEvent;
 import com.st6.wc.audit.repo.AuditEventRepository;
 import com.st6.wc.commitment.WeeklyCommitment;
 import com.st6.wc.commitment.repo.WeeklyCommitmentRepository;
@@ -350,6 +352,25 @@ class ManagerCommandCenterEndpointTest extends AbstractAppBootTest {
     mvc.perform(get(URL).param("weekStart", WEEK.toString()).header(HEADER, ic.getId().toString()))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value("MANAGER_ROLE_REQUIRED"));
+    // §6/§17 (6.5a LOW drained): the coarse team-heatmap denial writes exactly one
+    // AUTHORIZATION_DENIED audit on the Heatmap surface — positively assert the row, not just 403.
+    assertSingleDenialAudit("Heatmap", ic.getId());
+  }
+
+  /**
+   * §6/§17 + rule #7 (§15): exactly one {@code AUTHORIZATION_DENIED} audit for the given resource
+   * type after a denial, credited to the requesting principal (attribution — never a wrong/leaked
+   * id). The comprehensive SENTINEL-no-leak sweep is the service-level {@code
+   * AuthorizationIdorMatrixTest}; this endpoint-level pin asserts the action + resource type (the
+   * coarse team-heatmap denial carries a null entityId — no resource text to leak).
+   */
+  private void assertSingleDenialAudit(String entityType, UUID expectedActor) {
+    List<AuditEvent> denials = auditEvents.findAll();
+    assertThat(denials).hasSize(1);
+    AuditEvent a = denials.get(0);
+    assertThat(a.getAction()).isEqualTo("AUTHORIZATION_DENIED");
+    assertThat(a.getEntityType()).isEqualTo(entityType);
+    assertThat(a.getActorEmployeeId()).isEqualTo(expectedActor);
   }
 
   // --- the row is the B.11 record, never the projection entity (no id/version/audit leak) ----

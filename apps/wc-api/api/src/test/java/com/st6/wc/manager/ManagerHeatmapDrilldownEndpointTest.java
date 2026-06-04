@@ -1,9 +1,11 @@
 package com.st6.wc.manager;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.st6.wc.audit.AuditEvent;
 import com.st6.wc.audit.repo.AuditEventRepository;
 import com.st6.wc.commitment.WeeklyCommitment;
 import com.st6.wc.commitment.repo.WeeklyCommitmentRepository;
@@ -172,7 +174,8 @@ class ManagerHeatmapDrilldownEndpointTest extends AbstractAppBootTest {
                 .value(sos.get(1).getId().toString()));
   }
 
-  // --- a cell whose manager_employee_id ≠ principal → 404 + a denial audit (own-cell IDOR) ----
+  // --- a cell whose manager_employee_id ≠ principal → 404 + a SPECIFIC denial audit (own-cell
+  // IDOR) ----
   @Test
   void drilldown_notOwnCell_404AndAudit() throws Exception {
     Employee mgr = saveEmployee("Manager", RoleType.MANAGER);
@@ -187,8 +190,27 @@ class ManagerHeatmapDrilldownEndpointTest extends AbstractAppBootTest {
             get("/api/manager/heatmap/{cellId}/drilldown", othersCell)
                 .header(HEADER, mgr.getId().toString()))
         .andExpect(status().isNotFound());
-    org.assertj.core.api.Assertions.assertThat(auditEvents.count())
-        .isGreaterThan(0); // a genuine cross-owner denial writes one audit
+    // §38 6.5b addendum: assert the SPECIFIC AUTHORIZATION_DENIED + HeatmapCell row, not count()>0
+    // (accumulation can't make a stale assertion pass); credited to the requesting manager.
+    assertSingleDenialAudit("HeatmapCell", mgr.getId());
+  }
+
+  // --- an IC has no team surface (REQ-F-030): IC → drill-down → 404 (owns no cell) + a denial
+  // audit ----
+  @Test
+  void drilldown_icDenied_404_writesAudit() throws Exception {
+    Employee mgr = saveEmployee("Manager", RoleType.MANAGER);
+    Employee report = saveEmployee("Rob", RoleType.IC);
+    saveActiveRelationship(mgr.getId(), report.getId());
+    UUID mgrCell = saveHeatmapCell(mgr.getId(), report.getId(), do1());
+    Employee ic = saveEmployee("Ivy", RoleType.IC); // not a manager → owns no cell
+
+    mvc.perform(
+            get("/api/manager/heatmap/{cellId}/drilldown", mgrCell)
+                .header(HEADER, ic.getId().toString()))
+        .andExpect(
+            status().isNotFound()); // the own-cell authorizer → IDOR 404 (manager namespace hidden)
+    assertSingleDenialAudit("HeatmapCell", ic.getId());
   }
 
   // --- an unknown cellId → 404, NO audit (§25 no audit-spam on id-probing) ----
@@ -202,7 +224,21 @@ class ManagerHeatmapDrilldownEndpointTest extends AbstractAppBootTest {
             get("/api/manager/heatmap/{cellId}/drilldown", UUID.randomUUID())
                 .header(HEADER, mgr.getId().toString()))
         .andExpect(status().isNotFound());
-    org.assertj.core.api.Assertions.assertThat(auditEvents.count()).isZero(); // missing → no audit
+    assertThat(auditEvents.count()).isZero(); // missing → no audit
+  }
+
+  /**
+   * §6/§17 + rule #7 (§15): exactly one {@code AUTHORIZATION_DENIED} audit for the given resource
+   * type after a denial (the comprehensive SENTINEL-no-leak sweep is the service-level {@code
+   * AuthorizationIdorMatrixTest}; the heatmap-cell denial carries only UUIDs, no resource text).
+   */
+  private void assertSingleDenialAudit(String entityType, UUID expectedActor) {
+    List<AuditEvent> denials = auditEvents.findAll();
+    assertThat(denials).hasSize(1);
+    AuditEvent a = denials.get(0);
+    assertThat(a.getAction()).isEqualTo("AUTHORIZATION_DENIED");
+    assertThat(a.getEntityType()).isEqualTo(entityType);
+    assertThat(a.getActorEmployeeId()).isEqualTo(expectedActor);
   }
 
   // --- every drilldown commitment carries empty allowedActions (the 5.5b posture, §35) ----

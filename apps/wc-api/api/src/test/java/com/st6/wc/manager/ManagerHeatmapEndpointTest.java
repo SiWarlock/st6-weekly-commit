@@ -1,9 +1,11 @@
 package com.st6.wc.manager;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.st6.wc.audit.AuditEvent;
 import com.st6.wc.audit.repo.AuditEventRepository;
 import com.st6.wc.employee.Employee;
 import com.st6.wc.employee.repo.EmployeeRepository;
@@ -119,7 +121,7 @@ class ManagerHeatmapEndpointTest extends AbstractAppBootTest {
         .andExpect(jsonPath("$.cells[0].managerEmployeeId").value(mgr.getId().toString()));
   }
 
-  // --- coarse gate: an IC (no active reports) → 403 MANAGER_ROLE_REQUIRED ----
+  // --- coarse gate: an IC (no active reports) → 403 MANAGER_ROLE_REQUIRED + a denial audit ----
   @Test
   void heatmap_icDenied403() throws Exception {
     Employee ic = saveEmployee("Ivy", RoleType.IC);
@@ -127,6 +129,22 @@ class ManagerHeatmapEndpointTest extends AbstractAppBootTest {
     mvc.perform(get(URL).param("weekStart", WEEK.toString()).header(HEADER, ic.getId().toString()))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value("MANAGER_ROLE_REQUIRED"));
+    // §6/§17: the team-heatmap denial writes exactly one AUTHORIZATION_DENIED audit (Heatmap).
+    assertSingleDenialAudit("Heatmap", ic.getId());
+  }
+
+  /**
+   * §6/§17 + rule #7 (§15): exactly one {@code AUTHORIZATION_DENIED} audit for the given resource
+   * type after a denial, credited to the requesting principal (the comprehensive SENTINEL-no-leak
+   * sweep is the service-level {@code AuthorizationIdorMatrixTest}).
+   */
+  private void assertSingleDenialAudit(String entityType, UUID expectedActor) {
+    List<AuditEvent> denials = auditEvents.findAll();
+    assertThat(denials).hasSize(1);
+    AuditEvent a = denials.get(0);
+    assertThat(a.getAction()).isEqualTo("AUTHORIZATION_DENIED");
+    assertThat(a.getEntityType()).isEqualTo(entityType);
+    assertThat(a.getActorEmployeeId()).isEqualTo(expectedActor);
   }
 
   // --- the IDOR re-pin: another manager's cells stay unreachable (scope from principal) ----
