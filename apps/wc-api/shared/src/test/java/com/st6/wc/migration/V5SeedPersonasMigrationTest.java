@@ -29,13 +29,14 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * their own employees; MVP_TASKS 3.1b note).
  *
  * <p>Mirrors {@link V1CoreSchemaMigrationTest}'s shape (raw JDBC + Flyway + ephemeral container).
- * Pins: the 7 personas (Dana MANAGER + 6 IC reports) with their fixed UUIDs / {@code @st6demo.com}
- * emails / {@code America/Chicago} tz / {@code active} / populated + distinct OAuth {@code
- * external_subject}; the 6 active (Dana → report) relationships satisfying the V2
- * single-active-manager partial unique with Dana herself unmanaged; idempotency ({@code ON CONFLICT
- * DO NOTHING} → a re-run inserts 0 rows); and the OAuth resolution key — {@code external_subject} →
- * the active employee row (the lookup {@code EmployeeRepository.findByExternalSubject} / {@code
- * PrincipalResolver.resolve(Auth0Identity)} performs, §6 / REQ-S-007).
+ * Pins: the 7 personas (Dana MANAGER + 6 IC reports) with their fixed UUIDs /
+ * {@code @dreddy817.onmicrosoft.com} emails / {@code America/Chicago} tz / {@code active} /
+ * populated + distinct OAuth {@code external_subject}; the 6 active (Dana → report) relationships
+ * satisfying the V2 single-active-manager partial unique with Dana herself unmanaged; idempotency
+ * ({@code ON CONFLICT DO NOTHING} → a re-run inserts 0 rows); and the OAuth resolution key — {@code
+ * external_subject} → the active employee row (the lookup {@code
+ * EmployeeRepository.findByExternalSubject} / {@code PrincipalResolver.resolve(Auth0Identity)}
+ * performs, §6 / REQ-S-007).
  *
  * <p><strong>Step-2.5 contingency:</strong> {@link #SEED_LOCATION} + {@link #SEED_RESOURCE} assume
  * the demo seed lives in a dedicated {@code classpath:db/demo-seed} location (orch recommendation
@@ -53,7 +54,7 @@ class V5SeedPersonasMigrationTest {
   private static final String SEED_RESOURCE =
       "/db/demo-seed/V5__seed_personas_and_relationships.sql";
 
-  private static final String DEMO_DOMAIN = "@st6demo.com";
+  private static final String DEMO_DOMAIN = "@dreddy817.onmicrosoft.com";
 
   // Fixed literal UUIDs (logical order, continuing V4's per-entity prefix convention:
   // a=RC, b=DO, c=SO → d=employee, e=relationship).
@@ -91,20 +92,21 @@ class V5SeedPersonasMigrationTest {
   // --- 1. seven personas: Dana MANAGER + 6 IC reports, attributes + external_subject -------------
   @Test
   void v5_seedsDanaAndSixReports() throws SQLException {
-    // exactly 7 demo employees seeded (the @st6demo.com namespace is the demo seed's own).
+    // exactly 7 demo employees seeded (the @dreddy817.onmicrosoft.com namespace is the demo seed's
+    // own).
     assertThat(scalarInt("select count(*) from employee where email like '%" + DEMO_DOMAIN + "'"))
         .as("7 demo personas seeded")
         .isEqualTo(7);
 
     // Dana — the manager, owns her own plan as IC but is unmanaged.
-    assertEmployee(DANA, "MANAGER", "dana.okafor@st6demo.com", DANA_SUBJECT);
+    assertEmployee(DANA, "MANAGER", "dana.okafor@dreddy817.onmicrosoft.com", DANA_SUBJECT);
     // The 6 IC direct reports (Appendix E Part 2 names).
-    assertEmployee(R1_PRIYA, "IC", "priya.raman@st6demo.com", "st6|priya-raman");
-    assertEmployee(R2_MARCO, "IC", "marco.bellini@st6demo.com", "st6|marco-bellini");
-    assertEmployee(R3_AISHA, "IC", "aisha.khan@st6demo.com", "st6|aisha-khan");
-    assertEmployee(R4_TOMAS, "IC", "tomas.novak@st6demo.com", "st6|tomas-novak");
-    assertEmployee(R5_GRACE, "IC", "grace.liu@st6demo.com", "st6|grace-liu");
-    assertEmployee(R6_SAM, "IC", "sam.carter@st6demo.com", "st6|sam-carter");
+    assertEmployee(R1_PRIYA, "IC", "priya.raman@dreddy817.onmicrosoft.com", "st6|priya-raman");
+    assertEmployee(R2_MARCO, "IC", "marco.bellini@dreddy817.onmicrosoft.com", "st6|marco-bellini");
+    assertEmployee(R3_AISHA, "IC", "aisha.khan@dreddy817.onmicrosoft.com", "st6|aisha-khan");
+    assertEmployee(R4_TOMAS, "IC", "tomas.novak@dreddy817.onmicrosoft.com", "st6|tomas-novak");
+    assertEmployee(R5_GRACE, "IC", "grace.liu@dreddy817.onmicrosoft.com", "st6|grace-liu");
+    assertEmployee(R6_SAM, "IC", "sam.carter@dreddy817.onmicrosoft.com", "st6|sam-carter");
 
     // every demo persona is active, America/Chicago, and carries a non-null external_subject.
     assertThat(

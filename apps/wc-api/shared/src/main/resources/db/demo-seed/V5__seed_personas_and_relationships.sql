@@ -30,19 +30,19 @@ insert into employee
   (id, external_subject, email, display_name, role, active, timezone,
    created_by, created_at, updated_by, updated_at)
 values
-  ('d0000000-0000-0000-0000-000000000001', 'st6|dana-okafor',  'dana.okafor@st6demo.com',  'Dana Okafor',  'MANAGER', true, 'America/Chicago',
+  ('d0000000-0000-0000-0000-000000000001', 'st6|dana-okafor',  'dana.okafor@dreddy817.onmicrosoft.com',  'Dana Okafor',  'MANAGER', true, 'America/Chicago',
    'system-seed', timestamptz '2026-06-02 00:00:00+00', 'system-seed', timestamptz '2026-06-02 00:00:00+00'),
-  ('d0000000-0000-0000-0000-000000000002', 'st6|priya-raman',  'priya.raman@st6demo.com',  'Priya Raman',  'IC', true, 'America/Chicago',
+  ('d0000000-0000-0000-0000-000000000002', 'st6|priya-raman',  'priya.raman@dreddy817.onmicrosoft.com',  'Priya Raman',  'IC', true, 'America/Chicago',
    'system-seed', timestamptz '2026-06-02 00:00:00+00', 'system-seed', timestamptz '2026-06-02 00:00:00+00'),
-  ('d0000000-0000-0000-0000-000000000003', 'st6|marco-bellini', 'marco.bellini@st6demo.com', 'Marco Bellini', 'IC', true, 'America/Chicago',
+  ('d0000000-0000-0000-0000-000000000003', 'st6|marco-bellini', 'marco.bellini@dreddy817.onmicrosoft.com', 'Marco Bellini', 'IC', true, 'America/Chicago',
    'system-seed', timestamptz '2026-06-02 00:00:00+00', 'system-seed', timestamptz '2026-06-02 00:00:00+00'),
-  ('d0000000-0000-0000-0000-000000000004', 'st6|aisha-khan',   'aisha.khan@st6demo.com',   'Aisha Khan',   'IC', true, 'America/Chicago',
+  ('d0000000-0000-0000-0000-000000000004', 'st6|aisha-khan',   'aisha.khan@dreddy817.onmicrosoft.com',   'Aisha Khan',   'IC', true, 'America/Chicago',
    'system-seed', timestamptz '2026-06-02 00:00:00+00', 'system-seed', timestamptz '2026-06-02 00:00:00+00'),
-  ('d0000000-0000-0000-0000-000000000005', 'st6|tomas-novak',  'tomas.novak@st6demo.com',  'Tomas Novak',  'IC', true, 'America/Chicago',
+  ('d0000000-0000-0000-0000-000000000005', 'st6|tomas-novak',  'tomas.novak@dreddy817.onmicrosoft.com',  'Tomas Novak',  'IC', true, 'America/Chicago',
    'system-seed', timestamptz '2026-06-02 00:00:00+00', 'system-seed', timestamptz '2026-06-02 00:00:00+00'),
-  ('d0000000-0000-0000-0000-000000000006', 'st6|grace-liu',    'grace.liu@st6demo.com',    'Grace Liu',    'IC', true, 'America/Chicago',
+  ('d0000000-0000-0000-0000-000000000006', 'st6|grace-liu',    'grace.liu@dreddy817.onmicrosoft.com',    'Grace Liu',    'IC', true, 'America/Chicago',
    'system-seed', timestamptz '2026-06-02 00:00:00+00', 'system-seed', timestamptz '2026-06-02 00:00:00+00'),
-  ('d0000000-0000-0000-0000-000000000007', 'st6|sam-carter',   'sam.carter@st6demo.com',   'Sam Carter',   'IC', true, 'America/Chicago',
+  ('d0000000-0000-0000-0000-000000000007', 'st6|sam-carter',   'sam.carter@dreddy817.onmicrosoft.com',   'Sam Carter',   'IC', true, 'America/Chicago',
    'system-seed', timestamptz '2026-06-02 00:00:00+00', 'system-seed', timestamptz '2026-06-02 00:00:00+00')
 on conflict (id) do nothing;
 
