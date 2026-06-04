@@ -434,3 +434,23 @@ The demo deploys as a standalone static SPA, but `vite build` by default emits t
 - **⚠️ Gotcha — a committed dir/file named `build/…` is silently swallowed by the repo `.gitignore` `build/` rule.** A test at `src/build/*.test.ts` is un-committable (silently absent from `git add`, no error). Name it otherwise (here `src/vite.buildTarget.test.ts`); always `git status`-confirm a new test file is actually tracked before assuming it'll commit.
 
 **Rule:** Build BOTH the MF remote (default `build`/`build:remote`, federation ON, REQ-I-008 demo-free) AND the deployable standalone SPA (`build:standalone` → `VITE_BUILD_TARGET=standalone` → federation OFF, `index.html` entry) from one `vite.config.ts` via a pure env-injected `shouldEnableFederation` resolver — **fail-safe-to-remote** (only the exact `'standalone'` opts out). Unit-test the resolver; build-verify the dist. And never name a committed dir/file `build/…` — the repo `.gitignore` `build/` rule swallows it silently.
+
+## <a id="29"></a>29. Wire the auth-accessor seam SYNCHRONOUSLY (a `useState` lazy-initializer) before children that read it on first render — a mount `useEffect` is too late
+
+**Date:** 2026-06-04.
+**Source slice:** 9.17 (Auth0 OAuth login producer).
+
+`DemoIdentityProvider` registers its accessor-seam providers in a mount `useEffect` (§8/§16) — fine, because nothing reads the seam *during the provider's first render*. The Auth0 path broke that assumption: `WeeklyCommitApp` reads `hasAccessTokenProvider()` on its **first render** to decide its auth0-readiness gate, and the provider's children render in the **same commit** as the provider — so a mount `useEffect` (which runs *after* the commit's paint, child effects first) leaves the seam still `null` when the child checks it → a spurious "no access-token provider configured" alert on the critical path. Fix: register the provider **synchronously during render** via a `useState(() => { setAccessTokenProvider(...); return ... })` lazy-initializer (runs once, before children), and keep a separate `useEffect` purely for the unmount **cleanup**. The §16 reset-on-identity-change stays an effect (it's a post-render reaction, correctly timed).
+
+This was caught by the Step-2.5 fold-in **authenticated-`/*`-nest render test** (StandaloneShell → Routes → gate → AppShell → WeeklyCommitApp) — the isolated gate/provider unit tests passed; only the composed render through the real nest exercised the first-render seam read. A reachable-but-silently-broken critical path that per-component tests miss.
+
+**Rule:** If any child reads an injected seam (`hasAccessTokenProvider()`, a context value, a global registry) **on its first render**, register that seam **synchronously during the provider's render** (a `useState` lazy-initializer), NOT in a mount `useEffect` — effects run after the commit, too late for same-commit children. Keep cleanup in an unmount effect; keep post-render reactions (e.g. §16 reset) in effects. Pin the composed render through the real provider→children nest, not just the pieces in isolation. (Refines [[8]]/[[16]].)
+
+## <a id="30"></a>30. The REQ-I-008 boundary build-grep must scope to the federation-EXPOSED chunk, not all of `dist/`
+
+**Date:** 2026-06-04.
+**Source slice:** 9.17 (Auth0 OAuth login producer).
+
+`vite build` (the default `build:remote`) emits BOTH `remoteEntry.js` + the `__federation_expose_WeeklyCommitApp` chunk (the production remote the PA-host loads — must be demo/auth-free, REQ-I-008) **and** the standalone `index.html` → `main.tsx` bundle (the deployable SPA, which legitimately bears the demo layer AND now `@auth0/auth0-react`). A whole-`dist/` literal grep for an auth/demo marker therefore **false-alarms** on the standalone bundle even when the remote is clean. The host never loads `index.html` (only `remoteEntry.js`), so the SDK in the standalone bundle is not a leak. `boundary.test.ts` already scopes correctly — it walks the static import-graph **from `WeeklyCommitApp`** (the exposed entry), not from `main.tsx` — so the fail-closed scan asserts auth0/demo-absence over the *remote-reachable* graph only; a real-build verification must grep the `remoteEntry` + `__federation_expose_*` artifacts specifically, not the full dist.
+
+**Rule:** Scope any REQ-I-008 build-output grep to the **federation-exposed chunk** (`remoteEntry.js` + `__federation_expose_*`), never all of `dist/` — the same `vite build` also emits the standalone SPA bundle, which carries the demo + auth0 SDK by design. Drive the source-side proof from the **exposed entry's import-graph** (`WeeklyCommitApp`), not the standalone entry (`main.tsx`). (Refines [[6]]/[[28]]; the auth0 SDK is the second standalone-only dep, after the demo layer, the boundary now guards.)

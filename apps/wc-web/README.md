@@ -9,8 +9,117 @@ workspace and the manager command center. It runs **two ways**:
   `./WeeklyCommitApp`) — embedded inside a host shell that provides the router,
   store, and auth accessor.
 
-This document is the **host integration contract** for the remote mode
-(REQ-I-007, REQ-I-013; `ARCHITECTURE.md §7`, §22 / OQ-004).
+This README covers **running it locally**, **deploying the standalone SPA to AWS**
+(with real Auth0 OAuth), and the **host-integration contract** for the remote mode
+(REQ-I-007, REQ-I-013; `ARCHITECTURE.md §7`, §22 / OQ-004):
+
+- [Running locally](#running-locally) — the Vite + MSW dev loop, the quality gate, the standalone build.
+- [Deploying to AWS](#deploying-to-aws-standalone-spa--real-oauth) — `build:standalone` → S3/CloudFront + the Auth0 OAuth login flow.
+- [Host integration](#host-integration) — the Module-Federation remote contract (below).
+
+---
+
+## Running locally
+
+The standalone app (`src/standalone/main.tsx`) renders the full UI with **no backend**
+via an MSW mock layer (ST.7a / 9.15) — the fastest way to see and QA every surface.
+
+```bash
+yarn install                                          # from the repo root (Yarn workspaces)
+cp apps/wc-web/.env.example apps/wc-web/.env.local    # ⚠️ required — see note below
+yarn nx dev wc-web                                    # Vite dev server (default http://localhost:5173)
+```
+
+- **`.env.local` is required.** Vite reads `VITE_*` only from a dotenv file, not from an
+  inline `VITE_AUTH_MODE=demo yarn dev` — without it `prepareHeaders` throws
+  `Unsupported VITE_AUTH_MODE` and every query hangs on the loading skeleton (LESSONS §26).
+  The committed `.env.example` defaults to `VITE_AUTH_MODE=demo`.
+- **Demo mode = MSW + personas.** With `VITE_AUTH_MODE=demo` (and `VITE_API_BASE_URL`
+  **unset** — the mock worker only intercepts same-origin requests), the app boots the
+  mock worker and the in-app **PersonaSwitcher** (a manager + IC personas). Switch personas
+  to exercise the manager command center, the IC weekly plan, and the live disputes loop.
+- **Run against a real local API** instead of mocks: set `VITE_USE_MOCKS=false` +
+  `VITE_API_BASE_URL=http://localhost:8080` in `.env.local` (and run wc-api locally).
+
+### Quality gate
+
+```bash
+yarn nx lint wc-web && yarn nx typecheck wc-web && yarn nx test wc-web   # 310 Vitest, all green
+yarn prettier --check .
+```
+
+### The standalone build (preview the deployable artifact)
+
+```bash
+cd apps/wc-web && yarn build:standalone   # VITE_BUILD_TARGET=standalone → dist/ (index.html + hashed assets)
+yarn preview                              # serve dist/ over a static server + open the SPA
+```
+
+`build:standalone` turns the Module-Federation plugin **OFF** and builds a static SPA from
+`index.html` (LESSONS §28). Plain `yarn build` (= `build:remote`) is **unchanged** — it emits
+the production `remoteEntry.js`. The two are separate artifacts from one `vite.config.ts`.
+
+---
+
+## Deploying to AWS (standalone SPA + real OAuth)
+
+The deployed demo serves the **standalone SPA** as static files from **S3 + CloudFront**,
+authenticating against the real wc-api via **Auth0 OAuth** — never the demo header (safety
+rule #5; `DEMO_AUTH_ENABLED` stays off in the deployed env).
+
+### 1. Build the SPA (env is baked at build time)
+
+Vite inlines `import.meta.env` at build → **one build per backend URL + Auth0 tenant**. Set
+these (in `.env.local` or the build environment) — the full reference + verified values live
+in [`.env.example`](.env.example), not duplicated here:
+
+| Var | Value |
+| --- | --- |
+| `VITE_AUTH_MODE` | `auth0` |
+| `VITE_USE_MOCKS` | `false` |
+| `VITE_API_BASE_URL` | `https://api.wc.<ROOT_DOMAIN>` (required — fail-fast if unset) |
+| `VITE_AUTH0_DOMAIN` | the issuer tenant domain (the SAME tenant as the backend `AUTH0_ISSUER_URI`) |
+| `VITE_AUTH0_CLIENT_ID` | the Auth0 SPA application's Client ID |
+| `VITE_AUTH0_AUDIENCE` | `https://api.wc.<ROOT_DOMAIN>` (== backend `auth0.audience`) |
+
+```bash
+cd apps/wc-web && yarn build:standalone    # → dist/  (index.html + hashed assets)
+```
+
+### 2. Serve from S3 + CloudFront
+
+Upload `dist/` to the S3 bucket fronted by CloudFront (Terraform: `infra/terraform/s3_cloudfront.tf`,
+task 12.6). **SPA-fallback is already configured there** — CloudFront returns `/index.html` (200)
+for `403`/`404`, with `default_root_object = index.html` — so a hard refresh or deep link on a
+client route (e.g. `/callback`, `/manager/command-center`) resolves to the SPA, not a CloudFront
+404. No extra infra is needed for client-side routing.
+
+### 3. The OAuth login flow (9.17)
+
+`VITE_AUTH_MODE=auth0` activates the standalone-only **Auth0 PKCE SPA login**
+(`src/standalone/Auth0IdentityProvider.tsx`):
+
+1. Unauthenticated → a branded **login screen** → `loginWithRedirect()` → Auth0 Universal Login.
+2. Auth0 redirects to **`<origin>/callback`** → the SDK exchanges the code → `onRedirectCallback`
+   navigates into the app (the `/callback` route renders only while the exchange runs).
+3. `getAccessTokenSilently()` feeds the token into the existing accessor seam → every request
+   carries `Authorization: Bearer <jwt>` → wc-api validates it and resolves the seeded employee
+   via the `…/employee_id` claim.
+4. The app-bar shows **"signed in as X"** + Log out (the PersonaSwitcher is retired in auth0 mode).
+
+**Personas are real Auth0 test users**, one per seeded employee — log in as the manager (Dana) or
+an IC; cross-role flows (e.g. disputes) run across two browser windows. The federated remote build
+carries **none** of this — the Auth0 SDK is standalone-only (REQ-I-008, pinned by `boundary.test.ts`).
+
+### 4. Stand up the Auth0 tenant (HITL — one-time)
+
+Configuring the Auth0 tenant (API/audience, the SPA app + Allowed Callback `<origin>/callback`,
+the 7 test users, the post-login Action that emits the `…/employee_id` claim) and the backend
+OAuth env (`AUTH0_ISSUER_URI` / `AUTH0_AUDIENCE` / `DEMO_AUTH_ENABLED=false`) is a one-time manual
+step — follow **[`docs/runbooks/auth0-tenant-setup.md`](../../docs/runbooks/auth0-tenant-setup.md)**.
+
+> The EKS / RDS / S3 / CloudFront provisioning itself is infra (Phase 12) + HITL — see `infra/`
+> and the deploy runbooks.
 
 ---
 
