@@ -4,6 +4,8 @@
 >
 > **Severity scale:** **S1** = structural/missing-whole-element · **S2** = significant fidelity gap · **S3** = polish.
 
+> **⚠️ THIS LIST IS A STARTING POINT, NOT EXHAUSTIVE (user directive). THE MOCKUP IS CANON.** The fix-pair MUST do a **direct mockup-vs-real comparison in the gstack browser** — load BOTH the canon mockup (`docs/design/cadence-design-system/ui_kits/weekly-commit/index.html`, served locally) AND the running standalone app, put them **side-by-side per surface** (command center, IC plan view, heatmap, drawers, both themes), and **fix EVERY deviation found — including ones not enumerated below.** Treat any divergence from the mockup as a defect to close. (Example the user flagged: the **filters** render completely differently from the canon — captured in §B.2, but illustrative of why the canon-compare must be exhaustive, not list-bounded.)
+
 > **🎨 AUTHORITATIVE MOCKUP REFERENCE (user directive — reference these directly when fixing each deviation):** the full composed-app UI kit lives at **`docs/design/cadence-design-system/ui_kits/weekly-commit/`** — a complete React mockup. Match against the actual mockup components, not just this text list:
 > - **`app.jsx`** → the **app-shell** (top app-bar + primary nav + breadcrumbs) — the **§A S1** reference.
 > - **`CommandCenter.jsx`** → command-center fidelity (summary strip, labeled risk chips, filter row, table, avatars/timestamps) — **§B**.
