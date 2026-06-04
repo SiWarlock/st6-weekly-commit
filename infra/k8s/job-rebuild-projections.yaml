@@ -1,0 +1,66 @@
+# job-rebuild-projections.yaml — one-shot manager read-model rebuild Job (§9/§17/§23, 12.14).
+# Reuses the wc-api IMAGE (no third image — forbidden-pattern #5) with arg
+# --app.job=rebuild-projections (the 6.7 ProjectionRebuildRunner, gated by
+# @ConditionalOnProperty(app.job=rebuild-projections)): it truncates + recomputes
+# manager_plan_summary + manager_heatmap_cell from the (V6-seeded) source, so the manager
+# command-center/heatmap show data on first load. Idempotent (truncate-then-recompute).
+# Runs as wc-cronjob SA (IRSA: GetSecretValue DB ONLY); mounts wc-cronjob-secrets (db only)
+# at /mnt/secrets. spring.flyway.enabled=false (forbidden-pattern #3 — only the migration Job
+# migrates). NO Auth0 / Graph / SNS / SQS / CORS env (db-only batch).
+#
+# One-shot TERMINATION: --spring.main.web-application-type=none — the runner deliberately does
+# NOT call SpringApplication.exit / hold the context (per its javadoc), so with no web server,
+# once the ApplicationRunner returns, main() returns and the JVM terminates. activeDeadlineSeconds
+# is the operational backstop. restartPolicy Never + finite backoffLimit.
+#
+# §12 DEPLOY ORDERING (migration seeds V6 source → rebuild populates projections → roll) is
+# enforced by the 12.11 pipeline (kubectl wait between steps), NOT by this manifest.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: wc-rebuild-projections
+  namespace: wc
+  labels:
+    app.kubernetes.io/part-of: wc
+    app.kubernetes.io/component: rebuild-projections
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: wc
+        app.kubernetes.io/component: rebuild-projections
+    spec:
+      serviceAccountName: wc-cronjob
+      restartPolicy: Never
+      containers:
+        - name: wc-rebuild-projections
+          image: ${ECR_API_IMAGE}
+          args:
+            - "--app.job=rebuild-projections"
+            - "--spring.main.web-application-type=none"
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "aws"
+            - name: SPRING_FLYWAY_ENABLED
+              value: "false"
+            - name: AWS_REGION
+              value: "${AWS_REGION}"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: secrets-store
+              mountPath: /mnt/secrets
+              readOnly: true
+      volumes:
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: wc-cronjob-secrets

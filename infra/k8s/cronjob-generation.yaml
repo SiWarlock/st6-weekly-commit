@@ -23,6 +23,7 @@ spec:
   jobTemplate:
     spec:
       backoffLimit: 2
+      activeDeadlineSeconds: 600
       template:
         metadata:
           labels:
@@ -36,6 +37,9 @@ spec:
               image: ${ECR_API_IMAGE}
               args:
                 - "--app.job=generate-plan-shells"
+                # One-shot termination: no web server → main() returns → JVM exits (the runner
+                # does NOT self-exit; per PlanShellGenerationRunner javadoc + application.yml).
+                - "--spring.main.web-application-type=none"
               env:
                 - name: SPRING_PROFILES_ACTIVE
                   value: "aws,generation"

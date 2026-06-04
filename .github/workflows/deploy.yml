@@ -186,7 +186,8 @@ jobs:
           mkdir -p rendered
           for f in namespace serviceaccount-api serviceaccount-worker serviceaccount-cronjob \
                    serviceaccount-migration secretproviderclass service-api ingress-api \
-                   deployment-api deployment-worker cronjob-generation job-migration; do
+                   deployment-api deployment-worker cronjob-generation job-migration \
+                   job-rebuild-projections; do
             envsubst "${allow}" < "infra/k8s/${f}.yaml" > "rendered/${f}.yaml"
           done
 
@@ -226,6 +227,43 @@ jobs:
             fi
             if [ "${SECONDS}" -ge "${deadline}" ]; then
               echo "migration Job timed out after 600s"
+              exit 1
+            fi
+            sleep 5
+          done
+
+      # (d2) Rebuild the manager read-model projections from the (migration-seeded V6) source
+      #      BEFORE the api serves traffic, so the command-center/heatmap show data on first load.
+      #      Reuses the wc-api image via --app.job=rebuild-projections (the 6.7
+      #      ProjectionRebuildRunner; idempotent truncate-then-recompute). Ordering is
+      #      migration (seeds source) -> rebuild (populates projections) -> roll: this step runs
+      #      AFTER the migration wait-gate (d) and BEFORE the first Deployment roll (e), and the
+      #      sequential step graph makes an out-of-order path unreachable (like migrate-before-roll,
+      #      §12/§18). Same delete-before-apply (a Job's spec.template is immutable — H1) + fail-fast
+      #      poll (a Failed rebuild aborts the deploy promptly instead of blocking the full timeout —
+      #      L1) as the migration step. A non-complete rebuild FAILS the deploy (surface an empty
+      #      manager surface at deploy, not silently in the demo) — NOT a rule-#4 concern (that is the
+      #      Outlook sync vs the lifecycle txn; this is deploy-time read-model population).
+      - name: Rebuild manager projections (fail-fast wait)
+        run: |
+          set -euo pipefail
+          kubectl delete job/wc-rebuild-projections -n wc --ignore-not-found
+          kubectl apply -f rendered/job-rebuild-projections.yaml
+          deadline=$((SECONDS + 600))
+          while true; do
+            if kubectl get job/wc-rebuild-projections -n wc \
+                 -o 'jsonpath={.status.conditions[?(@.type=="Complete")].status}' 2>/dev/null | grep -q True; then
+              echo "rebuild-projections Job complete"
+              break
+            fi
+            if kubectl get job/wc-rebuild-projections -n wc \
+                 -o 'jsonpath={.status.conditions[?(@.type=="Failed")].status}' 2>/dev/null | grep -q True; then
+              echo "rebuild-projections Job FAILED"
+              kubectl logs -n wc job/wc-rebuild-projections --tail=50 || true
+              exit 1
+            fi
+            if [ "${SECONDS}" -ge "${deadline}" ]; then
+              echo "rebuild-projections Job timed out after 600s"
               exit 1
             fi
             sleep 5
