@@ -322,13 +322,64 @@ jobs:
       # (g) Deployed smoke (REQ-E-006): the SPA serves + the API readiness probe answers
       #     200 over ACM TLS on the custom domains. Self-contained curl (no apps/** edit);
       #     the richer Cypress smoke subset is st6-main's territory (cross-team carry-forward).
+      #
+      #     First-deploy DNS hardening: external-dns writes the api.wc ALIAS only ~1-2 min after
+      #     the Ingress comes up, and an early NXDOMAIN gets negatively cached by the runner's
+      #     recursive resolver for up to the zone's SOA negative-cache TTL (<=900s) — far longer
+      #     than a plain `curl --retry` budget, so the runner keeps returning the stale NXDOMAIN
+      #     even after the record is live (root cause of the first deploy-#11 smoke failure: the
+      #     record existed at 03:39:05 but the 90s curl-retry window couldn't outlast the cache).
+      #     Deterministic fix (not "wait it out"): (1) a wait-gate that resolves each host on a
+      #     PUBLIC resolver (1.1.1.1/8.8.8.8) — proves real global propagation independent of the
+      #     runner's poisoned local cache; (2) curl with --resolve pinning those IPs, so the
+      #     assertion itself never consults the runner's local resolver (SNI still presents the
+      #     hostname → the ACM cert matches). The assertions are UNCHANGED (API readiness 200 +
+      #     SPA 200 over real ACM TLS); a genuinely-missing record (wait-gate exits 1) or a real
+      #     outage (curl -f on any non-2xx) still FAILS — this hardens timing, never masks a fault.
       - name: Deployed smoke (REQ-E-006)
         run: |
           set -euo pipefail
-          echo "Smoke: API readiness over ACM TLS"
-          curl -fsS --retry 5 --retry-delay 15 --retry-all-errors \
-            "https://api.wc.${ROOT_DOMAIN}/actuator/health/readiness"
-          echo "Smoke: SPA root over ACM TLS"
-          curl -fsS --retry 5 --retry-delay 15 --retry-all-errors \
-            "https://wc.${ROOT_DOMAIN}" > /dev/null
+
+          # Echo comma-joined A records for $1 via a PUBLIC resolver (bypasses the runner cache).
+          resolve_public() {
+            local host="$1" ips=""
+            ips="$(dig +short A "$host" @1.1.1.1 2>/dev/null | grep -E '^[0-9.]+$' | paste -sd, - || true)"
+            if [ -z "$ips" ]; then
+              ips="$(dig +short A "$host" @8.8.8.8 2>/dev/null | grep -E '^[0-9.]+$' | paste -sd, - || true)"
+            fi
+            printf '%s' "$ips"
+          }
+
+          # Block until $1 resolves on a public resolver (<= ~7 min budget), echo the IPs, or fail.
+          wait_resolve() {
+            local host="$1" ips="" i
+            for i in $(seq 1 42); do
+              ips="$(resolve_public "$host")"
+              if [ -n "$ips" ]; then printf '%s' "$ips"; return 0; fi
+              echo "  ...${host} not yet resolvable on public DNS (waited $((i * 10))s)" >&2
+              sleep 10
+            done
+            echo "FAIL: ${host} did not resolve on public DNS within budget" >&2
+            return 1
+          }
+
+          api_host="api.wc.${ROOT_DOMAIN}"
+          spa_host="wc.${ROOT_DOMAIN}"
+
+          echo "Smoke: confirming ${api_host} has propagated globally (public DNS)..."
+          api_ips="$(wait_resolve "$api_host")"
+          echo "  ${api_host} -> ${api_ips}"
+          echo "Smoke: API readiness over ACM TLS (IP-pinned, bypasses runner DNS cache)"
+          curl -fsS --retry 5 --retry-delay 10 --retry-all-errors \
+            --resolve "${api_host}:443:${api_ips}" \
+            "https://${api_host}/actuator/health/readiness"
+
+          echo "Smoke: confirming ${spa_host} has propagated globally (public DNS)..."
+          spa_ips="$(wait_resolve "$spa_host")"
+          echo "  ${spa_host} -> ${spa_ips}"
+          echo "Smoke: SPA root over ACM TLS (IP-pinned)"
+          curl -fsS --retry 5 --retry-delay 10 --retry-all-errors \
+            --resolve "${spa_host}:443:${spa_ips}" \
+            "https://${spa_host}" > /dev/null
+
           echo "Deployed smoke passed."
