@@ -2,6 +2,7 @@ package com.st6.wc.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
 
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
@@ -24,9 +25,10 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.security.oauth2.resource.servlet.OAuth2ResourceServerAutoConfiguration;
-import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
+import org.springframework.security.web.SecurityFilterChain;
 
 /**
  * No-collision proof for the custom {@code JwtDecoder} (task 2.6, folds the 2.1 carry-forward).
@@ -64,9 +66,15 @@ class CustomJwtDecoderWinsTest {
       String issuer = server.url("/").toString();
       server.setDispatcher(discoveryAndJwksDispatcher(issuer));
 
-      new ApplicationContextRunner()
+      new WebApplicationContextRunner()
           .withConfiguration(AutoConfigurations.of(OAuth2ResourceServerAutoConfiguration.class))
           .withUserConfiguration(JwtConfig.class)
+          // A stub SecurityFilterChain skips Boot's @ConditionalOnDefaultWebSecurity oauth2 chain
+          // (jwtSecurityFilterChain — irrelevant here, and it needs an @EnableWebSecurity
+          // HttpSecurity
+          // we don't wire); this isolates the DECODER collision (the test's point): Boot's
+          // @ConditionalOnMissingBean(JwtDecoder) still runs and must yield to JwtConfig's @Bean.
+          .withBean(SecurityFilterChain.class, () -> mock(SecurityFilterChain.class))
           .withPropertyValues(
               "demo-auth.enabled=false",
               "spring.security.oauth2.resourceserver.jwt.issuer-uri=" + issuer,

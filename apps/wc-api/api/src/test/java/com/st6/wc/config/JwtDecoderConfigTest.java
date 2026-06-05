@@ -25,7 +25,7 @@ import okhttp3.mockwebserver.RecordedRequest;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
-import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -40,7 +40,8 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
  * keypair + Nimbus-signed tokens (no live Auth0/JWKS — the decoder under test is built {@code
  * withPublicKey} but wired with the SAME validators {@link JwtConfig} uses in production, so the
  * security-critical validation path is exercised). Fail-fast-on-missing-config uses {@link
- * ApplicationContextRunner} (LESSONS §4). The 401-problem+json filter-chain behavior is task 2.6.
+ * WebApplicationContextRunner} (LESSONS §4). The 401-problem+json filter-chain behavior is task
+ * 2.6.
  */
 class JwtDecoderConfigTest {
 
@@ -136,8 +137,8 @@ class JwtDecoderConfigTest {
 
   @Test
   void missing_issuer_or_audience_config_fails_fast() {
-    ApplicationContextRunner runner =
-        new ApplicationContextRunner()
+    WebApplicationContextRunner runner =
+        new WebApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of())
             .withUserConfiguration(JwtConfig.class);
 
@@ -198,7 +199,7 @@ class JwtDecoderConfigTest {
             }
           });
 
-      new ApplicationContextRunner()
+      new WebApplicationContextRunner()
           .withUserConfiguration(JwtConfig.class)
           .withPropertyValues(
               "demo-auth.enabled=false",
@@ -214,7 +215,7 @@ class JwtDecoderConfigTest {
     // cleanly even with blank Auth0 config, and no decoder bean exists. This is the cross-slice
     // gate
     // 2.3 (DemoAuthFilter) + 2.6 (SecurityConfig) depend on (and the demo-mode skeleton boot path).
-    new ApplicationContextRunner()
+    new WebApplicationContextRunner()
         .withUserConfiguration(JwtConfig.class)
         .withPropertyValues(
             "demo-auth.enabled=true",

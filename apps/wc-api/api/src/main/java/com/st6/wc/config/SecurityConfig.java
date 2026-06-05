@@ -6,6 +6,7 @@ import com.st6.wc.web.ProblemDetailsAccessDeniedHandler;
 import com.st6.wc.web.ProblemDetailsAuthenticationEntryPoint;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.Customizer;
@@ -37,7 +38,15 @@ import org.springframework.security.web.access.intercept.AuthorizationFilter;
  * (resource ownership is delegated to {@code DomainAuthorizationService}); authn/authz failures
  * render RFC-7807 via the shared entry point / access-denied handler.
  */
+// Web-gate (deploy-fix #9): @EnableWebSecurity forces the SecurityFilterChain beans to build
+// regardless of web-application-type, so a one-shot batch job sharing the serving image (web=none,
+// no Auth0) would still build the real chain → require the JwtDecoder → fail-boot. Gate the whole
+// config (incl. @EnableWebSecurity + @EnableMethodSecurity) to servlet-web contexts: the serving
+// api
+// is always servlet-web (full security intact); the non-serving batch jobs exclude it (nothing to
+// secure — no HTTP endpoints). Pairs with the same gate on JwtConfig (the eager jwtDecoder).
 @Configuration(proxyBeanMethods = false) // the @Bean methods don't call each other (lite mode)
+@ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 @EnableWebSecurity
 @EnableMethodSecurity
 public final class SecurityConfig {

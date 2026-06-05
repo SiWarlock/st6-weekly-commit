@@ -1,6 +1,7 @@
 package com.st6.wc.config;
 
 import com.st6.wc.enums.RoleType;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -20,7 +21,13 @@ import org.springframework.util.StringUtils;
  * "no hint" — the authoritative role is relationship-derived in 2.4); {@code email} is the
  * configured email claim or {@code null}. No claim name is hardcoded.
  */
+// Web-gate (deploy-fix #9): the JWT claim mapper is part of the serving (real-mode chain) JWT path
+// —
+// it consumes Auth0Properties (registered by the now-web-gated JwtConfig) and is used only by the
+// HTTP request authz path (PrincipalJwtAuthenticationConverter). Gate it to servlet-web so a
+// non-serving batch job (web=none) doesn't eagerly instantiate it (and require Auth0Properties).
 @Component
+@ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 public class Auth0ClaimMapper {
 
   private final Auth0Properties.Claims claims;

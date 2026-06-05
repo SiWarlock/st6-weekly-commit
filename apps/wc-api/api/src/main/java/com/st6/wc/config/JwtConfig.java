@@ -2,6 +2,7 @@ package com.st6.wc.config;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -28,7 +29,15 @@ import org.springframework.util.StringUtils;
  * value fails fast at startup naming the key (never a silent insecure default — §6). The {@code
  * SecurityFilterChain} that wires this decoder into request processing is task 2.6.
  */
+// Web-gate (deploy-fix #9): the jwtDecoder is an EAGER singleton (gated only on demo-auth, not
+// web),
+// so a non-serving batch job (web=none, no Auth0 issuer/audience) instantiates it at startup → its
+// requireRealModeConfig fail-fast crashes the boot. Gate the config to servlet-web: the serving api
+// always builds the decoder (Auth0 fail-fast intact); the batch jobs exclude it (no HTTP path needs
+// a JWT decoder). Must mirror SecurityConfig's gate (gating only SecurityConfig still crashes
+// here).
 @Configuration
+@ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 @EnableConfigurationProperties(Auth0Properties.class)
 public class JwtConfig {
 
