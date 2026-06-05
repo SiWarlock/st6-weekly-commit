@@ -28,6 +28,11 @@ dependencies {
   // in WorkerSharedConfig + the sync repo), so depend on it explicitly (compile + runtime).
   implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 
+  // Production datasource runtime (deploy-fix #6): the postgres JDBC driver must ship in the worker
+  // bootJar — the worker has a real-PG datasource since s8 (flyway is off → driver only, no Flyway).
+  // It was testImplementation-only (Testcontainers); testImplementation stays for the test classpath.
+  runtimeOnly 'org.postgresql:postgresql'
+
   compileOnly libs.lombok
   annotationProcessor libs.lombok
 

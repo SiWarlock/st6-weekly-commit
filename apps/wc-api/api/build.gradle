@@ -35,6 +35,18 @@ dependencies {
   // (Appendix E Part 1 — code-point caps, @NotBlank/@NotNull, the custom @CodePointSize/@NoControlChars).
   implementation 'org.springframework.boot:spring-boot-starter-validation'
 
+  // Production runtime classpath (deploy-fix #6): these were testImplementation-only (Testcontainers)
+  // so they were ABSENT from the bootJar — the migration Job (real PG, outside Testcontainers) failed
+  // "Failed to load driver class org.postgresql.Driver" at datasource init. Ship them in the bootJar:
+  //   - postgresql: the JDBC driver (the api Deployment's own datasource + the migration Job).
+  //   - flyway-core: the migration engine — the flyway-migrate Job runs it (autoconfig-loaded; flyway
+  //     stays disabled in every other profile, so this is inert there). [audit: was test-only too.]
+  //   - flyway-database-postgresql: Flyway 10 split PG support out of flyway-core (Boot 3.3).
+  // BOM-versioned (no explicit version). testImplementation stays for the test classpath (compile).
+  runtimeOnly 'org.postgresql:postgresql'
+  runtimeOnly 'org.flywaydb:flyway-core'
+  runtimeOnly 'org.flywaydb:flyway-database-postgresql'
+
   compileOnly libs.lombok
   annotationProcessor libs.lombok
 

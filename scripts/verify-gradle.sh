@@ -196,6 +196,29 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+echo "== Gate 7: production_runtime_drivers =="
+# Deploy-fix #6: the postgres JDBC driver (+ the api's Flyway 10 engine + its split-out PG support)
+# must ship in the bootJars — they were testImplementation-only (Testcontainers), so the migration
+# Job (real PG, outside Testcontainers) failed "Failed to load driver class org.postgresql.Driver" at
+# datasource init. No unit test catches a testImplementation-vs-runtime scope gap, so assert each
+# bootJar's BOOT-INF/lib contents directly (reuses the jars Gate 6 built).
+jar_has_lib() { unzip -l "$1" 2>/dev/null | grep -qE "BOOT-INF/lib/$2"; }
+if [ -n "${API_JAR:-}" ] && [ -f "$API_JAR" ] && [ -n "${WORKER_JAR:-}" ] && [ -f "$WORKER_JAR" ]; then
+  rtmiss=""
+  jar_has_lib "$API_JAR" 'postgresql-[0-9].*\.jar'                 || rtmiss="${rtmiss} api:postgresql"
+  jar_has_lib "$API_JAR" 'flyway-core-[0-9].*\.jar'                || rtmiss="${rtmiss} api:flyway-core"
+  jar_has_lib "$API_JAR" 'flyway-database-postgresql-[0-9].*\.jar' || rtmiss="${rtmiss} api:flyway-database-postgresql"
+  jar_has_lib "$WORKER_JAR" 'postgresql-[0-9].*\.jar'              || rtmiss="${rtmiss} worker:postgresql"
+  if [ -z "${rtmiss}" ]; then
+    ok "bootJars carry the prod runtime deps (api: postgresql+flyway-core+flyway-pg; worker: postgresql)"
+  else
+    bad "bootJar(s) missing production runtime deps:${rtmiss} (deploy-fix #6 — check runtimeOnly scope)"
+  fi
+else
+  bad "bootJars not available from Gate 6 — cannot verify production runtime drivers"
+fi
+
+# ---------------------------------------------------------------------------
 echo
 echo "== Summary: ${PASS} passed, ${FAIL} failed =="
 [ "$FAIL" -eq 0 ]
