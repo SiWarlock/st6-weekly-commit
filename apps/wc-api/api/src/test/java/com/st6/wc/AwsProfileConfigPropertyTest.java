@@ -98,4 +98,39 @@ class AwsProfileConfigPropertyTest {
     assertThat(propertyUnder("app.env")).as("no app.env outside aws").isNull();
     assertThat(propertyUnder("app.env", "local")).as("no app.env in local").isNull();
   }
+
+  // --- deploy-fix #7: the aws profile must keep base's always-resolvable-defaults invariant ------
+  // The non-HTTP-serving Jobs (migration / generate-plan-shells / rebuild-projections) run aws but
+  // never set ROOT_DOMAIN — so the nested ${ROOT_DOMAIN} on the audience (line 30) + CORS (line 50)
+  // must carry the :localhost default (mirroring base application.yml) or the Job context
+  // fail-boots
+  // on "Could not resolve placeholder 'ROOT_DOMAIN'". RED today (the bare ${ROOT_DOMAIN}).
+  @Test
+  void awsProfile_noEnv_resolvesRootDomainPlaceholdersToLocalhost() {
+    assertThat(propertyUnder("auth0.audience", "aws"))
+        .as("aws audience resolves with no ROOT_DOMAIN env (Job context)")
+        .isEqualTo("https://api.wc.localhost");
+    assertThat(propertyUnder("app.cors.allowed-origins", "aws"))
+        .as("aws CORS allow-list resolves with no ROOT_DOMAIN/CORS env (Job context)")
+        .isEqualTo("https://wc.localhost");
+  }
+
+  @Test
+  void awsProfile_withRootDomain_resolvesRealDomain() {
+    // Production unchanged: the api/worker Deployments inject the real ROOT_DOMAIN → audience +
+    // CORS
+    // resolve to the real domain; the :localhost default only applies in the non-serving Jobs.
+    final String[] holder = new String[2];
+    runner
+        .withPropertyValues("spring.profiles.active=aws", "ROOT_DOMAIN=example.com")
+        .run(
+            ctx -> {
+              holder[0] = ctx.getEnvironment().getProperty("auth0.audience");
+              holder[1] = ctx.getEnvironment().getProperty("app.cors.allowed-origins");
+            });
+    assertThat(holder[0])
+        .as("real ROOT_DOMAIN wins for audience")
+        .isEqualTo("https://api.wc.example.com");
+    assertThat(holder[1]).as("real ROOT_DOMAIN wins for CORS").isEqualTo("https://wc.example.com");
+  }
 }
