@@ -25,6 +25,11 @@ resource "helm_release" "secrets_store_csi_driver" {
     syncSecret           = { enabled = false } # rule #7 — never sync mounted secrets into k8s Secrets/etcd
     enableSecretRotation = true                # ★Q-rotation — rotated creds refresh without a pod restart
     rotationPollInterval = "2m"
+    # deploy-issue #5: configure the CSIDriver's spec.tokenRequests so the kubelet projects the
+    # pod SA's bound token (aud=sts.amazonaws.com) into the driver → the AWS provider (ASCP) uses
+    # it for the IRSA AssumeRoleWithWebIdentity. WITHOUT this the mount fails with
+    # "CSI token error: serviceAccount.tokens not provided - ensure tokenRequests is configured".
+    tokenRequests = [{ audience = "sts.amazonaws.com" }]
   })]
 
   depends_on = [module.eks]
