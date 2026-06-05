@@ -17,3 +17,6 @@ build/
 # Code-intelligence index (CodeGraph MCP) — local SQLite knowledge-graph cache, never committed.
 .codegraph/
 .gstack/
+
+# Demo video script — local working artifact, not committed.
+docs/demo.md
