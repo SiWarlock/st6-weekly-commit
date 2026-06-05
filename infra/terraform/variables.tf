@@ -164,6 +164,21 @@ variable "github_repo" {
   type        = string
 }
 
+# --- 12.7c-fix (deploy-issue #4): stable cluster-admin principal -------------
+
+variable "admin_principal_arn" {
+  description = <<-EOT
+    IAM principal ARN of the human bootstrap/break-glass admin — the user/role that runs
+    the first local `terraform apply` (e.g. arn:aws:iam::<account>:user/wc-deploy-admin).
+    Granted a STABLE EKS cluster-admin access entry (eks.tf aws_eks_access_entry.admin) so
+    cluster access does NOT churn when the apply identity changes (human admin ↔ the
+    wc-aws-ci-deploy CI role) — it replaces the module's caller-derived cluster_creator entry
+    (enable_cluster_creator_admin_permissions=false). Required, no default — deploy-specific
+    (like github_repo); supply via TF_VAR_admin_principal_arn locally + a GitHub var for CI.
+  EOT
+  type        = string
+}
+
 # --- 12.10: CloudWatch ------------------------------------------------------
 
 variable "cloudwatch_log_retention_days" {

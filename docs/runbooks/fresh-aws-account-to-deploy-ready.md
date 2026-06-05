@@ -72,6 +72,7 @@ terraform init \
 # the two no-default vars (deploy-specific):
 export TF_VAR_ROOT_DOMAIN="<ROOT_DOMAIN>"
 export TF_VAR_github_repo="SiWarlock/st6-weekly-commit"     # the OIDC trust subject
+export TF_VAR_admin_principal_arn="$(aws sts get-caller-identity --query Arn --output text)"  # YOU (the admin) — stable EKS cluster-admin entry
 # export TF_VAR_region="<region>"               # optional; defaults to us-east-1
 
 terraform plan -out tfplan
@@ -115,18 +116,20 @@ gh variable set TF_STATE_LOCK_TABLE --env production --repo SiWarlock/st6-weekly
 | `TF_STATE_LOCK_TABLE` | the lock table name | Step 1 `lock_table_name` output |
 | `AUTH0_DOMAIN` | the Auth0 SPA app's tenant Domain | runbook (a) §1.2 ("note the Domain") |
 | `AUTH0_CLIENT_ID` | the Auth0 SPA app's Client ID | runbook (a) §1.2 ("note the Client ID") |
+| `ADMIN_PRINCIPAL_ARN` | the human-admin IAM principal (stable EKS cluster-admin entry) | the ARN that ran the first local `apply` (Step 3) — e.g. `arn:aws:iam::<account>:user/wc-deploy-admin` |
 
 ```bash
 # the 2 SPA-build vars (the pipeline bakes VITE_AUTH0_DOMAIN/CLIENT_ID/AUDIENCE into the SPA):
 gh variable set AUTH0_DOMAIN    --env production --repo SiWarlock/st6-weekly-commit --body "<tenant>.<region>.auth0.com"
 gh variable set AUTH0_CLIENT_ID --env production --repo SiWarlock/st6-weekly-commit --body "<spa-client-id>"
+gh variable set ADMIN_PRINCIPAL_ARN --env production --repo SiWarlock/st6-weekly-commit --body "arn:aws:iam::<account>:user/wc-deploy-admin"
 ```
 > `AUTH0_DOMAIN` + `AUTH0_CLIENT_ID` feed the wc-web build (`VITE_AUTH0_*`); the SPA's `auth0Config.ts` fail-fasts without them, so the deployed login won't boot if they're unset. `VITE_AUTH0_AUDIENCE` is derived from `ROOT_DOMAIN` (no separate var).
 
 - **Required reviewers** are the manual gate: every `deploy.yml` run pauses for an approval before any AWS-touching step. No static AWS keys are ever set as GitHub secrets (OIDC only).
 
 ## Deploy-ready ✅
-Infra exists, OIDC trust is live, the 7 variables are set, the `production` Environment gates the deploy. → Proceed to runbook **(c) `deploy-and-smoke.md`** to populate the secret values + run the pipeline + smoke.
+Infra exists, OIDC trust is live, the 8 variables are set, the `production` Environment gates the deploy. → Proceed to runbook **(c) `deploy-and-smoke.md`** to populate the secret values + run the pipeline + smoke.
 
 ---
 

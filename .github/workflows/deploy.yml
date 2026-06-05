@@ -102,6 +102,9 @@ jobs:
       TF_VAR_ROOT_DOMAIN: ${{ vars.ROOT_DOMAIN }}
       TF_VAR_region: ${{ vars.AWS_REGION }}
       TF_VAR_github_repo: ${{ github.repository }}
+      # deploy-issue #4: the human-admin's STABLE EKS cluster-admin access-entry principal
+      # (eks.tf aws_eks_access_entry.admin). CI's apply must supply it, else the entry churns.
+      TF_VAR_admin_principal_arn: ${{ vars.ADMIN_PRINCIPAL_ARN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

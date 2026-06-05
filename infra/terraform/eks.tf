@@ -17,16 +17,19 @@ module "eks" {
   # denies creating unbounded roles).
   iam_role_permissions_boundary = aws_iam_policy.ci_boundary.arn
 
-  # Public API endpoint so the HITL operator + CI can reach it; cluster creator is
-  # granted admin via an access entry (API auth mode — v21 default). The CI-deploy-
-  # role access entry is added in 12.7 alongside the role itself (deferred here to
-  # avoid referencing a not-yet-created resource — infra LESSONS §3).
+  # Public API endpoint so the HITL operator + CI can reach it. Cluster-admin access is
+  # granted via EXPLICIT, identity-STABLE access entries — NOT the module's caller-derived
+  # cluster_creator entry (deploy-issue #4): with enable_cluster_creator_admin_permissions
+  # the entry's principal = whoever runs `apply`, so it churned (replace) between the human
+  # admin's local apply (wc-deploy-admin) and the CI role's apply (wc-aws-ci-deploy), and
+  # collided with the standalone CI entry. Disabled here; both principals get a fixed entry:
+  # the CI role in iam_ci.tf, the human admin via aws_eks_access_entry.admin below.
   endpoint_public_access = true
   # 12-audit M2: make the public-endpoint CIDR scope explicit + overridable (default open,
   # mirroring the module default). Tighten to operator/CI egress in real deploys; the
   # accepted-residual rationale for the default-open value lives in docs/decisions/001.
   endpoint_public_access_cidrs             = var.eks_public_access_cidrs
-  enable_cluster_creator_admin_permissions = true
+  enable_cluster_creator_admin_permissions = false
 
   # IRSA: create the cluster OIDC provider (the per-workload IRSA roles in 12.7 and
   # the ALB-controller role below trust it). Default-true in v21 — set explicitly
@@ -69,6 +72,31 @@ module "eks" {
   }
 
   tags = local.common_tags
+}
+
+# ---- stable human-admin cluster-admin access entry (deploy-issue #4) -----------
+# Replaces the module's disabled caller-derived cluster_creator entry. var.admin_principal_arn
+# (the human bootstrap/break-glass admin — e.g. the wc-deploy-admin user that runs the first
+# local `terraform apply`) gets a FIXED cluster-admin entry, so cluster access is identity-
+# stable across the local-admin apply and the CI-role apply. The CI role's own stable entry
+# lives in iam_ci.tf (aws_eks_access_entry.ci).
+resource "aws_eks_access_entry" "admin" {
+  cluster_name  = module.eks.cluster_name
+  principal_arn = var.admin_principal_arn
+  type          = "STANDARD"
+  tags          = local.common_tags
+}
+
+resource "aws_eks_access_policy_association" "admin_cluster_admin" {
+  cluster_name  = module.eks.cluster_name
+  principal_arn = var.admin_principal_arn
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
+
+  depends_on = [aws_eks_access_entry.admin]
 }
 
 # IRSA role for the AWS Load Balancer Controller. The iam v6 submodule was renamed

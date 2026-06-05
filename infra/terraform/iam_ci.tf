@@ -131,8 +131,20 @@ resource "aws_iam_role_policy" "ci_deploy" {
   name = "wc-ci-deploy"
   role = aws_iam_role.ci_deploy.id
   policy = jsonencode({
-    Version   = "2012-10-17"
-    Statement = [{ Sid = "DeployServices", Effect = "Allow", Action = local.ci_deploy_services, Resource = "*" }]
+    Version = "2012-10-17"
+    Statement = [
+      { Sid = "DeployServices", Effect = "Allow", Action = local.ci_deploy_services, Resource = "*" },
+      {
+        # The eks managed-node-group module reads the EKS-optimized-AMI release version from
+        # the AWS-PUBLIC SSM parameter (arn:aws:ssm:<region>::parameter/aws/service/eks/*) at
+        # plan time. Scope tightly to those public params (NOT ssm:* on *) so the CI role can
+        # plan/apply the node group (deploy-issue #4 — AccessDenied on data.aws_ssm_parameter.ami).
+        Sid      = "ReadEksPublicAmiSsmParams"
+        Effect   = "Allow"
+        Action   = ["ssm:GetParameter", "ssm:GetParameters"]
+        Resource = "arn:aws:ssm:*::parameter/aws/service/eks/*"
+      },
+    ]
   })
 }
 
