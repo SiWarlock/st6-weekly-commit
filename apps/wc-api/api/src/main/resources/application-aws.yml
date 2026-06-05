@@ -38,7 +38,12 @@ app:
   # (the logging stub is the bean when this is absent). Bound from the deployment env (deployment-api
   # .yaml SNS_TOPIC_ARN); the AWS region resolves from AWS_REGION (base spring.cloud.aws.region.static).
   sns:
-    topic-arn: ${SNS_TOPIC_ARN}
+    # Empty default so the placeholder ALWAYS resolves: the aws-profile Jobs (migration / generate-
+    # plan-shells / rebuild-projections) run SPRING_PROFILES_ACTIVE=aws but are never given
+    # SNS_TOPIC_ARN (API-Deployment-only), and a no-default ${SNS_TOPIC_ARN} crashes their boot at
+    # condition-eval (the gateway @ConditionalOnExpression is evaluated for EVERY aws context). Empty
+    # -> the no-op stub; non-empty (the API) -> the real AwsSnsLifecycleGateway (deploy-fix #5b).
+    topic-arn: ${SNS_TOPIC_ARN:}
   # Prod CORS allow-list: the deployed SPA origin only (exact, no wildcard, no dev origin — §16). An
   # explicit CORS_ALLOWED_ORIGINS env still wins (multi-origin via comma-separated).
   cors:

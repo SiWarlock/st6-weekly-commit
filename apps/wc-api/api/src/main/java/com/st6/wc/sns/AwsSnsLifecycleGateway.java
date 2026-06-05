@@ -4,7 +4,7 @@ import com.st6.wc.sns.payload.SyncJobPointer;
 import io.awspring.cloud.sns.core.SnsNotification;
 import io.awspring.cloud.sns.core.SnsOperations;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Component;
 
 /**
@@ -14,10 +14,15 @@ import org.springframework.stereotype.Component;
  * outlook_calendar_sync_record} by id and reads everything else from the row (rule #7 — no calendar
  * bodies / secrets / notes / PII cross the wire).
  *
- * <p>Active only when {@code app.sns.topic-arn} is configured (the deployed {@code aws} profile —
+ * <p>Active only when {@code app.sns.topic-arn} is <strong>non-empty</strong> (the deployed API —
  * bound from {@code ${SNS_TOPIC_ARN}}); otherwise the {@link LoggingLifecycleSnsGateway} stub is
- * the bean (local/demo/test). Mutually-exclusive property-conditional selection (not
- * {@code @ConditionalOnMissingBean}, which is scan-order-dependent on component-scanned beans).
+ * the bean (local/demo/test + the aws-profile Jobs that never receive {@code SNS_TOPIC_ARN}). The
+ * selection is a length-based {@code @ConditionalOnExpression} over an
+ * <strong>empty-defaulted</strong> placeholder ({@code '${app.sns.topic-arn:}'.length() > 0}) — so
+ * an aws-profile context lacking {@code SNS_TOPIC_ARN} boots cleanly (the empty default always
+ * resolves) instead of crashing on an unresolvable placeholder, and the two beans stay
+ * mutually-exclusive (the stub is the exact inverse, {@code length() == 0}) without component-scan
+ * ordering (not {@code @ConditionalOnMissingBean}).
  *
  * <p><strong>Rule #4 — this gateway PROPAGATES on failure.</strong> It does NOT catch: an SNS
  * publish error throws out to {@code SnsLifecyclePublisher}, the single swallow point, which leaves
@@ -25,7 +30,7 @@ import org.springframework.stereotype.Component;
  * posture.
  */
 @Component
-@ConditionalOnProperty("app.sns.topic-arn")
+@ConditionalOnExpression("'${app.sns.topic-arn:}'.length() > 0")
 public class AwsSnsLifecycleGateway implements LifecycleSnsGateway {
 
   /** Fixed, non-PII SNS subject (rule #7 — metadata only; the payload is the pointer record). */
