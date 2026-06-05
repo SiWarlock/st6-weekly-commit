@@ -125,8 +125,12 @@ class GraphCalendarAdapterTest {
     assertThatThrownBy(() -> adapter.createEvent(r))
         .isInstanceOf(GraphCalendarException.class)
         .hasNoCause()
-        .hasMessageNotContaining("john.doe@acme.com")
-        .hasMessageNotContaining("Q3 OKRs")
-        .hasMessageNotContaining("403");
+        // Exact-message (deploy-fix flaky #102): asserting the WHOLE ids-only message is
+        // strictly stronger than the three token-absence checks — it proves the message carries
+        // nothing from the raw Graph error (no email, OKR text, or status code) and is
+        // deterministic for ANY id. notContaining("403") flaked ~0.5% of runs when a random
+        // record-id UUID's hex contained "403"; exact-message is id-agnostic, so the seed stays
+        // UUID.randomUUID().
+        .hasMessage("Graph calendar create failed for syncRecord=" + r.getId());
   }
 }

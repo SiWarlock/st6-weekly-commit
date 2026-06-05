@@ -99,9 +99,11 @@ class SyncMessageListenerTest {
     assertThatThrownBy(() -> listener.onMessage(pointerFor(r)))
         .isInstanceOf(SyncProcessingException.class)
         .hasNoCause()
-        .hasMessageNotContaining("john.doe@acme.com")
-        .hasMessageNotContaining("Q3 OKRs")
-        .hasMessageNotContaining("403");
+        // Exact-message (deploy-fix flaky #102): the whole ids-only message — strictly stronger
+        // than the token-absence checks AND deterministic for ANY id. notContaining("403") flaked
+        // when a random record-id UUID's hex contained "403"; exact-message is id-agnostic (seed
+        // stays UUID.randomUUID()).
+        .hasMessage("Sync processing failed for syncRecord=" + r.getId());
 
     assertThat(r.getStatus()).isEqualTo(SyncStatus.FAILED);
     assertThat(r.getRetryCount()).isEqualTo(1);
@@ -213,8 +215,10 @@ class SyncMessageListenerTest {
     assertThatThrownBy(() -> listener.onMessage(pointerFor(r)))
         .isInstanceOf(SyncProcessingException.class)
         .hasNoCause()
-        .hasMessageNotContaining("john.doe@acme.com")
-        .hasMessageNotContaining("Q3 OKRs");
+        // Exact-message (deploy-fix flaky #102, §48): same sanitized-rethrow contract
+        // (SyncProcessingException) on the retry path — converted for consistency with the two
+        // flaky sites so a future reader can't re-introduce a hex-flaky notContaining("403") here.
+        .hasMessage("Sync processing failed for syncRecord=" + r.getId());
 
     assertThat(r.getStatus()).isEqualTo(SyncStatus.FAILED);
     assertThat(r.getRetryCount()).isEqualTo(1);
