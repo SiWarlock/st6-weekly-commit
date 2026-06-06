@@ -202,15 +202,26 @@ echo "== Gate 7: production_runtime_drivers =="
 # Job (real PG, outside Testcontainers) failed "Failed to load driver class org.postgresql.Driver" at
 # datasource init. No unit test catches a testImplementation-vs-runtime scope gap, so assert each
 # bootJar's BOOT-INF/lib contents directly (reuses the jars Gate 6 built).
-jar_has_lib() { unzip -l "$1" 2>/dev/null | grep -qE "BOOT-INF/lib/$2"; }
+# Deploy-fix-sts (§48, 3rd gap of this class): software.amazon.awssdk:sts must ship too — AWS SDK v2
+# IRSA (WebIdentityTokenCredentialsProvider/AssumeRoleWithWebIdentity) needs it on the classpath, but
+# the spring-cloud-aws sns/sqs starters don't pull it transitively (api SNS-publish + worker
+# SQS-consume both assume the IRSA role). The api's rule-#4 swallow masked it as "sync does nothing".
+# `grep -q` closes the pipe on first match → `unzip` dies with SIGPIPE (141), which under
+# `set -o pipefail` (above) makes the pipeline non-zero and falsely reports a PRESENT lib as
+# missing on the big (64M/131M) bootJars. Read grep's OWN status via PIPESTATUS[1] (0=match /
+# 1=no-match), ignoring unzip's SIGPIPE in PIPESTATUS[0] — no size/position race. (Before this,
+# Gate 7 was racy-vacuous: it could never pass, so it pinned nothing — deploy-fix-sts §48.)
+jar_has_lib() { unzip -l "$1" 2>/dev/null | grep -qE "BOOT-INF/lib/$2"; return "${PIPESTATUS[1]}"; }
 if [ -n "${API_JAR:-}" ] && [ -f "$API_JAR" ] && [ -n "${WORKER_JAR:-}" ] && [ -f "$WORKER_JAR" ]; then
   rtmiss=""
   jar_has_lib "$API_JAR" 'postgresql-[0-9].*\.jar'                 || rtmiss="${rtmiss} api:postgresql"
   jar_has_lib "$API_JAR" 'flyway-core-[0-9].*\.jar'                || rtmiss="${rtmiss} api:flyway-core"
   jar_has_lib "$API_JAR" 'flyway-database-postgresql-[0-9].*\.jar' || rtmiss="${rtmiss} api:flyway-database-postgresql"
+  jar_has_lib "$API_JAR" 'sts-[0-9].*\.jar'                        || rtmiss="${rtmiss} api:sts"
   jar_has_lib "$WORKER_JAR" 'postgresql-[0-9].*\.jar'              || rtmiss="${rtmiss} worker:postgresql"
+  jar_has_lib "$WORKER_JAR" 'sts-[0-9].*\.jar'                     || rtmiss="${rtmiss} worker:sts"
   if [ -z "${rtmiss}" ]; then
-    ok "bootJars carry the prod runtime deps (api: postgresql+flyway-core+flyway-pg; worker: postgresql)"
+    ok "bootJars carry the prod runtime deps (api: postgresql+flyway-core+flyway-pg+sts; worker: postgresql+sts)"
   else
     bad "bootJar(s) missing production runtime deps:${rtmiss} (deploy-fix #6 — check runtimeOnly scope)"
   fi

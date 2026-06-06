@@ -33,6 +33,13 @@ dependencies {
   // It was testImplementation-only (Testcontainers); testImplementation stays for the test classpath.
   runtimeOnly 'org.postgresql:postgresql'
 
+  // IRSA runtime (deploy-fix-sts, §48): AWS SDK v2 IRSA (WebIdentityTokenCredentialsProvider →
+  // AssumeRoleWithWebIdentity) needs software.amazon.awssdk:sts on the classpath; spring-cloud-aws-
+  // starter-sqs (above) does NOT pull it transitively → the SQS consumer can't assume the role
+  // (live: logged "the 'sts' service module must be on the class path" every ~11s, never consumed an
+  // SQS message). BOM-versioned (the spring-cloud-aws-dependencies BOM imports the AWS SDK v2 BOM).
+  runtimeOnly 'software.amazon.awssdk:sts'
+
   compileOnly libs.lombok
   annotationProcessor libs.lombok
 

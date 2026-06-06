@@ -47,6 +47,14 @@ dependencies {
   runtimeOnly 'org.flywaydb:flyway-core'
   runtimeOnly 'org.flywaydb:flyway-database-postgresql'
 
+  // IRSA runtime (deploy-fix-sts, §48 — 3rd prod-runtime-classpath gap of this class): AWS SDK v2
+  // IRSA auth (WebIdentityTokenCredentialsProvider → AssumeRoleWithWebIdentity) needs
+  // software.amazon.awssdk:sts on the classpath, but spring-cloud-aws-starter-sns (above) does NOT
+  // pull it transitively → on the cluster the lock-time sns:Publish can't assume the role, and the
+  // §28 rule-#4 swallow masks it (records stick at PENDING_PUBLISH). BOM-versioned (no explicit
+  // version — the spring-cloud-aws-dependencies BOM imports the AWS SDK v2 BOM). Pinned by Gate 7.
+  runtimeOnly 'software.amazon.awssdk:sts'
+
   compileOnly libs.lombok
   annotationProcessor libs.lombok
 
