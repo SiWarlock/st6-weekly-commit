@@ -190,26 +190,30 @@ import { BrowserRouter } from 'react-router-dom';
 | ------------------ | ----------------- |
 | `react`            | `^18.3.1`         |
 | `react-dom`        | `^18.3.1`         |
+| `@reduxjs/toolkit` | `^2.3.0`          |
+| `react-redux`      | `^9.1.2`          |
 | `react-router-dom` | `^6.28.0`         |
 
-Only the singletons that **cross the host↔remote boundary** are shared:
-`react`/`react-dom` (one React instance, else invalid hooks) and `react-router-dom`
-(the remote **consumes** the host's `<BrowserRouter>`; React Router's context is
-module-identity-based, so host + remote must resolve to one instance, or the remote's
-route hooks throw "useRoutes() may be used only in the context of a `<Router>`").
+ALL React-coupled singletons are shared so the remote uses the host's **single React
+instance**: `react`/`react-dom` (else "invalid hook call"); `@reduxjs/toolkit` +
+`react-redux` (a bundled react-redux runs its hooks — `useSyncExternalStore` →
+`React.useRef` — against a second React → "Cannot read properties of null (reading
+'useRef')", a blank-page dual-React crash); `react-router-dom` (the remote renders
+`<AppRoutes/>` inside the host's `<BrowserRouter>`, one Router context).
 
-**Redux (`@reduxjs/toolkit`) + `react-redux` are NOT shared.** The remote
-self-provides its store, so they're remote-internal and bundled into the remote.
-Sharing `@reduxjs/toolkit` forced a top-level `await importShared('@reduxjs/toolkit')`
-in the (former) store chunk that deadlocked the cross-build init and hung the host on
-"Connecting…" — so they were removed from the shared scope.
+**The store is still self-provided** (no `./store` expose) even though redux is
+shared — those are independent. Sharing redux does NOT reintroduce the deadlock: the
+deadlock was a separate `import('wc_web/store')` running BEFORE the WeeklyCommitApp
+ensure and racing the shared-scope init; with the store folded into the single
+WeeklyCommitApp ensure, redux's `importShared` resolves in the canonical flow (like
+`react`). So: **redux shared (singleton React) + store self-provided** — both true.
 
 `@originjs/vite-plugin-federation` **dedups** each shared dependency into one
 version-matched shared chunk — it is **not** webpack-style `singleton` enforcement
-(that key isn't in its typed API). The **single React instance + single Router
-context** guarantee is therefore a **host + remote shared-scope agreement** (this
-contract), not something the plugin enforces alone. The host must place these three
-packages in the shared scope at compatible versions.
+(that key isn't in its typed API). The **single React instance** guarantee is
+therefore a **host + remote shared-scope agreement** (this contract), not something
+the plugin enforces alone. The host must place these five packages in the shared
+scope at compatible versions.
 
 ### Auth boundary — `VITE_AUTH_MODE` XOR (REQ-I-008)
 

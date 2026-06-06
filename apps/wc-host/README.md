@@ -52,19 +52,25 @@ from the host; its chunk's top-level `await importShared('@reduxjs/toolkit')`
 deadlocked the cross-build shared-scope init and hung the host on "Connecting…". The
 remote owning its store removes that await.)
 
-## Shared scope (must match the remote EXACTLY — single instance)
+## Shared scope (must match the remote EXACTLY — single React instance)
 
-Only the singletons that **cross the boundary** are shared:
+ALL React-coupled singletons are shared so the remote uses the host's single React:
 
 | Package            | requiredVersion | why shared                                               |
 | ------------------ | --------------- | -------------------------------------------------------- |
 | `react`            | `^18.3.1`       | one React instance (else "invalid hook call")            |
 | `react-dom`        | `^18.3.1`       | one renderer                                             |
+| `@reduxjs/toolkit` | `^2.3.0`        | hooks must run against the singleton React (see below)   |
+| `react-redux`      | `^9.1.2`        | a 2nd copy → `useRef` of null (dual-React blank page)    |
 | `react-router-dom` | `^6.28.0`       | the host's `<BrowserRouter>` context the remote consumes |
 
-`@reduxjs/toolkit` + `react-redux` are **NOT** shared — the remote self-provides its
-store, so they're remote-internal (bundled into the remote). Version drift on the
-shared three is the classic federation footgun.
+The store is still **self-provided** by the remote (no `./store` expose) even though
+redux is shared — independent concerns. A bundled `react-redux`/`@reduxjs/toolkit`
+runs `useSyncExternalStore → React.useRef` against a second React → "Cannot read
+properties of null (reading 'useRef')" (blank page). Sharing them (singleton React)
+fixes that; it does NOT reintroduce the "Connecting…" deadlock, because that was the
+separate pre-ensure `./store` import (removed), not redux sharing. Version drift on
+any of the five is the classic federation footgun.
 
 ## Run it locally (end-to-end)
 
