@@ -299,37 +299,18 @@ jobs:
           kubectl rollout status deployment/wc-api -n wc --timeout=300s
           kubectl rollout status deployment/wc-worker -n wc --timeout=300s
 
-      # (f) Build the standalone SPA main site -> sync to S3 -> invalidate. (build-time Vite env, D.1)
-      #     Deploy-2 Option-B: VITE_BUILD_TARGET=standalone selects the index.html SPA build (9.16);
-      #     the wc-web vite.config DEFAULT build emits the MF remoteEntry.js, so WITHOUT this var the
-      #     main site would ship the remote and break. The sync excludes /remote/* so --delete never
-      #     wipes the federation remote published in (f2).
-      - name: Build + publish wc-web (standalone main site)
-        env:
-          VITE_AUTH_MODE: auth0
-          VITE_API_BASE_URL: https://api.wc.${{ vars.ROOT_DOMAIN }}
-          VITE_BUILD_TARGET: standalone
-          # standalone/auth0Config.ts requireVar-fails on these in auth0 mode — without them the
-          # deployed SPA throws on boot. DOMAIN/CLIENT_ID from GitHub vars (runbook a §1.2);
-          # AUDIENCE derived from ROOT_DOMAIN (== backend auth0.audience).
-          VITE_AUTH0_DOMAIN: ${{ vars.AUTH0_DOMAIN }}
-          VITE_AUTH0_CLIENT_ID: ${{ vars.AUTH0_CLIENT_ID }}
-          VITE_AUTH0_AUDIENCE: https://api.wc.${{ vars.ROOT_DOMAIN }}
-        run: |
-          set -euo pipefail
-          yarn install --frozen-lockfile
-          yarn nx build wc-web
-          BUCKET=$(terraform -chdir=infra/terraform output -raw s3_assets_bucket_name)
-          DIST_ID=$(terraform -chdir=infra/terraform output -raw cloudfront_distribution_id)
-          aws s3 sync apps/wc-web/dist "s3://${BUCKET}/" --delete --exclude "remote/*"
-          aws cloudfront create-invalidation --distribution-id "${DIST_ID}" --paths "/*"
+      # (f) DEPLOY-2 OPTION B: the standalone main site is INTENTIONALLY NOT rebuilt/republished here —
+      #     its live S3 content stays byte-identical (truly untouched) during the review window. Only the
+      #     federation REMOTE (f2 → /remote/) + HOST (f3 → /portal/) are published, both additive prefixes
+      #     in the same wc. bucket. (`yarn install` lives in f2 now.) If the main site EVER needs a rebuild,
+      #     it MUST set VITE_BUILD_TARGET=standalone — wc-web's vite.config is fail-safe-to-remote (LESSON
+      #     28), so a default build emits the MF remote, not the SPA, and would break the main site.
 
       # (f2) Build the MF REMOTE (Deploy-2 federation) with an ABSOLUTE --base so remoteEntry.js bakes
-      #      absolute chunk URLs (https://wc.<root>/remote/assets/*) — the cross-origin host on
-      #      portal.<root> then loads chunks from the wc. origin regardless of host location. Default
-      #      build target (NO VITE_BUILD_TARGET) emits the remote. Published under /remote/ on the SAME
-      #      wc. bucket ((f) excludes remote/* so it survives --delete). The 795ffdc /remote/* CloudFront
-      #      behavior + response_headers_policy serve Access-Control-Allow-Origin: https://portal.<root>.
+      #      absolute chunk URLs (https://wc.<root>/remote/assets/*). Default build target (NO
+      #      VITE_BUILD_TARGET) emits the remote. Published under /remote/ on the wc. bucket as an additive
+      #      prefix (the main site in (f) is not re-synced, so nothing wipes it). Option B = SAME-ORIGIN:
+      #      the host at wc./portal/ loads these chunks same-origin (the 795ffdc /remote/* CORS is moot).
       - name: Build + publish wc-web MF remote
         env:
           VITE_AUTH_MODE: auth0
@@ -339,20 +320,23 @@ jobs:
           VITE_AUTH0_AUDIENCE: https://api.wc.${{ vars.ROOT_DOMAIN }}
         run: |
           set -euo pipefail
-          # --base bakes the absolute cross-origin asset URLs into remoteEntry.js (CLI flag; no
-          # vite.config change). remoteEntry.js lands at /remote/assets/remoteEntry.js (default assetsDir).
+          yarn install --frozen-lockfile
+          # --base bakes the absolute asset URLs into remoteEntry.js (CLI flag; no vite.config change).
+          # remoteEntry.js lands at /remote/assets/remoteEntry.js (default assetsDir).
           ( cd apps/wc-web && yarn vite build --base="https://wc.${ROOT_DOMAIN}/remote/" )
           BUCKET=$(terraform -chdir=infra/terraform output -raw s3_assets_bucket_name)
           DIST_ID=$(terraform -chdir=infra/terraform output -raw cloudfront_distribution_id)
           aws s3 sync apps/wc-web/dist "s3://${BUCKET}/remote/" --delete
           aws cloudfront create-invalidation --distribution-id "${DIST_ID}" --paths "/remote/*"
 
-      # (f3) Build the federation HOST (apps/wc-host) and publish to the portal bucket (Deploy-2). The
-      #      host loads the remote from wc.<root>/remote/assets/remoteEntry.js cross-origin and needs
-      #      ONLY VITE_WC_REMOTE_URL + the Auth0 vars (NOT AUTH_MODE/API_BASE — those bake into the
-      #      REMOTE). Portal CloudFront (portal.tf) has the SPA 403/404->/index.html fallback for
-      #      /callback. Uses the portal.tf outputs (provisioned in this Deploy-2 terraform apply).
-      - name: Build + publish federation host (portal)
+      # (f3) Build the federation HOST (apps/wc-host) for Deploy-2 Option B (SAME-ORIGIN) and publish to
+      #      the wc. bucket /portal/ — NOT a separate portal bucket (the portal.* distribution is dropped
+      #      per the AWS CloudFront-creation gate). --base=/portal/ bakes BASE_URL=/portal/ so the host's
+      #      BrowserRouter basename + the Auth0 /portal/callback redirect resolve under /portal/, and host
+      #      assets emit under /portal/assets/*. Host needs ONLY VITE_WC_REMOTE_URL + the Auth0 vars (NOT
+      #      AUTH_MODE/API_BASE — those bake into the REMOTE). The /portal/* behavior + the portal-spa-rewrite
+      #      CloudFront Function (s3_cloudfront.tf) serve it with /portal/*→/portal/index.html SPA fallback.
+      - name: Build + publish federation host (wc./portal/)
         env:
           VITE_WC_REMOTE_URL: https://wc.${{ vars.ROOT_DOMAIN }}/remote/assets/remoteEntry.js
           VITE_AUTH0_DOMAIN: ${{ vars.AUTH0_DOMAIN }}
@@ -360,11 +344,13 @@ jobs:
           VITE_AUTH0_AUDIENCE: https://api.wc.${{ vars.ROOT_DOMAIN }}
         run: |
           set -euo pipefail
-          ( cd apps/wc-host && yarn build )
-          PORTAL_BUCKET=$(terraform -chdir=infra/terraform output -raw s3_portal_bucket_name)
-          PORTAL_DIST_ID=$(terraform -chdir=infra/terraform output -raw portal_cloudfront_distribution_id)
-          aws s3 sync apps/wc-host/dist "s3://${PORTAL_BUCKET}/" --delete
-          aws cloudfront create-invalidation --distribution-id "${PORTAL_DIST_ID}" --paths "/*"
+          ( cd apps/wc-host && yarn build --base=/portal/ )
+          BUCKET=$(terraform -chdir=infra/terraform output -raw s3_assets_bucket_name)
+          DIST_ID=$(terraform -chdir=infra/terraform output -raw cloudfront_distribution_id)
+          # --delete is scoped to the /portal/ prefix → only touches the host artifact, never the main
+          # site or /remote/.
+          aws s3 sync apps/wc-host/dist "s3://${BUCKET}/portal/" --delete
+          aws cloudfront create-invalidation --distribution-id "${DIST_ID}" --paths "/portal/*"
 
       # (g) Deployed smoke (REQ-E-006): the SPA serves + the API readiness probe answers
       #     200 over ACM TLS on the custom domains. Self-contained curl (no apps/** edit);

@@ -66,6 +66,33 @@ resource "aws_cloudfront_response_headers_policy" "remote_cors" {
   }
 }
 
+# Deploy-2 Option B (same-origin federation): the federation HOST is served from /portal/* on THIS wc.
+# distribution (no separate portal distribution/cert — the AWS account CloudFront-creation gate blocks
+# new distributions). The host uses BrowserRouter with basename=/portal/, so its client-side routes
+# (incl. the Auth0 /portal/callback redirect) must serve /portal/index.html. The distribution-level
+# custom_error_response (below) maps to the MAIN site /index.html, so path-scoped fallback needs this
+# viewer-request function, attached to the /portal/* behavior ONLY — additive; the default + /remote/*
+# behaviors are untouched.
+resource "aws_cloudfront_function" "portal_spa" {
+  name    = "${local.cluster_name}-portal-spa-rewrite"
+  runtime = "cloudfront-js-2.0"
+  comment = "SPA fallback: /portal/* client routes -> /portal/index.html (Deploy 2 Option B)."
+  publish = true
+  code    = <<-EOT
+    function handler(event) {
+      var request = event.request;
+      var uri = request.uri;
+      // Path-scoped SPA fallback: any /portal/* route whose last path segment has no file
+      // extension (client-side routes incl. /portal/ and /portal/callback) serves the host
+      // index. Asset requests (/portal/assets/*.js, *.css, ...) pass through unchanged.
+      if (uri.startsWith("/portal/") && !uri.split("/").pop().includes(".")) {
+        request.uri = "/portal/index.html";
+      }
+      return request;
+    }
+  EOT
+}
+
 resource "aws_cloudfront_distribution" "assets" {
   enabled             = true
   default_root_object = "index.html"
@@ -97,6 +124,24 @@ resource "aws_cloudfront_distribution" "assets" {
     cached_methods             = ["GET", "HEAD"]
     cache_policy_id            = data.aws_cloudfront_cache_policy.caching_optimized.id
     response_headers_policy_id = aws_cloudfront_response_headers_policy.remote_cors.id
+  }
+
+  # Deploy-2 Option B (same-origin federation HOST): serve the host SPA under /portal/* from the SAME
+  # s3-assets bucket (deploy.yml publishes it to /portal/). The viewer-request function does the
+  # path-scoped SPA fallback (/portal/* client routes → /portal/index.html). PURELY ADDITIVE — the
+  # default_cache_behavior + the /remote/* behavior above stay unchanged/byte-identical.
+  ordered_cache_behavior {
+    path_pattern           = "/portal/*"
+    target_origin_id       = "s3-assets"
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["GET", "HEAD"]
+    cached_methods         = ["GET", "HEAD"]
+    cache_policy_id        = data.aws_cloudfront_cache_policy.caching_optimized.id
+
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.portal_spa.arn
+    }
   }
 
   # SPA fallback — both 403 (OAC denies LIST on missing key) and 404 → index.html.
