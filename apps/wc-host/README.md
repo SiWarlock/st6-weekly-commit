@@ -7,68 +7,64 @@ and mounts the exposed `./WeeklyCommitApp` inside a parent "Acme Portal" chrome
 **same tenant** as the deployed app.
 
 ```
-┌──────────────────────────────────────── Acme Portal (host, :5273) ──────────┐
+┌──────────────────────────── Acme Portal (host) ─────────────────────────────┐
 │ ▲ Acme Portal      Employee Workspace        plugin: wc_web (remote)  [user] │
 ├───────────────┬──────────────────────────────────────────────────────────── │
 │ Workspace     │  Weekly Commit   [Embedded micro-frontend]                   │
 │  Dashboard    │ ┌──────────────────────────────────────────────────────────┐│
-│  Directory    │ │                                                          ││
-│ ▎Weekly Commit│ │   ← the wc_web REMOTE renders here (remoteEntry.js)       ││
-│  Reports      │ │     consumes the host's <BrowserRouter> + Redux store +   ││
-│ Admin         │ │     getAccessToken; calls the LIVE API.                   ││
-│  Billing      │ │                                                          ││
+│  Directory    │ │   ← the wc_web REMOTE renders here (remoteEntry.js)       ││
+│ ▎Weekly Commit│ │     consumes the host's <BrowserRouter> + getAccessToken; ││
+│  Reports      │ │     self-provides its Redux store; calls the LIVE API.    ││
 │  Settings     │ └──────────────────────────────────────────────────────────┘│
 └───────────────┴───────────────────────────────────────────────────────────┘
 ```
 
+## Deployment topology (Option B — same-origin)
+
+The portal is served from a **path on the existing wc. CloudFront**, same-origin
+with the remote — a new `portal.*` distribution was blocked by an AWS account
+verification gate, and same-origin removes all cross-origin CORS:
+
+| Artifact        | URL                                                           | Build base                                      |
+| --------------- | ------------------------------------------------------------- | ----------------------------------------------- |
+| Standalone demo | `https://wc.st6weeklycommit.com/`                             | `/` (build:standalone)                          |
+| MF remote       | `https://wc.st6weeklycommit.com/remote/assets/remoteEntry.js` | `--base=https://wc.st6weeklycommit.com/remote/` |
+| **Portal host** | `https://wc.st6weeklycommit.com/portal/`                      | `--base=/portal/`                               |
+
+Same-origin ⇒ **no CORS needed**: the host loads the remote chunks from the same
+wc. origin, and the embedded remote's API calls carry `Origin: https://wc.st6weeklycommit.com`
+which wc-api already allows (Deploy 1).
+
 ## What the host provides to the remote (the §7 host-integration contract)
 
-The remote (`apps/wc-web/src/remote/WeeklyCommitApp.tsx`) **consumes**, never owns:
+The host provides exactly **two** things; the remote owns everything else:
 
-1. **A Redux `<Provider>` store** — and it must be the **same** store instance the
-   remote's components dispatch against (its hooks bind to the remote container's
-   `baseApi` singleton). A host-built store from a separately-imported `baseApi`
-   would be a _second_ RTK Query instance → queries never resolve. So the host
-   imports the store **from the remote**: `import('wc_web/store')` (see "wc-web
-   changes" below). Wrapped as `<Provider store={store}>` in
-   `src/portal/WeeklyCommitMount.tsx`.
-2. **A router** — the host's `<BrowserRouter>` (in `src/App.tsx`). The remote
-   renders `<AppRoutes/>`'s `<Routes>`/`useNavigate` inside it.
-3. **`getAccessToken(): Promise<string>`** — passed as the `getAccessToken` prop;
+1. **A router** — the host's `<BrowserRouter basename="/portal">` (in `src/App.tsx`).
+   The remote renders `<AppRoutes/>`'s `<Routes>`/`useNavigate` inside it.
+2. **`getAccessToken(): Promise<string>`** — passed as the `getAccessToken` prop;
    the remote registers it into its auth seam so `prepareHeaders` sends
    `Authorization: Bearer <jwt>` (auth0 mode). Built from `@auth0/auth0-react`'s
    `getAccessTokenSilently({ authorizationParams: { audience }})`.
 
-## Two changes this required in `apps/wc-web/vite.config.ts`
-
-The existing federation surface exposed only `./WeeklyCommitApp` and shared 4
-singletons — not enough for a real host. Both changes are additive and test-safe
-(all 310 wc-web Vitest pass; `boundary.test.ts` + `host-integration.test.ts` green):
-
-1. **Exposed `./store`** — so the host gets the remote's _exact_ configured store
-   (req #1 above). `store.ts` is demo-free (`baseApi` only), so no REQ-I-008 surface.
-2. **Shared `react-router-dom@^6.28.0`** — React Router's context is
-   module-identity-based; host + remote must resolve to **one** `react-router-dom`
-   instance or the remote's route hooks read a different context than the host's
-   `<BrowserRouter>` provides ("useRoutes() may be used only in the context of a
-   `<Router>`").
-
-> The wc-web host-integration README (`apps/wc-web/README.md`) documents the
-> federation surface; it should list the `./store` expose + the `react-router-dom`
-> shared singleton too (anti-drift). Flagged for the orchestrator/lead.
+The **Redux store is NOT a host responsibility** — the remote self-provides its own
+`<Provider store={store}>` internally. (We tried exposing `./store` and importing it
+from the host; its chunk's top-level `await importShared('@reduxjs/toolkit')`
+deadlocked the cross-build shared-scope init and hung the host on "Connecting…". The
+remote owning its store removes that await.)
 
 ## Shared scope (must match the remote EXACTLY — single instance)
 
-| Package            | requiredVersion |
-| ------------------ | --------------- |
-| `react`            | `^18.3.1`       |
-| `react-dom`        | `^18.3.1`       |
-| `@reduxjs/toolkit` | `^2.3.0`        |
-| `react-redux`      | `^9.1.2`        |
-| `react-router-dom` | `^6.28.0`       |
+Only the singletons that **cross the boundary** are shared:
 
-Version drift here is the classic federation footgun: two React copies →
-"invalid hook call".
+| Package            | requiredVersion | why shared                                               |
+| ------------------ | --------------- | -------------------------------------------------------- |
+| `react`            | `^18.3.1`       | one React instance (else "invalid hook call")            |
+| `react-dom`        | `^18.3.1`       | one renderer                                             |
+| `react-router-dom` | `^6.28.0`       | the host's `<BrowserRouter>` context the remote consumes |
+
+`@reduxjs/toolkit` + `react-redux` are **NOT** shared — the remote self-provides its
+store, so they're remote-internal (bundled into the remote). Version drift on the
+shared three is the classic federation footgun.
 
 ## Run it locally (end-to-end)
 
@@ -77,82 +73,69 @@ From the repo root (Yarn workspaces; `apps/wc-host` is a workspace member):
 ```bash
 yarn install                         # once — wires wc-host into the workspace
 
-# 1) Build the REMOTE with the live-API + auth0 env baked in (apps/wc-web):
+# 1) Build the REMOTE (apps/wc-web) with the live-API + auth0 env baked in:
 cd apps/wc-web
 VITE_AUTH_MODE=auth0 VITE_API_BASE_URL=https://api.wc.st6weeklycommit.com \
-  yarn build:remote
-#   → dist/assets/remoteEntry.js
-#   → dist/assets/__federation_expose_WeeklyCommitApp-*.js
-#   → dist/assets/__federation_expose_Store-*.js
-#   → dist/assets/__federation_shared_*.js  (react, react-dom, react-redux,
-#                                            @reduxjs/toolkit, react-router-dom)
-# NOTE: VITE_AUTH_MODE + VITE_API_BASE_URL bake into the REMOTE here (not the host).
+VITE_AUTH0_DOMAIN=<tenant> VITE_AUTH0_CLIENT_ID=<spa-id> VITE_AUTH0_AUDIENCE=https://api.wc.st6weeklycommit.com \
+  yarn vite build --base=https://wc.st6weeklycommit.com/remote/
+#   → dist/assets/remoteEntry.js + __federation_expose_WeeklyCommitApp-*.js
+#   → __federation_shared_{react,react-dom,react-router-dom}-*.js  (NO redux — bundled)
+# remoteEntry bakes ABSOLUTE chunk URLs at /remote/assets/* so it resolves wherever served.
 
-# 2) Serve the remote dist with CORS (vite preview echoes the request Origin):
+# 2) Serve the remote dist (vite preview echoes Origin + serves JS):
 yarn vite preview --port 5274 --strictPort        # http://localhost:5274/assets/remoteEntry.js
 
-# 3) Build + serve the HOST (apps/wc-host). .env.local supplies the Auth0 vars +
-#    VITE_WC_REMOTE_URL (read by vite.config via loadEnv):
+# 3) Build + serve the HOST (apps/wc-host):
 cd ../wc-host
-cp .env.example .env.local           # then confirm VITE_WC_REMOTE_URL=http://localhost:5274/assets/remoteEntry.js
-yarn vite build
+cp .env.example .env.local           # VITE_AUTH0_* + VITE_WC_REMOTE_URL
+VITE_WC_REMOTE_URL=http://localhost:5274/assets/remoteEntry.js yarn vite build   # local: base '/'
 yarn vite preview --port 5273 --strictPort        # http://localhost:5273
 
-# dev mode also works: `yarn dev` (consumes the built remote on :5274).
+# dev mode: `yarn dev` (consumes the built remote).
 ```
 
-Open **http://localhost:5273** → Acme Portal → "Sign in with Auth0" → the remote
-mounts in the panel.
+Open the host → "Sign in with Auth0" → the remote mounts in the panel.
 
-> Ports 5173/5174 (the "canonical" Vite ports) were occupied on this machine, so
-> the verified run used **5273 (host) / 5274 (remote)**. Any free pair works —
-> just keep `VITE_WC_REMOTE_URL` and the Auth0 callback origin in sync with the
-> host port.
+> Local dev uses base `/` (host at the server root). The **deployed** host uses
+> `--base=/portal/` (served under `wc.st6weeklycommit.com/portal/`); the router
+> basename + the Auth0 `redirect_uri` (`/portal/callback`) derive from
+> `import.meta.env.BASE_URL`, so the same source builds both.
 
-## What the USER / infra must configure for it to fully work
+## What the USER / infra must configure
 
 ### Auth0 (SPA client `psB6r4UN0AgRLXLxmp974lieHgOvN2sI`, tenant `dev-pw0um8pz8cgr31eo.us.auth0.com`)
 
-Add the **host origin** to the SPA application's allow-lists (the deployed SPA
-already has `https://wc.st6weeklycommit.com`):
+Add the portal's callback + logout to the SPA app (the Web Origin
+`https://wc.st6weeklycommit.com` is already allowed from Deploy 1):
 
-| Setting               | Local dev                        | Proposed deployed host                        |
-| --------------------- | -------------------------------- | --------------------------------------------- |
-| Allowed Callback URLs | `http://localhost:5273/callback` | `https://portal.st6weeklycommit.com/callback` |
-| Allowed Web Origins   | `http://localhost:5273`          | `https://portal.st6weeklycommit.com`          |
-| Allowed Logout URLs   | `http://localhost:5273`          | `https://portal.st6weeklycommit.com`          |
+| Setting               | Deployed portal                                  |
+| --------------------- | ------------------------------------------------ |
+| Allowed Callback URLs | `https://wc.st6weeklycommit.com/portal/callback` |
+| Allowed Logout URLs   | `https://wc.st6weeklycommit.com/portal/`         |
 
-### CORS — two distinct requirements
+### Infra (CloudFront on the wc. distribution)
 
-1. **Remote chunks** (`remoteEntry.js` + assets) must be served with
-   `Access-Control-Allow-Origin: <host origin>` (the host fetches them
-   cross-origin). `vite preview` does this locally; the deployed remote's
-   S3/CloudFront must add it for the host origin.
-2. **The wc-api backend** must allow the **host origin** in its CORS allow-list,
-   because the embedded remote calls `https://api.wc.st6weeklycommit.com`
-   cross-origin. **As of now wc-api returns 403 on a preflight from
-   `http://localhost:5273`** (only `https://wc.st6weeklycommit.com` is allowed).
-   So the live-API calls are blocked from a localhost host until either:
-   - `http://localhost:5273` is added to wc-api's CORS allow-list (backend
-     redeploy), **or**
-   - the host is deployed to an allowed origin (e.g. `portal.st6weeklycommit.com`,
-     added to wc-api CORS), **or**
-   - wc-api is run locally with a permissive CORS origin.
+- **`/portal/*` SPA fallback** — a CloudFront Function rewrites extension-less
+  `/portal/*` (incl. `/portal/callback`) → `/portal/index.html` (the host), so deep
+  links + the OAuth callback don't fall through to the root standalone demo.
+- **`--delete` guard** — the root standalone `s3 sync … --delete` must
+  `--exclude "remote/*" --exclude "portal/*"` so it doesn't wipe the remote/host.
+- No CORS / response-headers policy needed for `/remote/*` (same-origin).
 
 ## Files
 
 ```
 apps/wc-host/
-  vite.config.ts            # federation host: remotes{wc_web}, shared scope, esnext
+  vite.config.ts            # federation host: remotes{wc_web}, shared{react,react-dom,react-router-dom}, esnext
   index.html
   src/
     main.tsx                # createRoot → <App/>
-    App.tsx                 # <BrowserRouter> → Auth0Provider (navigate-aware callback)
-    auth/authConfig.ts      # resolve VITE_AUTH0_* (fail-fast)
+    App.tsx                 # <BrowserRouter basename=BASE_URL> → Auth0Provider (navigate-aware callback)
+    auth/authConfig.ts      # resolve VITE_AUTH0_* (fail-fast); redirectUri = <origin><BASE_URL>callback
     portal/
       Portal.tsx            # Acme Portal chrome + auth gate (login → mount)
-      WeeklyCommitMount.tsx # import('wc_web/store') → <Provider> → lazy remote
+      WeeklyCommitMount.tsx # lazy <WeeklyCommitApp getAccessToken/> in <Suspense> (remote self-provides its store)
       portal.css            # host chrome styling (host-only; remote owns its own)
-    types/remotes.d.ts      # types for wc_web/WeeklyCommitApp + wc_web/store
+    types/remotes.d.ts      # type for wc_web/WeeklyCommitApp (no ./store — remote owns the store)
   .env.example / .env.local # VITE_WC_REMOTE_URL + VITE_AUTH0_* (live tenant)
 ```

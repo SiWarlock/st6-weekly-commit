@@ -138,14 +138,14 @@ step — follow **[`docs/runbooks/auth0-tenant-setup.md`](../../docs/runbooks/au
 | Entry filename | `remoteEntry.js`                                                |
 | Exposed module | `./WeeklyCommitApp` → `src/remote/WeeklyCommitApp.tsx`          |
 | Exposed shape  | **default export** — a React component `WeeklyCommitApp(props)` |
-| Exposed store  | `./store` → `src/app/store.ts` — the configured Redux store     |
 
-The **`./store`** expose hands the host the remote's _exact_ configured store (the
-one carrying this container's `baseApi` singleton). The host wraps the remote in
-`<Provider store={store}>` with it — a host-built store from a separately-imported
-`baseApi` would be a second RTK Query instance whose queries never resolve. `store.ts`
-is demo-free (`baseApi` only), so the expose adds no REQ-I-008 surface. A worked host
-that consumes this lives in `apps/wc-host/`.
+The remote is **self-contained for state**: `WeeklyCommitApp` wraps its own
+`<Provider store={store}>` internally (the store + `baseApi` are remote-internal),
+so the host does **not** supply a store and there is **no `./store` expose**. An
+earlier `./store` expose whose chunk did a top-level `await
+importShared('@reduxjs/toolkit')` deadlocked the cross-build shared-scope init and
+hung the host forever on "Connecting…"; self-providing removes that await. A worked
+host lives in `apps/wc-host/`.
 
 The exposed module **consumes** a host-provided router: it renders the lazy
 `<AppRoutes/>` **inside the host's router context** and never creates a
@@ -154,12 +154,10 @@ no `ThemeToggle`).
 
 ### The host MUST provide, before mount (load-bearing — OQ-004)
 
-1. **A Redux `<Provider>` (store) wrapping the remote — required _before_ mount.**
-   The route tree gates eagerly: `AppRoutes → useIsManager → useCurrentUser →`
-   the `me` RTK Query slice, which dispatches against the store on first render.
-   Without a host-provided store the gating query cannot run. The remote does
-   **not** create its own store in remote mode (the standalone shell supplies one
-   only for standalone). The store must register `baseApi` (reducer + middleware).
+1. **A router — a `<BrowserRouter>` (or equivalent history router) wrapping the
+   remote.** The remote renders `<AppRoutes/>`'s `<Routes>`/`useNavigate` inside the
+   host's router context and never creates its own. (The Redux store is NOT a host
+   responsibility — the remote self-provides it; see "Remote identity" above.)
 
 2. **An auth accessor — `getAccessToken(): Promise<string>`** — passed as the
    `getAccessToken` prop to `WeeklyCommitApp`. The remote registers it into the
@@ -176,18 +174,14 @@ Minimal host mount (illustrative — generic pattern, pending PA verification):
 
 ```tsx
 import WeeklyCommitApp from 'wc_web/WeeklyCommitApp';
-import { store } from 'wc_web/store'; // the remote's configured store (same baseApi)
-import { Provider } from 'react-redux';
 import { BrowserRouter } from 'react-router-dom';
 
-// The host imports the store FROM the remote so it carries wc-web's baseApi
-// singleton; the host owns the router, the remote consumes it. getAccessToken is
-// required only in auth0 mode. (Worked host: apps/wc-host/.)
-<Provider store={store}>
-  <BrowserRouter>
-    <WeeklyCommitApp getAccessToken={host.getAccessToken} />
-  </BrowserRouter>
-</Provider>;
+// The host owns the router; the remote consumes it AND self-provides its own Redux
+// store (no host store import). getAccessToken is required only in auth0 mode.
+// (Worked host: apps/wc-host/.)
+<BrowserRouter>
+  <WeeklyCommitApp getAccessToken={host.getAccessToken} />
+</BrowserRouter>;
 ```
 
 ### Shared singletons (federation `shared`, from `vite.config.ts`)
@@ -196,22 +190,25 @@ import { BrowserRouter } from 'react-router-dom';
 | ------------------ | ----------------- |
 | `react`            | `^18.3.1`         |
 | `react-dom`        | `^18.3.1`         |
-| `@reduxjs/toolkit` | `^2.3.0`          |
-| `react-redux`      | `^9.1.2`          |
 | `react-router-dom` | `^6.28.0`         |
 
-`react-router-dom` is shared because the remote **consumes** the host's
-`<BrowserRouter>`: React Router's context is module-identity-based, so host + remote
-must resolve to a single `react-router-dom` instance, or the remote's route hooks
-read a different context than the host's router provides ("useRoutes() may be used
-only in the context of a `<Router>`"). Host + remote must declare it shared at the
-same version.
+Only the singletons that **cross the host↔remote boundary** are shared:
+`react`/`react-dom` (one React instance, else invalid hooks) and `react-router-dom`
+(the remote **consumes** the host's `<BrowserRouter>`; React Router's context is
+module-identity-based, so host + remote must resolve to one instance, or the remote's
+route hooks throw "useRoutes() may be used only in the context of a `<Router>`").
+
+**Redux (`@reduxjs/toolkit`) + `react-redux` are NOT shared.** The remote
+self-provides its store, so they're remote-internal and bundled into the remote.
+Sharing `@reduxjs/toolkit` forced a top-level `await importShared('@reduxjs/toolkit')`
+in the (former) store chunk that deadlocked the cross-build init and hung the host on
+"Connecting…" — so they were removed from the shared scope.
 
 `@originjs/vite-plugin-federation` **dedups** each shared dependency into one
-version-matched shared chunk — it is **not** webpack-style `singleton`
-enforcement (that key isn't in its typed API). The **single React instance + single
-store** guarantee is therefore a **host + remote shared-scope agreement** (this
-contract), not something the plugin enforces alone. The host must place these four
+version-matched shared chunk — it is **not** webpack-style `singleton` enforcement
+(that key isn't in its typed API). The **single React instance + single Router
+context** guarantee is therefore a **host + remote shared-scope agreement** (this
+contract), not something the plugin enforces alone. The host must place these three
 packages in the shared scope at compatible versions.
 
 ### Auth boundary — `VITE_AUTH_MODE` XOR (REQ-I-008)
@@ -241,13 +238,13 @@ The remote does **not** duplicate PA-shell-owned concerns:
 
 ### Standalone vs remote — responsibility split
 
-| Concern     | Standalone (`src/standalone/StandaloneShell.tsx`) | Remote (`src/remote/WeeklyCommitApp.tsx`) |
-| ----------- | ------------------------------------------------- | ----------------------------------------- |
-| Router      | owns `BrowserRouter`                              | **consumes** the host's                   |
-| Redux store | owns `Provider` + `store`                         | **consumes** the host's                   |
-| Theme       | owns `ThemeProvider` + `ThemeToggle`              | host-owned                                |
-| Identity    | `DemoIdentityProvider` + `PersonaSwitcher` (demo) | host injects `getAccessToken`             |
-| Mounts      | `<WeeklyCommitApp/>`                              | exposes itself                            |
+| Concern     | Standalone (`src/standalone/StandaloneShell.tsx`) | Remote (`src/remote/WeeklyCommitApp.tsx`)    |
+| ----------- | ------------------------------------------------- | -------------------------------------------- |
+| Router      | owns `BrowserRouter`                              | **consumes** the host's                      |
+| Redux store | owns `Provider` + `store`                         | **self-provides** its own `Provider`+`store` |
+| Theme       | owns `ThemeProvider` + `ThemeToggle`              | host-owned                                   |
+| Identity    | `DemoIdentityProvider` + `PersonaSwitcher` (demo) | host injects `getAccessToken`                |
+| Mounts      | `<WeeklyCommitApp/>`                              | exposes itself                               |
 
 ### Environment variables (host-overridable)
 
