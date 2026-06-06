@@ -90,6 +90,9 @@ afterEach(() => {
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
   setAccessTokenProvider(null);
+  // Remove the stylesheet <link> the remote injects on mount (test hygiene; the
+  // injection is idempotent across tests via the data attribute).
+  document.querySelector('link[data-wc-remote-theme]')?.remove();
 });
 
 describe('WeeklyCommitApp (exposed remote module)', () => {
@@ -118,6 +121,24 @@ describe('WeeklyCommitApp (exposed remote module)', () => {
     const headers = await prepareHeaders(new Headers());
     expect(headers.get('Authorization')).toBe('Bearer host-jwt-123');
     expect(headers.get('X-Demo-Employee-Id')).toBeNull();
+  });
+
+  it('remote_injects_its_stylesheet: mounting injects a <link rel=stylesheet> so the embedded remote is styled in the host (federated CSS — bug 4)', () => {
+    mockCurrentUser({ isManager: false, role: 'IC' });
+    expect(document.querySelector('link[data-wc-remote-theme]')).toBeNull();
+    render(
+      <MemoryRouter>
+        <WeeklyCommitApp getAccessToken={async () => 'host-jwt'} />
+      </MemoryRouter>,
+    );
+    // Pins the injection MECHANISM (a stylesheet link is added on mount). The href
+    // VALUE is a build-time `?url` resolution (empty under jsdom/vitest) — its
+    // correctness (…/remote/assets/theme-<hash>.css) is verified against the real
+    // `vite build` dist, not here.
+    const link = document.querySelector('link[data-wc-remote-theme]');
+    expect(link).not.toBeNull();
+    expect(link).toHaveAttribute('rel', 'stylesheet');
+    expect(link).toHaveAttribute('href');
   });
 
   it('remote_without_accessor_surfaces_error: hosted (auth0) with no host accessor → error state, not a crash', () => {
