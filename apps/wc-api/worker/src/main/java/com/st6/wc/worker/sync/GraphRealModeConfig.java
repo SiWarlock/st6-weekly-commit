@@ -45,7 +45,9 @@ public class GraphRealModeConfig {
       Clock clock,
       @Value("${GRAPH_TENANT_ID:}") String tenantId,
       @Value("${GRAPH_CLIENT_ID:}") String clientId,
-      @Value("${GRAPH_CLIENT_SECRET:}") String clientSecret) {
+      @Value("${GRAPH_CLIENT_SECRET:}") String clientSecret,
+      @Value("${app.outlook.frontend-base-url:https://wc.${ROOT_DOMAIN:localhost}}")
+          String frontendBaseUrl) {
 
     if (!StringUtils.hasText(tenantId)
         || !StringUtils.hasText(clientId)
@@ -69,6 +71,7 @@ public class GraphRealModeConfig {
             .clientSecret(clientSecret)
             .build();
     GraphServiceClient graphClient = new GraphServiceClient(credential, GRAPH_DEFAULT_SCOPE);
-    return new GraphCalendarAdapter(new MsGraphEventGateway(graphClient), employees, clock);
+    return new GraphCalendarAdapter(
+        new MsGraphEventGateway(graphClient), employees, clock, frontendBaseUrl);
   }
 }

@@ -2,10 +2,15 @@ package com.st6.wc.worker.sync;
 
 import com.st6.wc.employee.Employee;
 import com.st6.wc.employee.repo.EmployeeRepository;
+import com.st6.wc.enums.EventKind;
 import com.st6.wc.sync.OutlookCalendarSyncRecord;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Locale;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,15 +37,30 @@ public class GraphCalendarAdapter implements GraphCalendarPort {
 
   private static final long EVENT_DURATION_SECONDS = 30L * 60L;
 
+  /** Human "MMM d" week-range formatter (e.g. "Jun 1"); en-locale, deterministic. */
+  private static final DateTimeFormatter WEEK_DAY =
+      DateTimeFormatter.ofPattern("MMM d", Locale.ENGLISH);
+
   private final GraphEventGateway gateway;
   private final EmployeeRepository employees;
   private final Clock clock;
 
+  /**
+   * The frontend deep-link base (brief 106 / ARCH:1012 — {@code app.outlook.frontend-base-url} /
+   * {@code WC_FRONTEND_BASE_URL}, e.g. {@code https://wc.<root-domain>}). Config-trusted; combined
+   * with a fixed path + the planId UUID into the event body. No PII (rule #7).
+   */
+  private final String frontendBaseUrl;
+
   public GraphCalendarAdapter(
-      GraphEventGateway gateway, EmployeeRepository employees, Clock clock) {
+      GraphEventGateway gateway,
+      EmployeeRepository employees,
+      Clock clock,
+      String frontendBaseUrl) {
     this.gateway = gateway;
     this.employees = employees;
     this.clock = clock;
+    this.frontendBaseUrl = frontendBaseUrl;
   }
 
   @Override
@@ -65,9 +85,49 @@ public class GraphCalendarAdapter implements GraphCalendarPort {
     Instant start =
         record.getWeekStartDate().atTime(EVENT_START).atZone(clock.getZone()).toInstant();
     Instant end = start.plusSeconds(EVENT_DURATION_SECONDS);
-    // rule #7 — the subject is derived from eventKind + week ONLY (no owner name / email / OKR /
-    // commitment text); the sync record carries no free text, so nothing PII can reach Graph.
-    String subject = record.getEventKind() + " — week of " + record.getWeekStartDate();
-    return new CalendarEventSpec(subject, start, end, record.getId());
+    // rule #7 — subject + body derive from eventKind + week + relatedId (the planId UUID) + the
+    // config base-url ONLY (no owner name / email / OKR / commitment text); the sync record carries
+    // no free text, so nothing PII can reach Graph.
+    String subject = humanSubject(record.getEventKind(), record.getWeekStartDate());
+    String body = deepLinkBody(record.getEventKind(), record.getRelatedId());
+    return new CalendarEventSpec(subject, body, start, end, record.getId());
+  }
+
+  /** Human, presentable subject per {@code eventKind} (brief 106) — generic label + week range. */
+  private static String humanSubject(EventKind kind, LocalDate weekStart) {
+    String range = weekRange(weekStart);
+    return switch (kind) {
+      case IC_PLANNING -> "Weekly Commit — Week of " + range;
+      case IC_RECONCILIATION -> "Weekly Commit — Reconciliation — Week of " + range;
+      case MANAGER_REVIEW_BLOCK -> "Manager Review — Week of " + range;
+    };
+  }
+
+  /** "Jun 1–7" (same month) or "Jun 29 – Jul 5" (cross-month) for the Mon..Sun week. */
+  private static String weekRange(LocalDate weekStart) {
+    LocalDate weekEnd = weekStart.plusDays(6);
+    if (weekStart.getMonth() == weekEnd.getMonth()) {
+      return WEEK_DAY.format(weekStart) + "–" + weekEnd.getDayOfMonth();
+    }
+    return WEEK_DAY.format(weekStart) + " – " + WEEK_DAY.format(weekEnd);
+  }
+
+  /**
+   * The §10 deep-link body (brief 106 / ARCH:1012): a generic line + the frontend URL. IC → the
+   * plan-history view ({@code /weekly-commit/history/{planId}}, relatedId = planId); review-block →
+   * the manager command center. rule #7 — generic label + a {@code {base}}-config URL + the planId
+   * UUID ONLY (no owner/commitment/OKR text); the URL is HTML-safe (config base + a UUID path).
+   */
+  private String deepLinkBody(EventKind kind, UUID relatedId) {
+    String link;
+    String lead;
+    if (kind == EventKind.MANAGER_REVIEW_BLOCK) {
+      link = frontendBaseUrl + "/manager/command-center";
+      lead = "Open the manager command center";
+    } else {
+      link = frontendBaseUrl + "/weekly-commit/history/" + relatedId;
+      lead = "Open your weekly plan";
+    }
+    return "<p>" + lead + ": <a href=\"" + link + "\">" + link + "</a></p>";
   }
 }

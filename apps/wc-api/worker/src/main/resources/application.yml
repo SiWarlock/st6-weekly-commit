@@ -23,6 +23,13 @@ app:
     # Calendar dispatch mode — demo-success activates the no-op GraphCalendarPort stub (Wave-2 s8);
     # the real MS Graph adapter (s9) gates on a distinct mode. deployment-worker.yaml sets GRAPH_MODE.
     mode: ${GRAPH_MODE:demo-success}
+  outlook:
+    # §10 deep-link base (brief 106 / ARCH:1012) written into the synced Graph event body — IC events
+    # link to {base}/weekly-commit/history/{planId}, review-block to {base}/manager/command-center.
+    # Nested resolvable default (§48): the deployed WC_FRONTEND_BASE_URL (infra) wins; else
+    # https://wc.${ROOT_DOMAIN:localhost} so a non-serving / clean-CI context still boots (no
+    # no-default placeholder crash). Only the real-mode adapter consumes it.
+    frontend-base-url: ${WC_FRONTEND_BASE_URL:https://wc.${ROOT_DOMAIN:localhost}}
 
 management:
   endpoints:

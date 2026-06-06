@@ -1,7 +1,9 @@
 package com.st6.wc.worker.sync;
 
+import com.microsoft.graph.models.BodyType;
 import com.microsoft.graph.models.DateTimeTimeZone;
 import com.microsoft.graph.models.Event;
+import com.microsoft.graph.models.ItemBody;
 import com.microsoft.graph.serviceclient.GraphServiceClient;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -30,6 +32,12 @@ public class MsGraphEventGateway implements GraphEventGateway {
     event.setSubject(spec.subject());
     event.setStart(graphDateTime(spec.start()));
     event.setEnd(graphDateTime(spec.end()));
+    // The §10 deep-link body (brief 106), HTML so the link is clickable — a non-PII generic line +
+    // the frontend deep-link URL built by the adapter (rule #7).
+    ItemBody body = new ItemBody();
+    body.setContentType(BodyType.Html);
+    body.setContent(spec.body());
+    event.setBody(body);
     // Idempotency (brief 104b): the syncRecordId IS the Graph transactionId — Graph's server-side
     // idempotency key. A redundant create (e.g. the reaper re-firing a record whose prior
     // createEvent succeeded but whose SYNCED-save failed, leaving graphEventId unpersisted) is
