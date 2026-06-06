@@ -4,6 +4,7 @@
 - **Phase:** Pre-deploy drift-fix — wiring 3 confirmed-HIGH "built-but-dead-surface" findings before a single full Wave-1+2 deploy. **✅ COMPLETE.**
 - **Role:** **orchestrator-authored** (`st6-main-orchestrator`, fresh cycle). The backend implementer (`st6-main-wc-api-implementer`) drove every `/tdd` slice but did NOT run `/session-end` this round — it **persists** for deploy-support (lead directive). This doc is the orchestrator's round-of-record, captured from the slice-by-slice Step-2.5/Step-9 reviews + git.
 - **Predecessor:** [021](021-2026-06-04-backend-wave2-live-sync.md) (Wave-2 live-sync). Continuity: lead compaction handoff 4 (`3b919a9`).
+- **Successor:** [023](023-2026-06-06-backend-deploy-dominoes-worker-concurrency-graph-polish.md) (deploy dominoes #9 + 102/103 + worker concurrency 104/104b + Graph-event polish 106).
 - **HEAD:** `87daf80`. **The 096+097+098+re-seed deploy gate is MET** — only the user's infra apply remains before the first `deploy.yml`.
 
 ## Why this round existed
