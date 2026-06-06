@@ -175,3 +175,22 @@ output "cloudwatch_log_group_arns" {
   description = "Per-workload CloudWatch log group ARNs ({api,worker,cronjob,migration} -> arn)."
   value       = { for k, g in aws_cloudwatch_log_group.workload : k => g.arn }
 }
+
+# --- Deploy 2: federation host portal (portal.tf) — authored, applied at Deploy 2 ---------
+# Consumed by the Deploy-2 pipeline: S3 sync target + CloudFront invalidation, mirroring the wc.
+# s3_assets_bucket_name / cloudfront_distribution_id pair.
+
+output "s3_portal_bucket_name" {
+  description = "Private S3 bucket for the federation host portal SPA (CI sync target, Deploy 2)."
+  value       = aws_s3_bucket.portal.bucket
+}
+
+output "portal_cloudfront_distribution_id" {
+  description = "Portal CloudFront distribution id (CI invalidation target, Deploy 2)."
+  value       = aws_cloudfront_distribution.portal.id
+}
+
+output "portal_cert_arn" {
+  description = "us-east-1 ACM cert ARN for portal.<ROOT_DOMAIN> (SEPARATE from the wc./api. certs)."
+  value       = aws_acm_certificate_validation.portal.certificate_arn
+}
