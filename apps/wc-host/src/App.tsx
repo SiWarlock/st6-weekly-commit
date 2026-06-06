@@ -36,8 +36,15 @@ function AuthGate() {
 }
 
 export function App() {
+  // When served under a base path (Option B: /portal/), the router basename must
+  // match so routes, deep links, and the /portal/callback redirect resolve under
+  // it. BASE_URL is '/portal/' (trailing slash) or '/' in dev; react-router wants
+  // no trailing slash ('/portal' or '/').
+  const base = import.meta.env.BASE_URL;
+  const basename = base === "/" ? "/" : base.replace(/\/$/, "");
+
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={basename}>
       <AuthGate />
     </BrowserRouter>
   );

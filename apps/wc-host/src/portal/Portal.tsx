@@ -48,7 +48,11 @@ function PortalChrome({ children }: { children: React.ReactNode }) {
                 className="portal-btn portal-btn-ghost"
                 onClick={() =>
                   logout({
-                    logoutParams: { returnTo: window.location.origin },
+                    logoutParams: {
+                      // Return to the portal root (under its base path, e.g.
+                      // /portal/) — BASE_URL carries the trailing slash.
+                      returnTo: `${window.location.origin}${import.meta.env.BASE_URL}`,
+                    },
                   })
                 }
               >

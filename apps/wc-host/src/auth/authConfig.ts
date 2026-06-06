@@ -19,6 +19,8 @@ interface Auth0Env {
   VITE_AUTH0_DOMAIN?: string | undefined;
   VITE_AUTH0_CLIENT_ID?: string | undefined;
   VITE_AUTH0_AUDIENCE?: string | undefined;
+  /** Vite's base path (e.g. '/portal/' when served under /portal/, '/' in dev). */
+  BASE_URL?: string | undefined;
 }
 
 export function resolveAuth0Config(
@@ -43,10 +45,15 @@ export function resolveAuth0Config(
     );
   }
 
+  // The portal may be served under a base path (Option B: wc.st6…/portal/), so the
+  // OAuth redirect must include it: <origin>/portal/callback. BASE_URL has a
+  // trailing slash ('/portal/' or '/'), so concatenating 'callback' is correct.
+  const base = env.BASE_URL ?? "/";
+
   return {
     domain: domain as string,
     clientId: clientId as string,
     audience: audience as string,
-    redirectUri: `${origin}/callback`,
+    redirectUri: `${origin}${base}callback`,
   };
 }
