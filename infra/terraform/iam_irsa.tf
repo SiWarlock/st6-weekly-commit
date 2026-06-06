@@ -93,6 +93,15 @@ resource "aws_iam_role_policy" "irsa_worker" {
         ]
       },
       {
+        # SendMessage scoped to wc-sync ONLY (NOT the DLQ — the reaper never produces to the DLQ; tighter
+        # least-privilege, brief 105). The 104b reaper re-enqueues stale-SYNCING pointers to wc-sync via
+        # SqsTemplate; the worker can't reach the api-side SNS publisher (no api<->worker edge, REQ-O-016).
+        Sid      = "ProduceSyncReaper"
+        Effect   = "Allow"
+        Action   = "sqs:SendMessage"
+        Resource = aws_sqs_queue.sync.arn
+      },
+      {
         Sid    = "ReadWorkerSecrets"
         Effect = "Allow"
         Action = "secretsmanager:GetSecretValue"

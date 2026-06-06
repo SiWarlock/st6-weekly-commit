@@ -28,6 +28,13 @@ resource "aws_sqs_queue" "sync" {
   name                    = "wc-sync"
   sqs_managed_sse_enabled = true
 
+  # Explicit visibility timeout (brief 105, 104-companion, Deploy 1): the implicit AWS 30s default
+  # redelivered the message mid-flight ~28s into a slow Graph createEvent -> the worker concurrency
+  # race (live Sam re-test, syncRecord 340d7e3b). 90s holds the invariant
+  # 30s_default < graph_time < 90s < 300s (app.sqs.sync-claim-lease=PT5M); keep 60-120s, well under
+  # the lease so a slow-but-active claimer is never lease-reclaimed mid-flight (wc-api LESSONS §49).
+  visibility_timeout_seconds = 90
+
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.sync_dlq.arn
     maxReceiveCount     = var.sqs_max_receive_count
