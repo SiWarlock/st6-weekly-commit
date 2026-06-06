@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from 'react-router-dom';
-import { HiCalendar, HiChevronDown } from 'react-icons/hi';
+import { HiCalendar } from 'react-icons/hi';
 import { useIsManager } from '../../routes/isManager';
 import { ROUTES, WEEK_LABEL, surfaceForPath, subForPath } from './navModel';
 
@@ -82,16 +82,18 @@ export function PrimaryNav() {
         </div>
       )}
 
-      <button
-        type="button"
-        disabled
-        aria-label="Week (demo — single week)"
+      {/* Static week INDICATOR (not a control) — this demo is a single week, so
+          there's no week navigation. Rendered as a non-interactive labeled chip
+          (no chevron, no button semantics) + a tooltip so it doesn't read as a
+          live dropdown. The real multi-week pager is a separate ST.8b item. */}
+      <span
+        title="Single demo week"
+        aria-label="Week (single demo week)"
         className="ml-auto inline-flex items-center gap-1 rounded-md border border-border px-3 py-1 text-label text-ink-secondary"
       >
         <HiCalendar aria-hidden className="h-4 w-4" />
         {WEEK_LABEL}
-        <HiChevronDown aria-hidden className="h-4 w-4" />
-      </button>
+      </span>
     </nav>
   );
 }
