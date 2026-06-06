@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Provider } from 'react-redux';
 import {
   hasAccessTokenProvider,
@@ -20,7 +20,8 @@ export interface WeeklyCommitAppProps {
 /**
  * The single exposed Module-Federation module. It CONSUMES a host-provided
  * router (renders the lazy `<AppRoutes/>` inside it — never creates a
- * `BrowserRouter`) and a host auth accessor (registers it into the 9.1 seam), and
+ * `BrowserRouter`) and a host auth accessor (registers it SYNCHRONOUSLY into the
+ * 9.1 seam during render, before the child first-query — §29), and
  * SELF-PROVIDES its own Redux `<Provider store={store}>` (the store + baseApi are
  * remote-internal; the host doesn't supply them). Self-providing — rather than a
  * separate `import('wc_web/store')` — is deliberate: a `./store` expose whose
@@ -34,11 +35,40 @@ export interface WeeklyCommitAppProps {
 export default function WeeklyCommitApp({
   getAccessToken,
 }: WeeklyCommitAppProps) {
-  useEffect(() => {
-    if (getAccessToken) {
-      setAccessTokenProvider(getAccessToken);
+  // Keep the registered closure pointing at the CURRENT prop without re-registering.
+  const tokenRef = useRef(getAccessToken);
+  tokenRef.current = getAccessToken;
+
+  // Register the host accessor SYNCHRONOUSLY during the first render (lazy useState
+  // initializer) — NOT a mount useEffect. The child <AppRoutes/> (useCurrentUser →
+  // meApi) dispatches its first RTK Query in the same commit, and child effects run
+  // BEFORE parent effects, so an effect here registers too late: prepareHeaders →
+  // getAccessToken() fires first and throws "No access-token provider configured"
+  // (the live host bug; LESSONS §29). Standalone wires its own accessor via
+  // Auth0IdentityProvider and passes no prop, so we register only when the host
+  // actually provides one.
+  const [registered] = useState(() => {
+    if (!getAccessToken) {
+      return false;
     }
-  }, [getAccessToken]);
+    setAccessTokenProvider(() => {
+      const fn = tokenRef.current;
+      if (!fn) {
+        throw new Error('No access-token provider configured');
+      }
+      return fn();
+    });
+    return true;
+  });
+
+  // Clear the seam on unmount — only if this component registered it (host mode);
+  // in standalone the seam is owned by Auth0IdentityProvider/DemoIdentityProvider.
+  useEffect(() => {
+    if (!registered) {
+      return undefined;
+    }
+    return () => setAccessTokenProvider(null);
+  }, [registered]);
 
   // An accessor is only required in the hosted (auth0) path. If the host failed
   // to provide one (and none is already wired), surface an error, never crash.
