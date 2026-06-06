@@ -52,8 +52,12 @@ spec:
               value: "demo-success"
             - name: SNS_TOPIC_ARN
               value: "${SNS_TOPIC_ARN}"
+            # Deploy 2: + the federation host origin so the WC embedded AT portal can call api.wc.
+            # (the remote runs at the portal origin; comma-separated → the app binds it as String[]).
+            # Harmless if applied earlier (just pre-allows portal). DISTINCT from the federation-remote
+            # CORS (the CloudFront ACAO on wc./remote/ in s3_cloudfront.tf) — this is the API allow-list.
             - name: CORS_ALLOWED_ORIGINS
-              value: "https://wc.${ROOT_DOMAIN}"
+              value: "https://wc.${ROOT_DOMAIN},https://portal.${ROOT_DOMAIN}"
             - name: WC_FRONTEND_BASE_URL
               value: "https://wc.${ROOT_DOMAIN}"
           livenessProbe:
