@@ -1,0 +1,27 @@
+{
+  "name": "wc-host",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": "apps/wc-host/src",
+  "targets": {
+    "dev": {
+      "executor": "nx:run-commands",
+      "options": { "command": "vite", "cwd": "apps/wc-host" }
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "options": { "command": "vite build", "cwd": "apps/wc-host" }
+    },
+    "preview": {
+      "executor": "nx:run-commands",
+      "options": { "command": "vite preview", "cwd": "apps/wc-host" }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc --noEmit -p tsconfig.json",
+        "cwd": "apps/wc-host"
+      }
+    }
+  }
+}

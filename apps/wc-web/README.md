@@ -138,6 +138,14 @@ step — follow **[`docs/runbooks/auth0-tenant-setup.md`](../../docs/runbooks/au
 | Entry filename | `remoteEntry.js`                                                |
 | Exposed module | `./WeeklyCommitApp` → `src/remote/WeeklyCommitApp.tsx`          |
 | Exposed shape  | **default export** — a React component `WeeklyCommitApp(props)` |
+| Exposed store  | `./store` → `src/app/store.ts` — the configured Redux store     |
+
+The **`./store`** expose hands the host the remote's _exact_ configured store (the
+one carrying this container's `baseApi` singleton). The host wraps the remote in
+`<Provider store={store}>` with it — a host-built store from a separately-imported
+`baseApi` would be a second RTK Query instance whose queries never resolve. `store.ts`
+is demo-free (`baseApi` only), so the expose adds no REQ-I-008 surface. A worked host
+that consumes this lives in `apps/wc-host/`.
 
 The exposed module **consumes** a host-provided router: it renders the lazy
 `<AppRoutes/>` **inside the host's router context** and never creates a
@@ -168,12 +176,14 @@ Minimal host mount (illustrative — generic pattern, pending PA verification):
 
 ```tsx
 import WeeklyCommitApp from 'wc_web/WeeklyCommitApp';
+import { store } from 'wc_web/store'; // the remote's configured store (same baseApi)
 import { Provider } from 'react-redux';
 import { BrowserRouter } from 'react-router-dom';
 
-// hostStore must register wc-web's baseApi; the host owns the router, the
-// remote consumes it. getAccessToken is required only in auth0 mode.
-<Provider store={hostStore}>
+// The host imports the store FROM the remote so it carries wc-web's baseApi
+// singleton; the host owns the router, the remote consumes it. getAccessToken is
+// required only in auth0 mode. (Worked host: apps/wc-host/.)
+<Provider store={store}>
   <BrowserRouter>
     <WeeklyCommitApp getAccessToken={host.getAccessToken} />
   </BrowserRouter>
@@ -188,6 +198,14 @@ import { BrowserRouter } from 'react-router-dom';
 | `react-dom`        | `^18.3.1`         |
 | `@reduxjs/toolkit` | `^2.3.0`          |
 | `react-redux`      | `^9.1.2`          |
+| `react-router-dom` | `^6.28.0`         |
+
+`react-router-dom` is shared because the remote **consumes** the host's
+`<BrowserRouter>`: React Router's context is module-identity-based, so host + remote
+must resolve to a single `react-router-dom` instance, or the remote's route hooks
+read a different context than the host's router provides ("useRoutes() may be used
+only in the context of a `<Router>`"). Host + remote must declare it shared at the
+same version.
 
 `@originjs/vite-plugin-federation` **dedups** each shared dependency into one
 version-matched shared chunk — it is **not** webpack-style `singleton`

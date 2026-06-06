@@ -23,6 +23,15 @@ export default defineConfig({
             filename: 'remoteEntry.js',
             exposes: {
               './WeeklyCommitApp': './src/remote/WeeklyCommitApp.tsx',
+              // The host wraps the remote in `<Provider store={store}>`. The
+              // store must be the SAME instance the remote's components dispatch
+              // against — its hooks bind to THIS container's `baseApi` singleton,
+              // so a host-built store from a separately-imported `baseApi` is a
+              // second RTK Query instance (queries never resolve). Exposing the
+              // configured store hands the host that exact singleton (9.13 host
+              // contract requirement #1 / OQ-004). store.ts is demo-free
+              // (baseApi only), so this adds no demo surface (REQ-I-008).
+              './store': './src/app/store.ts',
             },
             // @originjs dedups each shared dep into one version-matched shared
             // chunk (NOT webpack-style `singleton` enforcement — that key isn't
@@ -34,6 +43,14 @@ export default defineConfig({
               'react-dom': { requiredVersion: '^18.3.1' },
               '@reduxjs/toolkit': { requiredVersion: '^2.3.0' },
               'react-redux': { requiredVersion: '^9.1.2' },
+              // The remote CONSUMES the host's router (renders <AppRoutes/>'s
+              // <Routes>/useNavigate inside the host's <BrowserRouter>). React
+              // Router's context is module-identity-based, so host + remote must
+              // resolve to ONE react-router-dom instance — otherwise the remote's
+              // route hooks read a different context than the host's <BrowserRouter>
+              // provides and throw "useRoutes() may be used only in the context of
+              // a <Router>". Both sides must declare it shared at the same version.
+              'react-router-dom': { requiredVersion: '^6.28.0' },
             },
           }),
         ]
