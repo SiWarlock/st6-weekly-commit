@@ -1,0 +1,95 @@
+# job-seed-demo.yaml — week-parameterized demo-seed Job (brief 107 / task 10.6, §3/§9/§10/§17/§23,
+# Appendix E Part 2). ███ MANUAL / ON-DEMAND — NOT PART OF THE NORMAL DEPLOY CHAIN ███ (the 12.11
+# pipeline excludes it, like job-perf-seed). Applied by hand per target week AFTER the deploy lands.
+#
+# WHAT IT DOES: reuses the wc-api IMAGE (no third image — forbidden-pattern #5) with arg
+# --app.job=seed-demo, which wires the DemoSeedRunner bean (@ConditionalOnProperty app.job=seed-demo,
+# inert in the normal web image). The runner parses --week=YYYY-MM-DD and delegates to
+# DemoSeeder.run(weekStart): an FK-safe RESET of the {W, W-7} footprint for the 7 demo personas, then
+# a re-seed of the deterministic 7-persona lifecycle matrix (LOCKED/SYNCED, FAILED-sync+OVERDUE,
+# OPEN/RESOLVED dispute, RECONCILING+carry-forward, DRAFT-unlinked) with all timestamps relative to
+# weekStart, projections recomputed per plan via ProjectionRefresher.recomputeForPlan (never
+# hand-seeded), and Clock-anchored overdue derivation. Reset-then-seed ⇒ idempotent (re-runnable
+# between takes). Direct-row-insert, NO SNS publish / NO live Graph sync (deterministic, side-effect-free).
+#
+# WHY db-ONLY: the seed writes the fixture matrix via JPA/JDBC. It does NOT migrate schema
+# (spring.flyway.enabled=false — forbidden-pattern #3; only job-migration migrates), and it carries no
+# user request, no Auth0/Graph/SNS/SQS/CORS env. Runs as the wc-cronjob SA (IRSA: GetSecretValue DB
+# ONLY); mounts wc-cronjob-secrets (db only) at /mnt/secrets — identical posture to job-rebuild-projections.
+#
+# ONE-SHOT TERMINATION (LESSON §22, load-bearing): --spring.main.web-application-type=none is MANDATORY.
+# A one-shot --app.job runner does NOT self-exit; with no web server, once the ApplicationRunner returns
+# main() returns and the JVM exits → the Job reaches Complete. WITHOUT the arg the Job starts a web
+# server, never completes, and hangs to backoffLimit. (It also dodges the web-boot SecurityConfig →
+# missing-issuer-uri fail-boot that the db-only batch Jobs all avoid — see job-migration.yaml.)
+# activeDeadlineSeconds is the operational backstop; restartPolicy Never + finite backoffLimit.
+#
+# WEEK PARAMETER (${SEED_WEEK}): operator-supplied at apply time (a Monday week-start, YYYY-MM-DD; a
+# mid-week date is normalized to its Monday by the runner). It is baked into BOTH the --week arg AND the
+# Job name — so each weekly run gets a distinct name (wc-seed-demo-2026-06-01, wc-seed-demo-2026-06-08)
+# and the two takes coexist. An UNSET SEED_WEEK yields the name "wc-seed-demo-" (trailing dash → invalid
+# RFC-1123 name) so kubectl rejects the apply rather than silently mis-seeding — fail-closed by design.
+# Re-running the SAME week requires `kubectl delete job wc-seed-demo-<week>` first; the data is idempotent
+# (the reset clears the prior take) so a delete+re-apply reproduces the identical matrix.
+#
+# RUN RECIPE (manual, post-deploy — NOT a CI step; this Job is NOT in the deploy.yml envsubst allowlist):
+#   SEED_WEEK=2026-06-01 \
+#   ECR_API_IMAGE=$(kubectl get deploy wc-api -n wc -o jsonpath='{.spec.template.spec.containers[0].image}') \
+#   AWS_REGION=us-east-1 \
+#   envsubst '$SEED_WEEK $ECR_API_IMAGE $AWS_REGION' < infra/k8s/job-seed-demo.yaml | kubectl apply -f -
+#   kubectl wait --for=condition=complete job/wc-seed-demo-2026-06-01 -n wc --timeout=600s
+# Reuse the already-deployed api image (jsonpath above) so the seed runs the same build as prod.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: wc-seed-demo-${SEED_WEEK}
+  namespace: wc
+  labels:
+    app.kubernetes.io/part-of: wc
+    app.kubernetes.io/component: seed-demo
+  annotations:
+    wc.st6/opt-in: "true"
+    wc.st6/excluded-from-deploy: "true"
+    wc.st6/seed-week: "${SEED_WEEK}"
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: wc
+        app.kubernetes.io/component: seed-demo
+    spec:
+      serviceAccountName: wc-cronjob
+      restartPolicy: Never
+      containers:
+        - name: wc-seed-demo
+          image: ${ECR_API_IMAGE}
+          args:
+            - "--app.job=seed-demo"
+            - "--week=${SEED_WEEK}"
+            - "--spring.main.web-application-type=none"
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "aws"
+            - name: SPRING_FLYWAY_ENABLED
+              value: "false"
+            - name: AWS_REGION
+              value: "${AWS_REGION}"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: secrets-store
+              mountPath: /mnt/secrets
+              readOnly: true
+      volumes:
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: wc-cronjob-secrets
