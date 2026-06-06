@@ -30,6 +30,13 @@ public class MsGraphEventGateway implements GraphEventGateway {
     event.setSubject(spec.subject());
     event.setStart(graphDateTime(spec.start()));
     event.setEnd(graphDateTime(spec.end()));
+    // Idempotency (brief 104b): the syncRecordId IS the Graph transactionId — Graph's server-side
+    // idempotency key. A redundant create (e.g. the reaper re-firing a record whose prior
+    // createEvent succeeded but whose SYNCED-save failed, leaving graphEventId unpersisted) is
+    // deduped by Graph → it returns the EXISTING event (same id) instead of duplicating. The
+    // recordId is a UUID → rule #7 (no PII in the key). The dedup retention is bounded; the
+    // listener's early-persist of graphEventId covers the longer tail.
+    event.setTransactionId(spec.recordId().toString());
 
     Event created = graphClient.users().byUserId(userEmail).events().post(event);
     return created.getId();

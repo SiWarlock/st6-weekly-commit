@@ -2,12 +2,14 @@ package com.st6.wc.sync.repo;
 
 import com.st6.wc.enums.EventKind;
 import com.st6.wc.enums.SyncRelatedType;
+import com.st6.wc.enums.SyncStatus;
 import com.st6.wc.sync.OutlookCalendarSyncRecord;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -72,4 +74,17 @@ public interface OutlookCalendarSyncRecordRepository
       """)
   int claimForSync(
       @Param("id") UUID id, @Param("now") Instant now, @Param("leaseExpiry") Instant leaseExpiry);
+
+  /**
+   * Stale in-flight rows for the 104b reaper: those in {@code status} (always {@code SYNCING})
+   * whose {@code lastAttemptAt} predates {@code cutoff} (= {@code now − lease}). {@link
+   * Pageable}-BOUNDED so a backlog can't be republished unboundedly in one reaper tick. The reaper
+   * re-enqueues each via {@code SqsTemplate} → the listener's {@link #claimForSync} lease clause
+   * reclaims it (the re-trigger 104's lease clause needs but the no-op-ACK-deleted message can't
+   * provide). Only {@code SYNCING} rows are passed (a recent active claimer's {@code lastAttemptAt}
+   * is ≥ cutoff → excluded; QUEUED/RETRY_REQUESTED/SYNCED/FAILED/PENDING_PUBLISH are not this
+   * status).
+   */
+  List<OutlookCalendarSyncRecord> findByStatusAndLastAttemptAtBefore(
+      SyncStatus status, Instant cutoff, Pageable page);
 }

@@ -5,6 +5,7 @@ import org.springframework.boot.autoconfigure.domain.EntityScan;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * Wires cross-module {@code :shared} beans into the worker context. {@code WcSyncWorkerApplication}
@@ -21,10 +22,15 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
  *       com.st6.wc.employee.repo}) — only the repos the worker actually uses (the sync repo for the
  *       SQS consumer, the employee repo for the s9 owner-email → Graph lookup), not every domain
  *       repo.
+ *   <li>{@link EnableScheduling @EnableScheduling} — enables the {@code @Scheduled} infrastructure
+ *       for the 104b {@code StaleSyncReaper}. Harmless when no schedule is registered: the reaper
+ *       bean is {@code @ConditionalOnProperty("app.sqs.queue-url")}-gated, so no timer fires in
+ *       local/test (no queue) — only the deployed {@code aws} worker schedules the reaper.
  * </ul>
  */
 @Configuration
 @Import(ClockConfig.class)
 @EntityScan("com.st6.wc")
 @EnableJpaRepositories({"com.st6.wc.sync.repo", "com.st6.wc.employee.repo"})
+@EnableScheduling
 public class WorkerSharedConfig {}

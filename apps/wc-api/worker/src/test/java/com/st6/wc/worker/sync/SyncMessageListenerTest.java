@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -19,6 +20,8 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -73,6 +76,7 @@ class SyncMessageListenerTest {
         .thenReturn(1);
     when(syncRecords.findById(r.getId())).thenReturn(Optional.of(r));
     when(graphPort.createEvent(r)).thenReturn("demo-graph-evt-1");
+    when(syncRecords.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0)); // early-persist
 
     listener.onMessage(pointerFor(r));
 
@@ -87,6 +91,42 @@ class SyncMessageListenerTest {
     assertThat(r.getStatus()).isEqualTo(SyncStatus.SYNCED);
     assertThat(r.getGraphEventId()).isEqualTo("demo-graph-evt-1");
     assertThat(r.getProcessedAt()).isEqualTo(clock.instant());
+  }
+
+  // --- 1b. early-persist (brief 104b idempotency): graphEventId saved in its OWN save BEFORE the
+  // SYNCED flip — a crash after the create can't lose it (reprocess → reconcile-to-SYNCED).
+  @Test
+  void claimed_earlyPersistsGraphEventId_beforeSyncedFlip() {
+    OutlookCalendarSyncRecord r = syncingRecord();
+    when(syncRecords.claimForSync(eq(r.getId()), any(Instant.class), any(Instant.class)))
+        .thenReturn(1);
+    when(syncRecords.findById(r.getId())).thenReturn(Optional.of(r));
+    when(graphPort.createEvent(r)).thenReturn("evt-1");
+
+    // snapshot the record's (status, graphEventId) at each persist — in order. The early-persist is
+    // a saveAndFlush (its own save); the SYNCED flip is a save. The record is mutated in place.
+    List<String> persistStates = new ArrayList<>();
+    when(syncRecords.saveAndFlush(any()))
+        .thenAnswer(
+            inv -> {
+              OutlookCalendarSyncRecord saved = inv.getArgument(0);
+              persistStates.add(saved.getStatus() + ":" + saved.getGraphEventId());
+              return saved;
+            });
+    doAnswer(
+            inv -> {
+              OutlookCalendarSyncRecord saved = inv.getArgument(0);
+              persistStates.add(saved.getStatus() + ":" + saved.getGraphEventId());
+              return saved;
+            })
+        .when(syncRecords)
+        .save(any());
+
+    listener.onMessage(pointerFor(r));
+
+    // saveAndFlush = the early-persist (graphEventId durable, still SYNCING); then save = SYNCED.
+    // A crash between them leaves graphEventId recoverable (reprocess → reconcile-SYNCED).
+    assertThat(persistStates).containsExactly("SYNCING:evt-1", "SYNCED:evt-1");
   }
 
   // --- 2. not claimable (claim returns 0): no-op ACK — no reload, no port, no save, no throw -----

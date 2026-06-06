@@ -114,8 +114,15 @@ public class SyncMessageListener {
 
     try {
       String graphEventId = graphPort.createEvent(record);
-      record.setStatus(SyncStatus.SYNCED);
+      // Early-persist (brief 104b): save graphEventId in its OWN save BEFORE the SYNCED flip, so a
+      // crash after the create can't lose it (reprocess → reconcile-to-SYNCED, no re-create). Pairs
+      // with the gateway transactionId, which dedupes the create even if the id is never persisted.
+      // REASSIGN to the flushed instance: save() merges, so the prior `record` ref is left STALE
+      // (old @Version) — reusing it for the SYNCED save re-introduces the brief-104 two-save bug.
+      // saveAndFlush returns the bumped-version instance, so the SYNCED save matches the DB.
       record.setGraphEventId(graphEventId);
+      record = syncRecords.saveAndFlush(record);
+      record.setStatus(SyncStatus.SYNCED);
       record.setProcessedAt(clock.instant());
       syncRecords.save(record);
     } catch (RuntimeException e) {

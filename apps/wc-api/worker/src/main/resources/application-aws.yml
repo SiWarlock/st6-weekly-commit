@@ -17,6 +17,13 @@ app:
     # it mid-flight. ISO-8601 duration; tunable via SYNC_CLAIM_LEASE. Matches the listener's @Value
     # default (PT5M).
     sync-claim-lease: ${SYNC_CLAIM_LEASE:PT5M}
+    # Stale-SYNCING reaper (brief 104b): the @Scheduled reaper re-enqueues stale-SYNCING rows
+    # (lastAttemptAt < now − sync-claim-lease) onto this queue so the listener's lease clause
+    # reclaims them — the re-trigger the no-op-ACK-deleted message can't provide. Interval a fraction
+    # of the lease (catches a stranded row promptly, not wastefully); batch bounds one tick's
+    # re-enqueue. Inert until infra grants the worker sqs:SendMessage on wc-sync.
+    reaper-interval: ${REAPER_INTERVAL:PT1M}
+    reaper-batch-size: ${REAPER_BATCH_SIZE:100}
 logging:
   level:
     com.st6.wc.worker: INFO
