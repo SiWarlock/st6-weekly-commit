@@ -22,34 +22,30 @@ export default defineConfig({
             name: 'wc_web',
             filename: 'remoteEntry.js',
             exposes: {
+              // ONE exposed module. The remote is self-contained for state — it
+              // wraps its own `<Provider store={store}>` inside WeeklyCommitApp
+              // (the store + baseApi live entirely in the remote). The host only
+              // provides the router + getAccessToken. We DON'T expose `./store`:
+              // a separate `import('wc_web/store')` whose chunk did a top-level
+              // `await importShared('@reduxjs/toolkit')` deadlocked the cross-build
+              // shared-scope init → the host hung forever on "Connecting…".
               './WeeklyCommitApp': './src/remote/WeeklyCommitApp.tsx',
-              // The host wraps the remote in `<Provider store={store}>`. The
-              // store must be the SAME instance the remote's components dispatch
-              // against — its hooks bind to THIS container's `baseApi` singleton,
-              // so a host-built store from a separately-imported `baseApi` is a
-              // second RTK Query instance (queries never resolve). Exposing the
-              // configured store hands the host that exact singleton (9.13 host
-              // contract requirement #1 / OQ-004). store.ts is demo-free
-              // (baseApi only), so this adds no demo surface (REQ-I-008).
-              './store': './src/app/store.ts',
             },
-            // @originjs dedups each shared dep into one version-matched shared
-            // chunk (NOT webpack-style `singleton` enforcement — that key isn't
-            // in its typed API). `requiredVersion` pins the shared React/Redux;
-            // the real single-React-instance guarantee is a host+remote
-            // shared-scope agreement owned by the 9.13 host contract.
+            // Share ONLY the singletons that cross the host↔remote boundary:
+            //  - react / react-dom: the single React instance (else invalid hooks).
+            //  - react-router-dom: the remote renders <AppRoutes/>'s <Routes>/
+            //    useNavigate inside the host's <BrowserRouter>; React Router's
+            //    context is module-identity-based, so host + remote must resolve to
+            //    ONE instance (else "useRoutes() may be used only in the context of
+            //    a <Router>"). Host declares the same set + versions.
+            // Redux (@reduxjs/toolkit) + react-redux are NOT shared: they're
+            // remote-INTERNAL now (the remote self-provides its store), so the host
+            // never touches them. Sharing @reduxjs/toolkit forced a top-level
+            // `await importShared(...)` in the store chunk that deadlocked the
+            // cross-build init; bundling it in the remote removes that await.
             shared: {
               react: { requiredVersion: '^18.3.1' },
               'react-dom': { requiredVersion: '^18.3.1' },
-              '@reduxjs/toolkit': { requiredVersion: '^2.3.0' },
-              'react-redux': { requiredVersion: '^9.1.2' },
-              // The remote CONSUMES the host's router (renders <AppRoutes/>'s
-              // <Routes>/useNavigate inside the host's <BrowserRouter>). React
-              // Router's context is module-identity-based, so host + remote must
-              // resolve to ONE react-router-dom instance — otherwise the remote's
-              // route hooks read a different context than the host's <BrowserRouter>
-              // provides and throw "useRoutes() may be used only in the context of
-              // a <Router>". Both sides must declare it shared at the same version.
               'react-router-dom': { requiredVersion: '^6.28.0' },
             },
           }),

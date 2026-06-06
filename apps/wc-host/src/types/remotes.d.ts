@@ -4,8 +4,8 @@
  * host strict types at the boundary.
  *
  * Keep in lockstep with the remote's exposes (apps/wc-web/vite.config.ts):
- *   './WeeklyCommitApp' → the exposed React component
- *   './store'           → the configured Redux store (baseApi reducer + middleware)
+ *   './WeeklyCommitApp' → the exposed React component (self-provides its store)
+ * (No `./store` expose — the remote owns its Redux store internally.)
  */
 declare module "wc_web/WeeklyCommitApp" {
   import type { ComponentType } from "react";
@@ -19,15 +19,4 @@ declare module "wc_web/WeeklyCommitApp" {
 
   const WeeklyCommitApp: ComponentType<WeeklyCommitAppProps>;
   export default WeeklyCommitApp;
-}
-
-declare module "wc_web/store" {
-  import type { Store } from "@reduxjs/toolkit";
-
-  /**
-   * The remote's configured store — the SAME instance the remote's components
-   * dispatch against (its hooks bind to the remote container's `baseApi`
-   * singleton). The host wraps the remote in `<Provider store={store}>`.
-   */
-  export const store: Store;
 }
