@@ -46,8 +46,11 @@ spec:
               value: "${SQS_QUEUE_URL}"
             - name: SQS_DLQ_URL
               value: "${SQS_DLQ_URL}"
+            # Real MS Graph adapter for live Outlook sync (the graph secret is HITL-populated; the
+            # §45/D.6 fail-safe degrades to safe-FAILED at startup if any GRAPH_* cred is blank).
+            # Was "demo-success" before the live-sync demo (the no-op stub: marks SYNCED, no event).
             - name: GRAPH_MODE
-              value: "demo-success"
+              value: "real"
             - name: WC_FRONTEND_BASE_URL
               value: "https://wc.${ROOT_DOMAIN}"
           livenessProbe:
