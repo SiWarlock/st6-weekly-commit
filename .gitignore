@@ -20,3 +20,6 @@ build/
 
 # Demo video script — local working artifact, not committed.
 docs/demo.md
+
+# Generated interactive "learn site" app (the docs/layers/ markdown is committed; this viewer is not).
+docs/learn-site/
