@@ -30,10 +30,12 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * {@code @BeforeEach} restores the V6 fixture deterministically so each destructive test starts
  * from the same matrix.
  *
- * <p>Proves {@link DemoSeeder#run(LocalDate)} (107a scope: reset only) normalizes its arg to the
- * week's Monday, then clears the 7 personas' derived rows across the <strong>two-week footprint {W,
- * W−7}</strong> in FK-safe order — leaving identity (employees/relationships) and reference (RCDO)
- * data untouched. The seed half (the matrix re-insert) is brief 107b.
+ * <p>Proves the FK-safe {@link DemoSeeder#reset(LocalDate)} step in isolation — it clears the 7
+ * personas' derived rows across the <strong>two-week footprint {W, W−7}</strong> in dependency
+ * order, leaving identity (employees/relationships) and reference (RCDO) data untouched — and that
+ * {@link DemoSeeder#run(LocalDate)} normalizes its arg to the week's Monday before reset+seed.
+ * (107b made {@code run} also re-seed the matrix, so the reset is exercised via the package-private
+ * seam.)
  */
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.MOCK,
@@ -99,15 +101,22 @@ class DemoSeederResetTest {
   // ------
   @Test
   void normalizesWeekArgToMonday() {
-    // run(Wed 2026-06-10) normalizes to Monday 2026-06-08 → footprint {2026-06-08, 2026-06-01}.
-    // So V6's 2026-06-01 rows (= 06-08's W−7) are cleared, while 2026-05-25 (NOT in the 06-08
-    // footprint) survives — a discriminating proof that 06-10 mapped to 06-08, not to itself.
+    // run(Wed 2026-06-10) normalizes to Monday 2026-06-08 before reset+seed — Grace's current-week
+    // RECONCILING plan lands at 06-08, and nothing lands at the raw mid-week arg (proves 06-10
+    // mapped
+    // to 06-08, not used literally).
     seeder.run(LocalDate.of(2026, 6, 10));
 
-    assertThat(planCountAt(W)).as("06-01 cleared (the W−7 of the normalized 06-08 week)").isZero();
-    assertThat(planCountAt(W_PRIOR))
-        .as("05-25 untouched (not in the 06-08 footprint)")
-        .isPositive();
+    assertThat(
+            scalarInt(
+                "select count(*) from weekly_plan where employee_id = '"
+                    + R5_GRACE
+                    + "' and week_start_date = '2026-06-08' and state = 'RECONCILING'"))
+        .as("Grace's current plan is seeded at the normalized Monday 2026-06-08")
+        .isEqualTo(1);
+    assertThat(planCountAt(LocalDate.of(2026, 6, 10)))
+        .as("nothing seeded at the raw mid-week arg")
+        .isZero();
   }
 
   // --- the whole {W, W−7} footprint is cleared in FK-safe order ---------------------------------
@@ -123,7 +132,8 @@ class DemoSeederResetTest {
         .as("projections populated before reset")
         .isPositive();
 
-    seeder.run(W); // footprint {2026-06-01, 2026-05-25}
+    seeder.reset(
+        W); // the reset in isolation (run() also re-seeds); footprint {2026-06-01, 2026-05-25}
 
     assertThat(planCountAt(W)).as("W plans gone").isZero();
     assertThat(planCountAt(W_PRIOR)).as("W−7 plans gone").isZero();
@@ -146,7 +156,7 @@ class DemoSeederResetTest {
   // --- the reset clears DERIVED data only — never identity or reference data --------------------
   @Test
   void resetLeavesIdentityAndOtherDataIntact() {
-    seeder.run(W);
+    seeder.reset(W);
 
     assertThat(scalarInt("select count(*) from employee")).as("7 personas intact").isEqualTo(7);
     assertThat(scalarInt("select count(*) from manager_relationship"))
