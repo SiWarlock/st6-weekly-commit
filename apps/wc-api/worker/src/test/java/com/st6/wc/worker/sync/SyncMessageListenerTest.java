@@ -3,6 +3,7 @@ package com.st6.wc.worker.sync;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -15,36 +16,46 @@ import com.st6.wc.sns.payload.SyncJobPointer;
 import com.st6.wc.sync.OutlookCalendarSyncRecord;
 import com.st6.wc.sync.repo.OutlookCalendarSyncRecordRepository;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 /**
- * Unit proof for the worker SQS consumer (Wave-2 s8, §10 / rule #7). Reloads the {@code
- * OutlookCalendarSyncRecord} by the pointer's {@code syncRecordId}, transitions {@code QUEUED →
- * SYNCING → SYNCED/FAILED} around the {@link GraphCalendarPort}, is idempotent (skip when already
- * synced), and on failure records a <strong>non-PII</strong> {@code failureCode}/{@code
- * safeMessage} + rethrows (→ SQS redrive → DLQ). The {@code @SqsListener} method is exercised
- * directly (the annotation is inert in a unit call). Mirrors the {@code SnsLifecyclePublisher}
- * unit-test posture.
+ * Unit proof for the worker SQS consumer (Wave-2 s8, §10 / rule #7; brief 104 atomic-claim
+ * refactor). The consumer now <strong>claims</strong> the record atomically ({@link
+ * OutlookCalendarSyncRecordRepository#claimForSync}) instead of read-then-{@code
+ * setStatus(SYNCING)}: {@code claimed == 0} → no-op ACK; {@code claimed == 1} → reload →
+ * reconcile-to-{@code SYNCED} (if already in Graph) or port → {@code SYNCED}/{@code FAILED}. These
+ * tests pin the listener's branching on the claim result (mocked); the row-state matrix the claim
+ * CAS reduces to is pinned deterministically by {@link OutlookCalendarSyncRecordClaimTest} (real
+ * PG, no threads). On failure the §44 sanitized cause-less rethrow + fixed non-PII code/message are
+ * preserved (the rethrow assertion keeps the brief-102 exact-message form). The
+ * {@code @SqsListener} method is exercised directly (the annotation is inert in a unit call).
  */
 class SyncMessageListenerTest {
+
+  private static final Duration LEASE = Duration.ofMinutes(5);
 
   private final OutlookCalendarSyncRecordRepository syncRecords =
       mock(OutlookCalendarSyncRecordRepository.class);
   private final GraphCalendarPort graphPort = mock(GraphCalendarPort.class);
   private final Clock clock = Clock.fixed(Instant.parse("2026-06-01T12:00:00Z"), ZoneOffset.UTC);
   private final SyncMessageListener listener =
-      new SyncMessageListener(syncRecords, graphPort, clock);
+      new SyncMessageListener(syncRecords, graphPort, clock, LEASE);
 
-  private static OutlookCalendarSyncRecord queuedRecord() {
+  /**
+   * A record as the post-claim {@code findById} reload returns it (SYNCING, the claim's outcome).
+   */
+  private static OutlookCalendarSyncRecord syncingRecord() {
     OutlookCalendarSyncRecord r = new OutlookCalendarSyncRecord();
     r.setId(UUID.randomUUID());
     r.setOwnerEmployeeId(UUID.randomUUID());
     r.setEventKind(EventKind.IC_PLANNING);
-    r.setStatus(SyncStatus.QUEUED);
+    r.setStatus(SyncStatus.SYNCING);
     r.setRetryCount(0);
     r.setTraceId("trace-1");
     return r;
@@ -54,174 +65,110 @@ class SyncMessageListenerTest {
     return new SyncJobPointer(r.getId(), r.getEventKind(), "aws", r.getTraceId());
   }
 
-  // --- 1. happy path: reload → SYNCING → port → SYNCED + graphEventId + processedAt ----
+  // --- 1. sole claimer: claim → reload → port → SYNCED + graphEventId + processedAt --------------
   @Test
-  void consumesPointer_reloadsAndSyncs() {
-    OutlookCalendarSyncRecord r = queuedRecord();
+  void claimed_syncsToSynced() {
+    OutlookCalendarSyncRecord r = syncingRecord();
+    when(syncRecords.claimForSync(eq(r.getId()), any(Instant.class), any(Instant.class)))
+        .thenReturn(1);
     when(syncRecords.findById(r.getId())).thenReturn(Optional.of(r));
     when(graphPort.createEvent(r)).thenReturn("demo-graph-evt-1");
 
     listener.onMessage(pointerFor(r));
 
+    // the claim is passed (now, leaseExpiry = now − lease) — pins the lease wiring.
+    ArgumentCaptor<Instant> now = ArgumentCaptor.forClass(Instant.class);
+    ArgumentCaptor<Instant> leaseExpiry = ArgumentCaptor.forClass(Instant.class);
+    verify(syncRecords).claimForSync(eq(r.getId()), now.capture(), leaseExpiry.capture());
+    assertThat(now.getValue()).isEqualTo(clock.instant());
+    assertThat(leaseExpiry.getValue()).isEqualTo(clock.instant().minus(LEASE));
+
     verify(graphPort).createEvent(r);
     assertThat(r.getStatus()).isEqualTo(SyncStatus.SYNCED);
     assertThat(r.getGraphEventId()).isEqualTo("demo-graph-evt-1");
     assertThat(r.getProcessedAt()).isEqualTo(clock.instant());
-    assertThat(r.getLastAttemptAt()).isEqualTo(clock.instant());
   }
 
-  // --- 2. idempotent: a redelivered pointer for an already-synced record is a no-op skip ----
+  // --- 2. not claimable (claim returns 0): no-op ACK — no reload, no port, no save, no throw -----
+  // Folds the old per-state no-ops (SYNCED / SYNCING / FAILED / PENDING_PUBLISH / unknown id): the
+  // claim's WHERE clause decides claimability (pinned by the repo CAS test), so at the listener
+  // level they all collapse to "claimed == 0".
   @Test
-  void alreadySynced_isIdempotentNoOp() {
-    OutlookCalendarSyncRecord r = queuedRecord();
-    r.setStatus(SyncStatus.SYNCED);
-    r.setGraphEventId("demo-graph-evt-1"); // the "already created in Graph" signal
-    when(syncRecords.findById(r.getId())).thenReturn(Optional.of(r));
+  void notClaimable_isNoOpAck() {
+    SyncJobPointer pointer =
+        new SyncJobPointer(UUID.randomUUID(), EventKind.IC_PLANNING, "aws", "trace-x");
+    when(syncRecords.claimForSync(
+            eq(pointer.syncRecordId()), any(Instant.class), any(Instant.class)))
+        .thenReturn(0);
 
-    listener.onMessage(pointerFor(r));
+    listener.onMessage(pointer); // no throw
 
-    verifyNoInteractions(graphPort); // no second calendar op
-    assertThat(r.getStatus()).isEqualTo(SyncStatus.SYNCED);
+    verifyNoInteractions(graphPort);
+    verify(syncRecords, never()).findById(any());
+    verify(syncRecords, never()).save(any());
   }
 
-  // --- 3. failure: port throws → FAILED + non-PII failureCode/safeMessage + retry++ + rethrow ----
+  // --- 3. claimer's Graph call fails → FAILED + non-PII code/message + retry++ + sanitized rethrow
   @Test
-  void graphFailure_recordsFailedAndThrows() {
-    OutlookCalendarSyncRecord r = queuedRecord();
+  void claimerGraphFailure_recordsFailedAndThrows() {
+    OutlookCalendarSyncRecord r = syncingRecord();
+    when(syncRecords.claimForSync(eq(r.getId()), any(Instant.class), any(Instant.class)))
+        .thenReturn(1);
     when(syncRecords.findById(r.getId())).thenReturn(Optional.of(r));
     // The Graph error carries PII/secret-ish detail — it must NOT leak into the record or the
     // throw.
     when(graphPort.createEvent(r))
         .thenThrow(new RuntimeException("Graph 403: john.doe@acme.com calendar 'Q3 OKRs' body"));
 
-    // The rethrow is the headline rule-#7 defense: the sanitized type, NO cause-chain (so the SQS
-    // framework's redrive logging can't surface the raw Graph error), and an ids-only message.
+    // §44 rule-#7 defense: sanitized type, NO cause-chain (so the SQS framework's redrive logging
+    // can't surface the raw Graph error), and the EXACT ids-only message (brief-102 — stronger than
+    // token-absence checks AND deterministic for any random record id; never regress to
+    // notContaining).
     assertThatThrownBy(() -> listener.onMessage(pointerFor(r)))
         .isInstanceOf(SyncProcessingException.class)
         .hasNoCause()
-        // Exact-message (deploy-fix flaky #102): the whole ids-only message — strictly stronger
-        // than the token-absence checks AND deterministic for ANY id. notContaining("403") flaked
-        // when a random record-id UUID's hex contained "403"; exact-message is id-agnostic (seed
-        // stays UUID.randomUUID()).
         .hasMessage("Sync processing failed for syncRecord=" + r.getId());
 
     assertThat(r.getStatus()).isEqualTo(SyncStatus.FAILED);
     assertThat(r.getRetryCount()).isEqualTo(1);
-    // rule #7 — fixed code + fixed non-PII message; the raw exception detail never copied through.
     assertThat(r.getFailureCode()).isEqualTo("GRAPH_SYNC_FAILED");
     assertThat(r.getSafeMessage()).isEqualTo("Calendar sync failed; it will be retried.");
     assertThat(r.getSafeMessage()).doesNotContain("john.doe@acme.com", "Q3 OKRs", "403");
     assertThat(r.getGraphEventId()).isNull();
   }
 
-  // --- 4. unknown record (vanished id): no port call, no throw (nothing to redrive) ----
+  // --- 4. claimed but already created in Graph → reconcile to SYNCED (no double-create) ----------
+  // The claim moved the row to SYNCING; if a graphEventId is already present (idempotent at-least-
+  // once), reconcile to SYNCED rather than re-calling Graph — leaving it SYNCING would loop
+  // SYNCING → lease-reclaim → SYNCING forever.
   @Test
-  void unknownRecord_isNoOp() {
-    SyncJobPointer pointer =
-        new SyncJobPointer(UUID.randomUUID(), EventKind.IC_PLANNING, "aws", "trace-x");
-    when(syncRecords.findById(pointer.syncRecordId())).thenReturn(Optional.empty());
-
-    listener.onMessage(pointer);
-
-    verifyNoInteractions(graphPort);
-    verify(syncRecords, never()).save(any());
-  }
-
-  // ===== 098 — the §10 worker-redelivery status guard =====
-
-  // --- 098 #1: a RETRY_REQUESTED record is re-attempted → SYNCING → port → SYNCED (097 e2e) ----
-  @Test
-  void retryRequested_reattempts_toSynced() {
-    OutlookCalendarSyncRecord r = queuedRecord();
-    r.setStatus(SyncStatus.RETRY_REQUESTED); // graphEventId null (retry only fires on FAILED)
-    when(syncRecords.findById(r.getId())).thenReturn(Optional.of(r));
-    when(graphPort.createEvent(r)).thenReturn("graph-evt-retry");
-
-    listener.onMessage(pointerFor(r));
-
-    verify(graphPort).createEvent(r);
-    assertThat(r.getStatus()).isEqualTo(SyncStatus.SYNCED);
-    assertThat(r.getGraphEventId()).isEqualTo("graph-evt-retry");
-    assertThat(r.getProcessedAt()).isEqualTo(clock.instant());
-  }
-
-  // --- 098 #4: a SYNCING record (in-flight duplicate redelivery) → no-op, no double-attempt ----
-  // graphEventId is null here, so ONLY the new status guard catches it (the gap the s8
-  // graphEventId-only guard left).
-  @Test
-  void syncing_noOp() {
-    OutlookCalendarSyncRecord r = queuedRecord();
-    r.setStatus(SyncStatus.SYNCING);
-    when(syncRecords.findById(r.getId())).thenReturn(Optional.of(r));
-
-    listener.onMessage(pointerFor(r));
-
-    verifyNoInteractions(graphPort);
-    verify(syncRecords, never()).save(any());
-    assertThat(r.getStatus()).isEqualTo(SyncStatus.SYNCING); // unchanged
-  }
-
-  // --- 098 #5: a FAILED record (not yet retried) → no-op (FAILED is not a worker-trigger state) --
-  @Test
-  void failed_noOp() {
-    OutlookCalendarSyncRecord r = queuedRecord();
-    r.setStatus(SyncStatus.FAILED);
-    when(syncRecords.findById(r.getId())).thenReturn(Optional.of(r));
-
-    listener.onMessage(pointerFor(r));
-
-    verifyNoInteractions(graphPort);
-    verify(syncRecords, never()).save(any());
-    assertThat(r.getStatus()).isEqualTo(SyncStatus.FAILED);
-  }
-
-  // --- 098 #6: a PENDING_PUBLISH record (shouldn't be queued) → defensive no-op ----
-  @Test
-  void pendingPublish_noOp() {
-    OutlookCalendarSyncRecord r = queuedRecord();
-    r.setStatus(SyncStatus.PENDING_PUBLISH);
-    when(syncRecords.findById(r.getId())).thenReturn(Optional.of(r));
-
-    listener.onMessage(pointerFor(r));
-
-    verifyNoInteractions(graphPort);
-    verify(syncRecords, never()).save(any());
-  }
-
-  // --- 098: defense-in-depth — a (shouldn't-happen) QUEUED record that ALREADY has a graphEventId
-  // passes the status guard but is skipped by the secondary graphEventId guard (no double-create).
-  // --
-  @Test
-  void queuedWithGraphEventId_secondaryGuardSkips() {
-    OutlookCalendarSyncRecord r = queuedRecord(); // status QUEUED → passes the §10 status guard
-    r.setGraphEventId("already-created"); // …but already created → the secondary guard skips
+  void claimedButAlreadyInGraph_reconcilesToSynced() {
+    OutlookCalendarSyncRecord r = syncingRecord();
+    r.setGraphEventId("already-created");
+    when(syncRecords.claimForSync(eq(r.getId()), any(Instant.class), any(Instant.class)))
+        .thenReturn(1);
     when(syncRecords.findById(r.getId())).thenReturn(Optional.of(r));
 
     listener.onMessage(pointerFor(r));
 
     verifyNoInteractions(graphPort); // no duplicate create
-    verify(syncRecords, never()).save(any());
+    assertThat(r.getStatus()).isEqualTo(SyncStatus.SYNCED);
+    assertThat(r.getProcessedAt()).isEqualTo(clock.instant());
+    assertThat(r.getGraphEventId()).isEqualTo("already-created"); // unchanged
+    verify(syncRecords).save(r);
   }
 
-  // --- 098 #7: §44 preserved on the RETRY path — graph failure → FAILED + cause-less rethrow ----
+  // --- 5. claimed (1) but the row vanished before the reload (raced a delete) → defensive no-op
+  // ---
   @Test
-  void retryRequested_graphFailure_recordsFailedAndThrows() {
-    OutlookCalendarSyncRecord r = queuedRecord();
-    r.setStatus(SyncStatus.RETRY_REQUESTED);
-    when(syncRecords.findById(r.getId())).thenReturn(Optional.of(r));
-    when(graphPort.createEvent(r))
-        .thenThrow(new RuntimeException("Graph 403: john.doe@acme.com 'Q3 OKRs' rejected"));
+  void claimedThenVanishedBeforeReload_isNoOp() {
+    UUID id = UUID.randomUUID();
+    when(syncRecords.claimForSync(eq(id), any(Instant.class), any(Instant.class))).thenReturn(1);
+    when(syncRecords.findById(id)).thenReturn(Optional.empty());
 
-    assertThatThrownBy(() -> listener.onMessage(pointerFor(r)))
-        .isInstanceOf(SyncProcessingException.class)
-        .hasNoCause()
-        // Exact-message (deploy-fix flaky #102, §48): same sanitized-rethrow contract
-        // (SyncProcessingException) on the retry path — converted for consistency with the two
-        // flaky sites so a future reader can't re-introduce a hex-flaky notContaining("403") here.
-        .hasMessage("Sync processing failed for syncRecord=" + r.getId());
+    listener.onMessage(new SyncJobPointer(id, EventKind.IC_PLANNING, "aws", "trace-z")); // no throw
 
-    assertThat(r.getStatus()).isEqualTo(SyncStatus.FAILED);
-    assertThat(r.getRetryCount()).isEqualTo(1);
-    assertThat(r.getFailureCode()).isEqualTo("GRAPH_SYNC_FAILED");
+    verifyNoInteractions(graphPort);
+    verify(syncRecords, never()).save(any());
   }
 }

@@ -11,6 +11,12 @@ app:
     # The wc-sync queue URL (deployment-worker.yaml SQS_QUEUE_URL) — gates the @SqsListener (only the
     # deployed worker polls) and is its target.
     queue-url: ${SQS_QUEUE_URL}
+    # Stale-SYNCING reclaim lease (brief 104): a SYNCING row idle longer than this is reclaimable on
+    # redelivery (a crashed claimer); an active claimer's recent attempt is NOT reclaimed. MUST
+    # exceed the SQS visibility timeout (infra) so a slow active claimer's redelivery can't reclaim
+    # it mid-flight. ISO-8601 duration; tunable via SYNC_CLAIM_LEASE. Matches the listener's @Value
+    # default (PT5M).
+    sync-claim-lease: ${SYNC_CLAIM_LEASE:PT5M}
 logging:
   level:
     com.st6.wc.worker: INFO
