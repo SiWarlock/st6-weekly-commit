@@ -39,6 +39,33 @@ resource "aws_cloudfront_origin_access_control" "assets" {
   signing_protocol                  = "sigv4"
 }
 
+# CORS for the wc-web Module-Federation REMOTE (Deploy 2, cross-origin): the remoteEntry.js +
+# federation chunks publish under /remote/* on THIS wc. distribution and are loaded CROSS-ORIGIN by
+# the portal host. This policy adds Access-Control-Allow-Origin: https://portal.${ROOT_DOMAIN} to the
+# /remote/* behavior ONLY (below) — it does NOT touch the default behavior / SPA root / SPA fallback,
+# which stay byte-identical. Reversible: drop this resource + the ordered_cache_behavior to revert.
+# Same-origin fallback (if the additive plan ever surprises us): publish the remote into the PORTAL
+# bucket /remote/ instead → VITE_WC_REMOTE_URL=https://portal.${ROOT_DOMAIN}/remote/remoteEntry.js, no CORS.
+resource "aws_cloudfront_response_headers_policy" "remote_cors" {
+  name    = "${local.cluster_name}-remote-cors"
+  comment = "CORS ACAO=portal host for the wc-web federation remote (/remote/*) — Deploy 2."
+
+  cors_config {
+    access_control_allow_credentials = false
+
+    access_control_allow_headers {
+      items = ["*"]
+    }
+    access_control_allow_methods {
+      items = ["GET", "HEAD", "OPTIONS"]
+    }
+    access_control_allow_origins {
+      items = ["https://portal.${var.ROOT_DOMAIN}"]
+    }
+    origin_override = true
+  }
+}
+
 resource "aws_cloudfront_distribution" "assets" {
   enabled             = true
   default_root_object = "index.html"
@@ -56,6 +83,20 @@ resource "aws_cloudfront_distribution" "assets" {
     allowed_methods        = ["GET", "HEAD"]
     cached_methods         = ["GET", "HEAD"]
     cache_policy_id        = data.aws_cloudfront_cache_policy.caching_optimized.id
+  }
+
+  # Deploy-2 cross-origin federation: serve the wc-web REMOTE (remoteEntry.js + chunks) under
+  # /remote/* with the CORS policy (ACAO: portal host) + OPTIONS preflight attached. PURELY ADDITIVE
+  # — the default_cache_behavior above + the SPA fallback below are unchanged/byte-identical; this
+  # only adds the more-specific /remote/* path. Reversible (drop this block + the remote_cors policy).
+  ordered_cache_behavior {
+    path_pattern               = "/remote/*"
+    target_origin_id           = "s3-assets"
+    viewer_protocol_policy     = "redirect-to-https"
+    allowed_methods            = ["GET", "HEAD", "OPTIONS"]
+    cached_methods             = ["GET", "HEAD"]
+    cache_policy_id            = data.aws_cloudfront_cache_policy.caching_optimized.id
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.remote_cors.id
   }
 
   # SPA fallback — both 403 (OAC denies LIST on missing key) and 404 → index.html.
