@@ -7,6 +7,16 @@ import {
 } from '../app/authAccessor';
 import { store } from '../app/store';
 import { AppRoutes } from '../routes/AppRoutes';
+// The remote's compiled design-token + Tailwind/Flowbite stylesheet (Lesson #3),
+// imported as a base-resolved URL so the federated host can inject it (otherwise
+// the embedded remote renders unstyled — standalone gets it via `main.tsx`, which
+// the host never loads). We do NOT use a plain side-effect `import './theme.css'`:
+// @originjs's auto CSS-injection is unusable with our absolute `--base` — it builds
+// the href as base + bare-filename and DROPS the `assets/` dir → a 404. Vite's
+// `?url` resolves the PROCESSED css to the correct base+assetsDir URL
+// (…/remote/assets/theme-<hash>.css), which we inject ourselves on mount.
+// theme.css carries no demo/persona code (REQ-I-008-safe).
+import themeHref from '../styles/theme.css?url';
 
 export interface WeeklyCommitAppProps {
   /**
@@ -69,6 +79,20 @@ export default function WeeklyCommitApp({
     }
     return () => setAccessTokenProvider(null);
   }, [registered]);
+
+  // Inject the remote's stylesheet via its correct base-resolved URL (see the
+  // themeHref import note). Idempotent — only one link, harmless if standalone
+  // already loaded the same CSS via main.tsx.
+  useEffect(() => {
+    if (document.querySelector('link[data-wc-remote-theme]')) {
+      return;
+    }
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = themeHref;
+    link.dataset.wcRemoteTheme = '';
+    document.head.appendChild(link);
+  }, []);
 
   // An accessor is only required in the hosted (auth0) path. If the host failed
   // to provide one (and none is already wired), surface an error, never crash.
