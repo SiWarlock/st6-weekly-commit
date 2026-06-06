@@ -19,12 +19,19 @@ const authAccessor = readFileSync(
 );
 
 // The shared singletons the host + remote must agree on (federation `shared`).
-// Only boundary-crossing deps are shared: react/react-dom (single React instance)
-// + react-router-dom (the host's <BrowserRouter> context the remote consumes).
-// Redux (@reduxjs/toolkit) + react-redux are NOT shared — the remote self-provides
-// its store (remote-internal); sharing @reduxjs/toolkit forced a top-level
-// `await importShared(...)` that deadlocked the cross-build mount.
-const SHARED_SINGLETONS = ['react', 'react-dom', 'react-router-dom'];
+// ALL React-coupled singletons are shared so the remote uses the host's single
+// React instance — a bundled react-redux/@reduxjs/toolkit runs hooks against a
+// second React → "Cannot read properties of null (reading 'useRef')" dual-React
+// crash. The store is still self-provided by the remote (no `./store` expose);
+// sharing redux doesn't reintroduce the deadlock because there's no separate
+// pre-ensure store import (its importShared resolves inside the WeeklyCommitApp ensure).
+const SHARED_SINGLETONS = [
+  'react',
+  'react-dom',
+  '@reduxjs/toolkit',
+  'react-redux',
+  'react-router-dom',
+];
 
 describe('9.13 host-integration contract — README matches the realized config', () => {
   it('contract_doc_present_with_host_integration_section: README.md exists and carries the Host integration contract', () => {

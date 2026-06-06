@@ -35,16 +35,19 @@ export default defineConfig(({ mode }) => {
           // `wc_web` is the remote name declared in apps/wc-web/vite.config.ts.
           wc_web: remoteUrl,
         },
-        // Mirror the remote's shared scope EXACTLY: only the singletons that
-        // cross the boundary — react/react-dom (single React instance) +
-        // react-router-dom (the host's <BrowserRouter> context the remote
-        // consumes). Redux (@reduxjs/toolkit) + react-redux are NOT shared: the
-        // remote self-provides its store (remote-internal), and sharing
-        // @reduxjs/toolkit forced a top-level `await importShared(...)` that
-        // deadlocked the cross-build init → the remote hung on "Connecting…".
+        // Mirror the remote's shared scope EXACTLY. ALL React-coupled singletons
+        // are shared so the remote uses the host's single React instance — a
+        // bundled react-redux/@reduxjs/toolkit would run hooks against a second
+        // React → "Cannot read properties of null (reading 'useRef')" dual-React
+        // crash. The host must declare them shared (provides them to the scope)
+        // even though it no longer imports them directly (the remote self-provides
+        // its store). The deadlock was the separate pre-ensure `./store` import,
+        // not sharing redux — that's removed, so sharing here is safe.
         shared: {
           react: { requiredVersion: "^18.3.1" },
           "react-dom": { requiredVersion: "^18.3.1" },
+          "@reduxjs/toolkit": { requiredVersion: "^2.3.0" },
+          "react-redux": { requiredVersion: "^9.1.2" },
           "react-router-dom": { requiredVersion: "^6.28.0" },
         },
       }),

@@ -24,28 +24,29 @@ export default defineConfig({
             exposes: {
               // ONE exposed module. The remote is self-contained for state — it
               // wraps its own `<Provider store={store}>` inside WeeklyCommitApp
-              // (the store + baseApi live entirely in the remote). The host only
-              // provides the router + getAccessToken. We DON'T expose `./store`:
-              // a separate `import('wc_web/store')` whose chunk did a top-level
-              // `await importShared('@reduxjs/toolkit')` deadlocked the cross-build
-              // shared-scope init → the host hung forever on "Connecting…".
+              // (store + baseApi live entirely in the remote). The host provides
+              // the router + getAccessToken. We DON'T expose `./store`: a separate
+              // `import('wc_web/store')` (imported BEFORE the WeeklyCommitApp
+              // ensure) raced the shared-scope init and deadlocked the host on
+              // "Connecting…". Folding the store into the single WeeklyCommitApp
+              // ensure is what fixed the deadlock.
               './WeeklyCommitApp': './src/remote/WeeklyCommitApp.tsx',
             },
-            // Share ONLY the singletons that cross the host↔remote boundary:
-            //  - react / react-dom: the single React instance (else invalid hooks).
-            //  - react-router-dom: the remote renders <AppRoutes/>'s <Routes>/
-            //    useNavigate inside the host's <BrowserRouter>; React Router's
-            //    context is module-identity-based, so host + remote must resolve to
-            //    ONE instance (else "useRoutes() may be used only in the context of
-            //    a <Router>"). Host declares the same set + versions.
-            // Redux (@reduxjs/toolkit) + react-redux are NOT shared: they're
-            // remote-INTERNAL now (the remote self-provides its store), so the host
-            // never touches them. Sharing @reduxjs/toolkit forced a top-level
-            // `await importShared(...)` in the store chunk that deadlocked the
-            // cross-build init; bundling it in the remote removes that await.
+            // Share ALL the React-coupled singletons. They MUST be shared so the
+            // remote uses the SAME React instance as the host renderer — a bundled
+            // react-redux/@reduxjs/toolkit runs its hooks (useSyncExternalStore →
+            // React.useRef) against a second React → "Cannot read properties of
+            // null (reading 'useRef')" (dual-React crash, blank page). react-router-dom
+            // is shared for the single Router context. The store is still
+            // self-provided (no `./store` expose); sharing redux does NOT
+            // reintroduce the deadlock because there's no separate pre-ensure
+            // store import — its `importShared` now resolves inside the single
+            // WeeklyCommitApp ensure (canonical, like react does).
             shared: {
               react: { requiredVersion: '^18.3.1' },
               'react-dom': { requiredVersion: '^18.3.1' },
+              '@reduxjs/toolkit': { requiredVersion: '^2.3.0' },
+              'react-redux': { requiredVersion: '^9.1.2' },
               'react-router-dom': { requiredVersion: '^6.28.0' },
             },
           }),
