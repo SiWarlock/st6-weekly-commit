@@ -454,3 +454,38 @@ This was caught by the Step-2.5 fold-in **authenticated-`/*`-nest render test** 
 `vite build` (the default `build:remote`) emits BOTH `remoteEntry.js` + the `__federation_expose_WeeklyCommitApp` chunk (the production remote the PA-host loads — must be demo/auth-free, REQ-I-008) **and** the standalone `index.html` → `main.tsx` bundle (the deployable SPA, which legitimately bears the demo layer AND now `@auth0/auth0-react`). A whole-`dist/` literal grep for an auth/demo marker therefore **false-alarms** on the standalone bundle even when the remote is clean. The host never loads `index.html` (only `remoteEntry.js`), so the SDK in the standalone bundle is not a leak. `boundary.test.ts` already scopes correctly — it walks the static import-graph **from `WeeklyCommitApp`** (the exposed entry), not from `main.tsx` — so the fail-closed scan asserts auth0/demo-absence over the *remote-reachable* graph only; a real-build verification must grep the `remoteEntry` + `__federation_expose_*` artifacts specifically, not the full dist.
 
 **Rule:** Scope any REQ-I-008 build-output grep to the **federation-exposed chunk** (`remoteEntry.js` + `__federation_expose_*`), never all of `dist/` — the same `vite build` also emits the standalone SPA bundle, which carries the demo + auth0 SDK by design. Drive the source-side proof from the **exposed entry's import-graph** (`WeeklyCommitApp`), not the standalone entry (`main.tsx`). (Refines [[6]]/[[28]]; the auth0 SDK is the second standalone-only dep, after the demo layer, the boundary now guards.)
+
+---
+
+## <a id="31"></a>31. Wire the host accessor seam SYNCHRONOUSLY across the FEDERATION boundary — register it in the EXPOSED module's render, because the remote's child effects run before any host effect
+
+**Date:** 2026-06-06.
+**Source slice:** 024 (Acme Portal Module-Federation host integration; live-portal bug 1).
+
+[[29]] established that an injected seam read on first render must be registered synchronously (a `useState` lazy-initializer), not a mount `useEffect`. Across the **federation boundary** the trap is both sharper and relocated. In remote mode the **host** provides `getAccessToken`, but the exposed `WeeklyCommitApp`'s child `<AppRoutes/>` fires its **eager first RTK Query** (`prepareHeaders → getAccessToken()`) during the remote's first render — which happens *inside* the host's render tree, **before any host mount effect runs**. So the host CANNOT register the accessor in its own `useEffect` (too late), and it cannot rely on the remote to read it from an effect either. The fix: the **exposed module itself** registers the host-passed accessor **synchronously during its own render** (`useState(() => { setAccessTokenProvider(hostGetToken); … })`), so the seam is live before the child's first-render query. Live symptom on the deployed portal: a spurious "No access-token provider configured" until the registration moved into `WeeklyCommitApp`'s render. Pinned by `WeeklyCommitApp.accessor-timing.test.tsx` (a probe asserting the seam is wired at the child's first render).
+
+**Rule:** When a host passes an accessor (`getAccessToken`) into a federation-exposed module, register it **synchronously in the exposed module's render** (`useState` lazy-init), NOT in a host or remote mount effect — the remote's child first-render readers (RTK Query `prepareHeaders`) run before any effect in the host tree. Keep cleanup in an unmount effect; pin with a first-render seam-read probe. (Extends [[29]] to the host↔remote boundary; composes with [[33]].)
+
+## <a id="32"></a>32. @originjs federated CSS auto-injection is broken under an absolute `--base` (drops `assetsDir` → 404) — inject the stylesheet via a `?url` base-resolved import + a manual `<link>`
+
+**Date:** 2026-06-06.
+**Source slice:** 024 (live-portal bug 4).
+
+`@originjs/vite-plugin-federation`'s automatic remote-CSS injection concatenates `base + bare-filename` and **drops the `assets/` directory** when the remote is built with an absolute `--base` — it requests `https://wc.…/remote/theme-<hash>.css` instead of `…/remote/assets/theme-<hash>.css` → **404**, so the embedded remote renders unstyled. Fix: import the stylesheet as a **base-resolved `?url`** (`import themeHref from '…/theme.css?url'` — Vite resolves the correct `…/remote/assets/theme-<hash>.css`) and inject it as a `<link rel="stylesheet">` on mount inside the exposed module; keep the federation expose's CSS list (`y([])`) **empty** so no competing (broken) auto-link fires. Pinned by the `<link>`-injection test (asserts the base-resolved href + cleanup).
+
+**Rule:** Don't rely on @originjs auto CSS-injection for a remote built with an absolute `--base` (it drops `assetsDir` → 404). Import the stylesheet via a `?url` base-resolved import and inject a manual `<link>` on mount in the exposed module; keep the expose's CSS array empty. Federation styling is a live-only behavior — verify against the deployed embed, not jsdom. (Composes with [[31]]/[[33]].)
+
+## <a id="33"></a>33. @originjs host↔remote cascade — fold state into the SINGLE exposed-component ensure (a separate `import('remote/store')` deadlocks shareScope), keep ALL React-coupled deps shared (unshare → dual-React), and let the remote self-provide its store
+
+**Date:** 2026-06-06.
+**Source slice:** 024 (live-portal bugs 2 + 3; the realized federation surface).
+
+Driving `wc-web` as a real MF remote inside a host surfaced three coupled facts, each revealed only after the prior cleared:
+
+- **(a) No separate pre-component remote-store import — it deadlocks shareScope init.** A `import('wc_web/store')` done *before* mounting the component runs a top-level `await importShared('@reduxjs/toolkit')` **before** the `WeeklyCommitApp` ensure → the shared-scope initialization deadlocks and the host hangs on "Connecting…". Fix: **don't expose `./store`**; fold the store creation into the single exposed-component ensure (`./WeeklyCommitApp`).
+- **(b) Keep ALL React-coupled deps shared — unsharing redux → dual-React.** An interim attempt to unshare `@reduxjs/toolkit`/`react-redux` made the remote bundle its own copy that linked against a **second React** → `Cannot read properties of null (reading 'useRef')` (the classic dual-React hooks crash). The shared singleton set must be **all five** React-coupled deps: `react`, `react-dom`, `react-redux`, `@reduxjs/toolkit`, `react-router-dom`.
+- **(c) The remote may SELF-PROVIDE its store while redux stays shared — independent concerns.** `WeeklyCommitApp` wraps itself in `<Provider store={…}>` (self-provided store — fixes the (a) deadlock) AND redux remains a shared singleton (fixes the (b) dual-React). These are orthogonal: self-providing the store does not require unsharing redux.
+
+Realized federation surface: **1 expose** (`./WeeklyCommitApp`, no `./store`), the remote **self-provides its store** and **injects its own CSS** ([[32]]), **5 shared singletons** (the React-coupled set above), mounted same-origin under `/portal/` ([[31]] handles the host accessor). The four bugs were **live production incidents** (federation runtime isn't reproducible in jsdom) — diagnosed against the deployed portal + build artifacts; regression-pinned where the unit env permits ([[31]]/[[32]]).
+
+**Rule:** For an @originjs MF remote: expose ONE component and fold its store into that ensure (a separate `import('remote/store')` deadlocks shareScope); keep ALL React-coupled deps shared singletons (unsharing any → dual-React `useRef`-null); the remote may self-provide its `<Provider store>` while redux stays shared (orthogonal). Verify the federation surface live — it's not jsdom-reproducible. (Composes with [[31]]/[[32]]; the realized contract is 1 expose + 5 shared singletons + same-origin `/portal/`.)
