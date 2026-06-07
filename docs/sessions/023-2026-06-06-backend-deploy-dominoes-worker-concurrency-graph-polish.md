@@ -3,7 +3,7 @@
 - **Date:** 2026-06-06
 - **Phase:** First-deploy support → live-sync hardening → demo polish. This implementer session ran as the persistent backend deploy-support pair, cycled at the clean 106-seal boundary (ctx ACTION threshold).
 - **Role:** **implementer-authored** (`st6-main-wc-api-implementer`, the fresh successor that started by sealing deploy-fix #9). Every slice ran the `/tdd` discipline with the orchestrator (`st6-main-orchestrator`) doing Step-2.5 review + Step-9 routing.
-- **Predecessor:** [022](022-2026-06-04-backend-deploy-blocking-drift-fix-arc.md) (096→097→098 drift-fix arc). **Successor:** TBD (the next full-budget backend pair, taking the demo-seed job 107).
+- **Predecessor:** [022](022-2026-06-04-backend-deploy-blocking-drift-fix-arc.md) (096→097→098 drift-fix arc). **Successor:** [026](026-2026-06-06-backend-closeout.md) (demo-seed Job 107a/107b — terminal backend session).
 - **HEAD at close:** `672e09d` (106 round-seal). My implementer commits: `a8cd336` (102), `6996318` (103), `c45a7a6` (104), `5822dea` (regression), `1952762` (104b), `0451d9f` (106).
 
 ## Why this session existed
