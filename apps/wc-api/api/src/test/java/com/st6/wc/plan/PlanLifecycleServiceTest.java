@@ -135,7 +135,7 @@ class PlanLifecycleServiceTest {
     when(reviewSlaService.reviewDueAt(any())).thenReturn(Instant.parse("2026-06-02T22:00:00Z"));
     OutlookCalendarSyncRecord icRec = new OutlookCalendarSyncRecord();
     icRec.setId(UUID.randomUUID());
-    when(syncRecordService.createIcPlanningRecord(any(), any())).thenReturn(icRec);
+    when(syncRecordService.createIcPlanningRecord(any(), any())).thenReturn(Optional.of(icRec));
   }
 
   private void withManager() {

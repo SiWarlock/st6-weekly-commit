@@ -116,7 +116,7 @@ class StartReconciliationServiceTest {
     when(employees.findById(IC)).thenReturn(Optional.of(e));
     OutlookCalendarSyncRecord rec = new OutlookCalendarSyncRecord();
     rec.setId(UUID.randomUUID());
-    when(syncRecordService.createIcReconciliationRecord(any(), any())).thenReturn(rec);
+    when(syncRecordService.createIcReconciliationRecord(any(), any())).thenReturn(Optional.of(rec));
   }
 
   private static WeeklyCommitment committed() {

@@ -30,6 +30,15 @@ public interface OutlookCalendarSyncRecordRepository
   Optional<OutlookCalendarSyncRecord> findByOwnerEmployeeIdAndWeekStartDateAndEventKind(
       UUID ownerEmployeeId, LocalDate weekStartDate, EventKind eventKind);
 
+  /**
+   * Existence lookup on the full V1 {@code uq_sync_owner_related_kind} grain {@code (owner,
+   * related_type, related_id, event_kind)} — the idempotency pre-filter for the lock/start outbox
+   * writers ({@code SyncRecordService.createWeeklyPlanRecord}), so a re-lock or a pre-existing
+   * (legacy/orphan) record is a no-op rather than a 23505 that rolls back the core lifecycle txn.
+   */
+  Optional<OutlookCalendarSyncRecord> findByOwnerEmployeeIdAndRelatedTypeAndRelatedIdAndEventKind(
+      UUID ownerEmployeeId, SyncRelatedType relatedType, UUID relatedId, EventKind eventKind);
+
   List<OutlookCalendarSyncRecord> findByRelatedTypeAndRelatedIdOrderByEventKindAscIdAsc(
       SyncRelatedType relatedType, UUID relatedId);
 

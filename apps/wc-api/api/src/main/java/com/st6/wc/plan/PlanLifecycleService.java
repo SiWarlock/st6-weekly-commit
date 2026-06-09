@@ -20,7 +20,6 @@ import com.st6.wc.review.ManagerReview;
 import com.st6.wc.review.ReviewSlaService;
 import com.st6.wc.review.repo.ManagerReviewRepository;
 import com.st6.wc.sns.SnsLifecyclePublisher;
-import com.st6.wc.sync.OutlookCalendarSyncRecord;
 import com.st6.wc.sync.SyncRecordService;
 import com.st6.wc.web.EmptyPlanLockException;
 import com.st6.wc.web.IllegalStateTransitionException;
@@ -140,9 +139,11 @@ public class PlanLifecycleService {
 
     String traceId = UUID.randomUUID().toString();
     List<UUID> toPublish = new ArrayList<>();
-    OutlookCalendarSyncRecord icPlanning =
-        syncRecordService.createIcPlanningRecord(plan, traceId); // always (§10 — IC lock)
-    toPublish.add(icPlanning.getId());
+    // §10 — IC lock. Idempotent: a pre-existing IC_PLANNING record (re-lock / orphan) is a no-op
+    // (empty), so the lock can't be rolled back by a uq_sync_owner_related_kind 23505.
+    syncRecordService
+        .createIcPlanningRecord(plan, traceId)
+        .ifPresent(record -> toPublish.add(record.getId()));
 
     UUID managerId =
         relationships
@@ -205,8 +206,11 @@ public class PlanLifecycleService {
         plan); // @Version-guarded: a concurrent double-start → ObjectOptimisticLockingFailure
 
     String traceId = UUID.randomUUID().toString();
-    OutlookCalendarSyncRecord icReconciliation =
-        syncRecordService.createIcReconciliationRecord(plan, traceId); // §10 — IC start
+    List<UUID> toPublish = new ArrayList<>();
+    // §10 — IC start. Idempotent on the V1 sync grain (re-start / orphan → no-op, no 23505).
+    syncRecordService
+        .createIcReconciliationRecord(plan, traceId)
+        .ifPresent(record -> toPublish.add(record.getId()));
 
     projectionRefresher.recomputeForPlan(
         plan); // §9 plan_state refresh (no-op if no manager/review)
@@ -219,7 +223,7 @@ public class PlanLifecycleService {
         "Reconciliation started",
         "{}");
 
-    publishAfterCommit(List.of(icReconciliation.getId()));
+    publishAfterCommit(toPublish);
 
     String displayName =
         employees
