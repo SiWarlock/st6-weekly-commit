@@ -1,6 +1,6 @@
 import { useLocation } from 'react-router-dom';
 import { HiChevronRight } from 'react-icons/hi';
-import { WEEK_LABEL, surfaceForPath, subForPath } from './navModel';
+import { currentWeekLabel, surfaceForPath, subForPath } from './navModel';
 
 /**
  * ST.8a — route-driven breadcrumb (standalone demo chrome). Derives entirely from
@@ -15,7 +15,7 @@ export function Breadcrumb() {
         'My Team',
         subForPath(pathname) === 'heatmap' ? 'Heatmap' : 'Command Center',
       ]
-    : ['My Weekly Commit', WEEK_LABEL];
+    : ['My Weekly Commit', currentWeekLabel(new Date())];
 
   return (
     <nav

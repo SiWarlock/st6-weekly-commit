@@ -6,8 +6,33 @@
  * the route. No DOM/React here — just the mapping, independently sane + testable.
  */
 
-/** The single demo week (no multi-week fixtures — the picker is a static affordance). */
-export const WEEK_LABEL = 'Week of Jun 1–7, 2026';
+import { formatWeekRange } from '../../shared/lib/formatWeek';
+
+/**
+ * ISO date (YYYY-MM-DD) of the Monday of the LOCAL week containing `today` (Monday-anchored,
+ * mirroring the server's org-tz week derivation closely enough for the chrome label).
+ */
+function weekMondayIso(today: Date): string {
+  const offsetToMonday = (today.getDay() + 6) % 7; // 0=Sun → 6, 1=Mon → 0, …
+  const monday = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate() - offsetToMonday,
+  );
+  const month = String(monday.getMonth() + 1).padStart(2, '0');
+  const day = String(monday.getDate()).padStart(2, '0');
+  return `${monday.getFullYear()}-${month}-${day}`;
+}
+
+/**
+ * The "Week of …" chrome label for the week containing `today`, derived from the live date so it
+ * advances with the real week (the previously-hardcoded label was stuck on one demo week, so the
+ * chrome showed a stale week once real time moved on). Uses the shared `formatWeek` — the same
+ * formatter the plan card uses — so the chrome's week matches the plan's `weekStartDate` range.
+ */
+export function currentWeekLabel(today: Date): string {
+  return `Week of ${formatWeekRange(weekMondayIso(today), 'explicit')}`;
+}
 
 /** Top-level surface (mockup `surface`): the IC's own plan vs the manager's team. */
 export type NavSurface = 'mine' | 'team';

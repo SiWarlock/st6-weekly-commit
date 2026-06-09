@@ -1,7 +1,12 @@
 import { useLocation, useNavigate } from 'react-router-dom';
 import { HiCalendar } from 'react-icons/hi';
 import { useIsManager } from '../../routes/isManager';
-import { ROUTES, WEEK_LABEL, surfaceForPath, subForPath } from './navModel';
+import {
+  ROUTES,
+  currentWeekLabel,
+  surfaceForPath,
+  subForPath,
+} from './navModel';
 
 /**
  * ST.8a — the WC sub-nav (standalone demo chrome; tree-shaken from the remote,
@@ -87,12 +92,12 @@ export function PrimaryNav() {
           (no chevron, no button semantics) + a tooltip so it doesn't read as a
           live dropdown. The real multi-week pager is a separate ST.8b item. */}
       <span
-        title="Single demo week"
-        aria-label="Week (single demo week)"
+        title="Current week"
+        aria-label="Current week"
         className="ml-auto inline-flex items-center gap-1 rounded-md border border-border px-3 py-1 text-label text-ink-secondary"
       >
         <HiCalendar aria-hidden className="h-4 w-4" />
-        {WEEK_LABEL}
+        {currentWeekLabel(new Date())}
       </span>
     </nav>
   );

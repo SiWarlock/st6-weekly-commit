@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, within } from '@testing-library/react';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { AppShell } from './AppShell';
 import { ThemeProvider } from '../../app/theme/ThemeProvider';
@@ -46,12 +46,20 @@ function renderShell(initialPath: string) {
 }
 
 beforeEach(() => {
+  // The chrome's week label is derived from the live date; pin "today" to the demo week so the
+  // deterministic "Week of Jun 1–7, 2026" assertions hold (Wed 2026-06-03 → Mon 2026-06-01).
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(2026, 5, 3, 12, 0, 0));
   mockIsManager = false;
   mockIdentity = {
     personas: DEMO_PERSONAS,
     personaId: IC.id,
     setPersonaId: vi.fn(),
   };
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('ST.8a standalone app-shell — deterministic seams', () => {

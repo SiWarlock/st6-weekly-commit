@@ -2,7 +2,7 @@ import { type ReactNode } from 'react';
 import { HiCalendar } from 'react-icons/hi';
 import { PersonaSwitcher } from '../PersonaSwitcher';
 import { ThemeToggle } from '../ThemeToggle';
-import { WEEK_LABEL } from './navModel';
+import { currentWeekLabel } from './navModel';
 
 interface AppBarProps {
   /**
@@ -49,7 +49,7 @@ export function AppBar({ identitySlot }: AppBarProps = {}) {
 
       <span className="ml-auto inline-flex items-center gap-1 text-label text-ink-muted">
         <HiCalendar aria-hidden className="h-4 w-4" />
-        {WEEK_LABEL}
+        {currentWeekLabel(new Date())}
       </span>
 
       <div className="flex items-center gap-3">
